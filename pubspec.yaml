@@ -1,0 +1,22 @@
+name: estilo_neutral
+description: Conector Flutter para Google Sheets (Estilo Neutral) con arquitectura ORM bajo demanda y cero polling.
+version: 1.0.0+1
+publish_to: none
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  google_sign_in: ^6.2.1
+  googleapis: ^13.1.0
+  http: ^1.2.0
+  flutter_secure_storage: ^9.0.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.0
+
+flutter:
