@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
+import '../core/design_system/theme/app_theme.dart';
+import '../presentation/shell/main_shell.dart';
 import 'di/injection.dart';
-import '../features/sales/presentation/pages/sales_page.dart';
 
+/// Aplicación principal Estilo Neutral.
+/// Configurada con el sistema de diseño visual minimalista, paleta azul y CupertinoIcons.
 class EstiloNeutralApp extends StatelessWidget {
   const EstiloNeutralApp({super.key});
 
@@ -10,15 +13,11 @@ class EstiloNeutralApp extends StatelessWidget {
     return MaterialApp(
       title: 'Estilo Neutral',
       debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        useMaterial3: true,
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFF1B365D),
-          primary: const Color(0xFF1B365D),
-        ),
-      ),
-      home: SalesPage(
-        controller: ServiceLocator().salesController,
+      theme: AppTheme.light,
+      darkTheme: AppTheme.dark,
+      themeMode: ThemeMode.light,
+      home: MainShell(
+        salesController: ServiceLocator().salesController,
       ),
     );
   }
