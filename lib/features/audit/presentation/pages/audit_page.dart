@@ -149,15 +149,18 @@ class _AuditPageState extends State<AuditPage> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          Text(
-                            '#${log.id} • ${log.accion}',
-                            style: AppTypography.titleLarge.copyWith(
-                              fontSize: 14,
-                              color: AppPalette.blue900,
+                          Expanded(
+                            child: Text(
+                              '#${log.id} • ${log.accion}',
+                              style: AppTypography.titleLarge.copyWith(
+                                fontSize: 14,
+                                color: AppPalette.blue900,
+                              ),
+                              overflow: TextOverflow.ellipsis,
                             ),
                           ),
+                          const SizedBox(width: AppSpacing.sm),
                           const AppChip(
                             label: 'OK',
                             variant: AppChipVariant.success,

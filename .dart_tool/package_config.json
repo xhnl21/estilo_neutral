@@ -39,7 +39,7 @@
     },
     {
       "name": "code_assets",
-      "rootUri": "file:///Users/programacion/.pub-cache/hosted/pub.dev/code_assets-2.0.0",
+      "rootUri": "file:///Users/programacion/.pub-cache/hosted/pub.dev/code_assets-1.2.1",
       "packageUri": "lib/",
       "languageVersion": "3.10"
     },
@@ -183,7 +183,7 @@
     },
     {
       "name": "hooks",
-      "rootUri": "file:///Users/programacion/.pub-cache/hosted/pub.dev/hooks-2.2.0",
+      "rootUri": "file:///Users/programacion/.pub-cache/hosted/pub.dev/hooks-2.0.2",
       "packageUri": "lib/",
       "languageVersion": "3.10"
     },
@@ -267,13 +267,13 @@
     },
     {
       "name": "meta",
-      "rootUri": "file:///Users/programacion/.pub-cache/hosted/pub.dev/meta-1.19.0",
+      "rootUri": "file:///Users/programacion/.pub-cache/hosted/pub.dev/meta-1.18.3",
       "packageUri": "lib/",
       "languageVersion": "3.5"
     },
     {
       "name": "objective_c",
-      "rootUri": "file:///Users/programacion/.pub-cache/hosted/pub.dev/objective_c-9.6.0",
+      "rootUri": "file:///Users/programacion/.pub-cache/hosted/pub.dev/objective_c-9.5.0",
       "packageUri": "lib/",
       "languageVersion": "3.10"
     },
@@ -345,7 +345,7 @@
     },
     {
       "name": "record_use",
-      "rootUri": "file:///Users/programacion/.pub-cache/hosted/pub.dev/record_use-1.1.1",
+      "rootUri": "file:///Users/programacion/.pub-cache/hosted/pub.dev/record_use-0.6.0",
       "packageUri": "lib/",
       "languageVersion": "3.10"
     },

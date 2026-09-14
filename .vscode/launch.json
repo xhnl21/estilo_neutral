@@ -1,0 +1,148 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Android - DEV (Debug)",
+      "request": "launch",
+      "type": "dart",
+      "program": "lib/main.dart",
+      "flutterMode": "debug",
+      "args": [
+        "--flavor",
+        "dev",
+        "--dart-define-from-file",
+        ".env.dev"
+      ]
+    },
+    {
+      "name": "Android - TEST/QA (Debug)",
+      "request": "launch",
+      "type": "dart",
+      "program": "lib/main.dart",
+      "flutterMode": "debug",
+      "args": [
+        "--flavor",
+        "qa",
+        "--dart-define-from-file",
+        ".env.test"
+      ]
+    },
+    {
+      "name": "Android - PROD (Debug)",
+      "request": "launch",
+      "type": "dart",
+      "program": "lib/main.dart",
+      "flutterMode": "debug",
+      "args": [
+        "--flavor",
+        "prod",
+        "--dart-define-from-file",
+        ".env"
+      ]
+    },
+    {
+      "name": "Android - PROD (Release)",
+      "request": "launch",
+      "type": "dart",
+      "program": "lib/main.dart",
+      "flutterMode": "release",
+      "args": [
+        "--flavor",
+        "prod",
+        "--dart-define-from-file",
+        ".env"
+      ]
+    },
+    {
+      "name": "iOS - DEV (Debug)",
+      "request": "launch",
+      "type": "dart",
+      "program": "lib/main.dart",
+      "flutterMode": "debug",
+      "args": [
+        "--flavor",
+        "dev",
+        "--dart-define-from-file",
+        ".env.dev"
+      ]
+    },
+    {
+      "name": "iOS - TEST/QA (Debug)",
+      "request": "launch",
+      "type": "dart",
+      "program": "lib/main.dart",
+      "flutterMode": "debug",
+      "args": [
+        "--flavor",
+        "qa",
+        "--dart-define-from-file",
+        ".env.test"
+      ]
+    },
+    {
+      "name": "iOS - PROD (Debug)",
+      "request": "launch",
+      "type": "dart",
+      "program": "lib/main.dart",
+      "flutterMode": "debug",
+      "args": [
+        "--flavor",
+        "prod",
+        "--dart-define-from-file",
+        ".env"
+      ]
+    },
+    {
+      "name": "iOS - PROD (Release)",
+      "request": "launch",
+      "type": "dart",
+      "program": "lib/main.dart",
+      "flutterMode": "release",
+      "args": [
+        "--flavor",
+        "prod",
+        "--dart-define-from-file",
+        ".env"
+      ]
+    },
+    {
+      "name": "Web - DEV (Chrome)",
+      "request": "launch",
+      "type": "dart",
+      "program": "lib/main.dart",
+      "flutterMode": "debug",
+      "args": [
+        "-d",
+        "chrome",
+        "--dart-define-from-file",
+        ".env.dev"
+      ]
+    },
+    {
+      "name": "Web - TEST/QA (Chrome)",
+      "request": "launch",
+      "type": "dart",
+      "program": "lib/main.dart",
+      "flutterMode": "debug",
+      "args": [
+        "-d",
+        "chrome",
+        "--dart-define-from-file",
+        ".env.test"
+      ]
+    },
+    {
+      "name": "Web - PROD (Chrome)",
+      "request": "launch",
+      "type": "dart",
+      "program": "lib/main.dart",
+      "flutterMode": "release",
+      "args": [
+        "-d",
+        "chrome",
+        "--dart-define-from-file",
+        ".env"
+      ]
+    }
+  ]
+}

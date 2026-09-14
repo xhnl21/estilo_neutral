@@ -59,11 +59,14 @@ class SaleListItem extends StatelessWidget {
                 children: [
                   Row(
                     children: [
-                      Text(
-                        'Venta #${sale.id}',
-                        style: AppTypography.titleLarge.copyWith(
-                          fontSize: 15,
-                          color: AppPalette.blue900,
+                      Flexible(
+                        child: Text(
+                          'Venta #${sale.id}',
+                          style: AppTypography.titleLarge.copyWith(
+                            fontSize: 15,
+                            color: AppPalette.blue900,
+                          ),
+                          overflow: TextOverflow.ellipsis,
                         ),
                       ),
                       const SizedBox(width: AppSpacing.sm),
@@ -78,6 +81,8 @@ class SaleListItem extends StatelessWidget {
                   Text(
                     '${sale.customerId} • ${sale.paymentMethod} • ${sale.date}',
                     style: AppTypography.bodyMedium.copyWith(fontSize: 13),
+                    overflow: TextOverflow.ellipsis,
+                    maxLines: 1,
                   ),
                   if (hasDebt) ...[
                     const SizedBox(height: 2),
