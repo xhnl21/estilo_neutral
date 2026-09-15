@@ -1,6 +1,7 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import '../../core/config/environment_config.dart';
 import '../../core/design_system/tokens/colors.dart';
 import '../../core/design_system/tokens/icons.dart';
 import '../../core/design_system/tokens/spacing.dart';
@@ -61,7 +62,10 @@ class _ClientesView extends StatelessWidget {
 
         return AppScaffold(
           title: 'Clientes',
-          subtitle: 'Hoja clientes • ${state.clientes.length} registros',
+          subtitle: EnvironmentConfig.formatSubtitle(
+            sheetName: 'clientes',
+            userFriendlyText: '${state.clientes.length} registros',
+          ),
           actions: [
             AppRefreshButton(
               onRefresh: () => cubit.refresh(),

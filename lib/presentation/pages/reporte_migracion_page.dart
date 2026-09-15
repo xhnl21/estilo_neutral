@@ -1,5 +1,6 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import '../../core/config/environment_config.dart';
 import '../../core/design_system/tokens/colors.dart';
 import '../../core/design_system/tokens/spacing.dart';
 import '../../core/design_system/tokens/typography.dart';
@@ -35,7 +36,10 @@ class _ReporteMigracionPageState extends State<ReporteMigracionPage> {
 
         return AppScaffold(
           title: 'Reporte de Migración',
-          subtitle: 'Hoja reporte_migracion • ${reportes.length} controles estructurales',
+          subtitle: EnvironmentConfig.formatSubtitle(
+            sheetName: 'reporte_migracion',
+            userFriendlyText: '${reportes.length} controles estructurales',
+          ),
           actions: [
             AppRefreshButton(
               onRefresh: () => widget.dataService.fetchAllSheets(),

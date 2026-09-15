@@ -1,5 +1,6 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import '../../../../core/config/environment_config.dart';
 import '../../../../core/design_system/tokens/colors.dart';
 import '../../../../core/design_system/tokens/icons.dart';
 import '../../../../core/design_system/tokens/spacing.dart';
@@ -38,7 +39,10 @@ class _ReportingPageState extends State<ReportingPage> {
 
         return AppScaffold(
           title: 'Resumen Diario',
-          subtitle: 'Hoja resumen_diario • ${resumenes.length} cierres contables',
+          subtitle: EnvironmentConfig.formatSubtitle(
+            sheetName: 'resumen_diario',
+            userFriendlyText: '${resumenes.length} cierres contables',
+          ),
           actions: [
             AppRefreshButton(
               onRefresh: () => widget.dataService.fetchAllSheets(),

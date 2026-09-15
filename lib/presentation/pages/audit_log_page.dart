@@ -1,5 +1,6 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import '../../core/config/environment_config.dart';
 import '../../core/design_system/tokens/colors.dart';
 import '../../core/design_system/tokens/spacing.dart';
 import '../../core/design_system/tokens/typography.dart';
@@ -42,7 +43,10 @@ class _AuditLogPageState extends State<AuditLogPage> {
 
         return AppScaffold(
           title: 'Bitácora de Auditoría',
-          subtitle: 'Hoja audit_log • ${widget.dataService.auditLogs.length} eventos inmutables',
+          subtitle: EnvironmentConfig.formatSubtitle(
+            sheetName: 'audit_log',
+            userFriendlyText: '${widget.dataService.auditLogs.length} eventos inmutables',
+          ),
           actions: [
             AppRefreshButton(
               onRefresh: () => widget.dataService.fetchAllSheets(),

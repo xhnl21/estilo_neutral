@@ -1,5 +1,6 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import '../../core/config/environment_config.dart';
 import '../../core/design_system/tokens/colors.dart';
 import '../../core/design_system/tokens/spacing.dart';
 import '../../core/design_system/tokens/typography.dart';
@@ -37,7 +38,10 @@ class _ChecklistIsoPageState extends State<ChecklistIsoPage> {
 
         return AppScaffold(
           title: 'Checklist Normativo ISO',
-          subtitle: 'Hoja checklist_iso • $porcentaje% de conformidad auditada',
+          subtitle: EnvironmentConfig.formatSubtitle(
+            sheetName: 'checklist_iso',
+            userFriendlyText: '$porcentaje% de conformidad auditada',
+          ),
           actions: [
             AppRefreshButton(
               onRefresh: () => widget.dataService.fetchAllSheets(),

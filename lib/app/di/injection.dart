@@ -38,10 +38,14 @@ class ServiceLocator {
   late final CreateSaleUseCase createSaleUseCase;
   late final RegisterPaymentUseCase registerPaymentUseCase;
   late final RefreshSalesDataUseCase refreshSalesDataUseCase;
-
   late final SalesController salesController;
 
+  bool _initialized = false;
+  bool get isInitialized => _initialized;
+
   void init() {
+    if (_initialized) return;
+    _initialized = true;
     eventBus = EventBus();
     tokenStorage = SecureTokenStorage();
     sheetsAuth = SheetsAuth(tokenStorage: tokenStorage);

@@ -1,5 +1,6 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import '../../core/config/environment_config.dart';
 import '../../core/design_system/tokens/colors.dart';
 import '../../core/design_system/tokens/spacing.dart';
 import '../../core/design_system/tokens/typography.dart';
@@ -46,7 +47,10 @@ class _InventarioPageState extends State<InventarioPage> {
 
         return AppScaffold(
           title: 'Inventario',
-          subtitle: 'Hoja inventario • ${widget.dataService.productos.length} productos registrados',
+          subtitle: EnvironmentConfig.formatSubtitle(
+            sheetName: 'inventario',
+            userFriendlyText: '${widget.dataService.productos.length} productos registrados',
+          ),
           actions: [
             AppRefreshButton(
               onRefresh: () => widget.dataService.fetchAllSheets(),

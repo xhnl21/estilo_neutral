@@ -1,5 +1,6 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import '../../core/config/environment_config.dart';
 import '../../core/design_system/tokens/colors.dart';
 import '../../core/design_system/tokens/icons.dart';
 import '../../core/design_system/tokens/spacing.dart';
@@ -36,7 +37,10 @@ class _CuarentenaPageState extends State<CuarentenaPage> {
 
         return AppScaffold(
           title: 'Cuarentena',
-          subtitle: 'Hoja cuarentena • ${items.length} anomalías forenses',
+          subtitle: EnvironmentConfig.formatSubtitle(
+            sheetName: 'cuarentena',
+            userFriendlyText: '${items.length} anomalías forenses',
+          ),
           actions: [
             AppRefreshButton(
               onRefresh: () => widget.dataService.fetchAllSheets(),

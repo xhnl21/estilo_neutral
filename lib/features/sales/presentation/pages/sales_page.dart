@@ -1,5 +1,6 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import '../../../../core/config/environment_config.dart';
 import '../../../../core/design_system/tokens/colors.dart';
 import '../../../../core/design_system/tokens/icons.dart';
 import '../../../../core/design_system/tokens/spacing.dart';
@@ -53,7 +54,10 @@ class _SalesPageState extends State<SalesPage> {
 
         return AppScaffold(
           title: 'Ventas',
-          subtitle: 'Hoja ventas • ${ds.ventas.length} transacciones registradas',
+          subtitle: EnvironmentConfig.formatSubtitle(
+            sheetName: 'ventas',
+            userFriendlyText: '${ds.ventas.length} transacciones registradas',
+          ),
           actions: [
             AppRefreshButton(
               onRefresh: () => ds.fetchAllSheets(),

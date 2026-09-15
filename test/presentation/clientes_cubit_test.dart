@@ -1,7 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:estilo_neutral/models/cliente.dart';
 import 'package:estilo_neutral/presentation/cubits/clientes/clientes_cubit.dart';
-import 'package:estilo_neutral/presentation/cubits/clientes/clientes_state.dart';
 import 'package:estilo_neutral/shared/google_sheets/sheets_data_service.dart';
 
 void main() {

@@ -1,5 +1,6 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import '../../core/config/environment_config.dart';
 import '../../core/design_system/tokens/colors.dart';
 import '../../core/design_system/tokens/spacing.dart';
 import '../../core/design_system/tokens/typography.dart';
@@ -7,6 +8,7 @@ import '../../features/reporting/presentation/pages/reporting_page.dart';
 import '../../features/sales/presentation/controllers/sales_controller.dart';
 import '../../features/sales/presentation/pages/sales_page.dart';
 import '../../features/treasury/presentation/pages/treasury_page.dart';
+import '../../shared/google_sheets/sheets_config.dart';
 import '../../shared/google_sheets/sheets_data_service.dart';
 import '../pages/audit_log_page.dart';
 import '../pages/checklist_iso_page.dart';
@@ -102,28 +104,31 @@ class _MainShellState extends State<MainShell> {
                   currentInfo.title,
                   style: AppTypography.titleLarge.copyWith(fontSize: 16),
                 ),
-                const SizedBox(width: AppSpacing.xs),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
-                  decoration: BoxDecoration(
-                    color: AppPalette.blue100,
-                    borderRadius: BorderRadius.circular(4),
-                  ),
-                  child: Text(
-                    currentInfo.sheet,
-                    style: AppTypography.labelSmall.copyWith(
-                      color: AppPalette.blue900,
-                      fontSize: 10,
-                      fontFamily: 'monospace',
+                if (EnvironmentConfig.showTechnicalInfo) ...[
+                  const SizedBox(width: AppSpacing.xs),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                    decoration: BoxDecoration(
+                      color: AppPalette.blue100,
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: Text(
+                      currentInfo.sheet,
+                      style: AppTypography.labelSmall.copyWith(
+                        color: AppPalette.blue900,
+                        fontSize: 10,
+                        fontFamily: 'monospace',
+                      ),
                     ),
                   ),
-                ),
+                ],
               ],
             ),
-            Text(
-              'Base de Datos Google Sheets: 1zJWnxXk3QSG...',
-              style: AppTypography.labelSmall.copyWith(fontSize: 10, color: AppPalette.textSecondary),
-            ),
+            if (EnvironmentConfig.showTechnicalInfo)
+              Text(
+                'Base de Datos Google Sheets: ${SheetsConfig.defaultSpreadsheetId.length > 16 ? '${SheetsConfig.defaultSpreadsheetId.substring(0, 16)}...' : SheetsConfig.defaultSpreadsheetId}',
+                style: AppTypography.labelSmall.copyWith(fontSize: 10, color: AppPalette.textSecondary),
+              ),
           ],
         ),
         actions: [
@@ -217,18 +222,22 @@ class _MainShellState extends State<MainShell> {
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    '9 Vistas sincronizadas con Google Sheets',
+                    EnvironmentConfig.showTechnicalInfo
+                        ? '9 Vistas sincronizadas con Google Sheets'
+                        : 'Módulos del Sistema',
                     style: AppTypography.bodyMedium.copyWith(fontSize: 12),
                   ),
-                  const SizedBox(height: 2),
-                  Text(
-                    'ID: 1zJWnxXk3QSG-keyOHMEOrfY72cmtLUdv',
-                    style: AppTypography.labelSmall.copyWith(
-                      fontSize: 10,
-                      fontFamily: 'monospace',
-                      color: AppPalette.textSecondary,
+                  if (EnvironmentConfig.showTechnicalInfo) ...[
+                    const SizedBox(height: 2),
+                    Text(
+                      'ID: ${SheetsConfig.defaultSpreadsheetId}',
+                      style: AppTypography.labelSmall.copyWith(
+                        fontSize: 10,
+                        fontFamily: 'monospace',
+                        color: AppPalette.textSecondary,
+                      ),
                     ),
-                  ),
+                  ],
                 ],
               ),
             ),
@@ -298,10 +307,12 @@ class _MainShellState extends State<MainShell> {
           fontSize: 14,
         ),
       ),
-      subtitle: Text(
-        'Hoja: ${info.sheet}',
-        style: const TextStyle(fontSize: 11, color: AppPalette.textSecondary),
-      ),
+      subtitle: EnvironmentConfig.showTechnicalInfo
+          ? Text(
+              'Hoja: ${info.sheet}',
+              style: const TextStyle(fontSize: 11, color: AppPalette.textSecondary),
+            )
+          : null,
       trailing: isSelected
           ? const Icon(CupertinoIcons.checkmark_alt, size: 16, color: AppPalette.blue900)
           : null,
