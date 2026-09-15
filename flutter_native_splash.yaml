@@ -1,15 +1,15 @@
 flutter_native_splash:
-  color: "#D4C7B4"
-  color_dark: "#D4C7B4"
-  image: "assets/splash_screen.jpeg"
-  image_dark: "assets/splash_screen.jpeg"
+  background_image: "assets/splash_screen.jpeg"
+  background_image_dark: "assets/splash_screen.jpeg"
   fullscreen: true
 
   android_12:
-    image: "assets/splash_screen.jpeg"
-    image_dark: "assets/splash_screen.jpeg"
     color: "#D4C7B4"
     color_dark: "#D4C7B4"
+    image: "assets/Gemini_Generated_Image_siwabesiwabesiwa.png"
+    image_dark: "assets/Gemini_Generated_Image_siwabesiwabesiwa.png"
+    icon_background_color: "#D4C7B4"
+    icon_background_color_dark: "#D4C7B4"
 
   android: true
   ios: true
