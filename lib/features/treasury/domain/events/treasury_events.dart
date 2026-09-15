@@ -6,14 +6,12 @@ class CurrencyPurchaseCreated extends DomainEvent {
   final String platform;
 
   CurrencyPurchaseCreated({
-    required String eventId,
-    required DateTime occurredOn,
+    required super.eventId,
+    required super.occurredOn,
     required String purchaseId,
     required this.capitalUsd,
     required this.platform,
   }) : super(
-          eventId: eventId,
-          occurredOn: occurredOn,
           aggregateId: purchaseId,
           eventName: 'CurrencyPurchaseCreated',
         );
@@ -21,12 +19,10 @@ class CurrencyPurchaseCreated extends DomainEvent {
 
 class CurrencyPurchaseCompleted extends DomainEvent {
   CurrencyPurchaseCompleted({
-    required String eventId,
-    required DateTime occurredOn,
+    required super.eventId,
+    required super.occurredOn,
     required String purchaseId,
   }) : super(
-          eventId: eventId,
-          occurredOn: occurredOn,
           aggregateId: purchaseId,
           eventName: 'CurrencyPurchaseCompleted',
         );

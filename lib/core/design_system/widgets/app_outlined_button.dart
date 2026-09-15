@@ -9,6 +9,7 @@ class AppOutlinedButton extends StatelessWidget {
   final VoidCallback? onPressed;
   final IconData? icon;
   final bool isFullWidth;
+  final EdgeInsetsGeometry? padding;
 
   const AppOutlinedButton({
     super.key,
@@ -16,6 +17,7 @@ class AppOutlinedButton extends StatelessWidget {
     required this.onPressed,
     this.icon,
     this.isFullWidth = false,
+    this.padding,
   });
 
   @override
@@ -28,12 +30,16 @@ class AppOutlinedButton extends StatelessWidget {
           Icon(icon, size: 18, color: AppPalette.blue700),
           const SizedBox(width: AppSpacing.sm),
         ],
-        Text(
-          label,
-          style: AppTypography.labelSmall.copyWith(
-            color: AppPalette.blue700,
-            fontWeight: FontWeight.w600,
-            fontSize: 14,
+        Flexible(
+          child: Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: AppTypography.labelSmall.copyWith(
+              color: AppPalette.blue700,
+              fontWeight: FontWeight.w600,
+              fontSize: 14,
+            ),
           ),
         ),
       ],
@@ -45,7 +51,7 @@ class AppOutlinedButton extends StatelessWidget {
         foregroundColor: AppPalette.blue700,
         side: const BorderSide(color: AppPalette.blue700, width: 1),
         minimumSize: const Size(0, 48),
-        padding: AppSpacing.pxLg,
+        padding: padding ?? AppSpacing.pxLg,
         shape: const RoundedRectangleBorder(
           borderRadius: AppSpacing.roundedPill,
         ),

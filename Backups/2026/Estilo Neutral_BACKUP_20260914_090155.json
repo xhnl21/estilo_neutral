@@ -1,0 +1,106 @@
+{
+  "metadata": {
+    "archivo_original": "Estilo Neutral.xlsx",
+    "sha256_original": "8c669061392782d04aaa4ef43ecbd227d8f8fb7d0c8af7572f3d0c33c224743d",
+    "tamano_bytes": 11492,
+    "fecha_respaldo_iso": "2026-09-14T09:01:55.343995-04:00",
+    "total_hojas": 5,
+    "hojas": [
+      "registro de ventas diarias",
+      "registro de compras de dolares",
+      "inventario",
+      "compras",
+      "ventas"
+    ]
+  },
+  "hojas_datos": {
+    "registro de ventas diarias": [
+      [
+        "ID",
+        "NRO DE VENTAS DIARIAS",
+        "FECHA",
+        "TASA DEL DIA BCV DÓLAR",
+        "TASA EN DOLARES BINANCE",
+        "PAGO DEL CLIENTE EN BS",
+        "VALOR EN DOLARES",
+        "VALOR COMPRADO EN DOLARES"
+      ],
+      [
+        "3c82e14c",
+        "20",
+        "03/04/2026",
+        "474",
+        "800",
+        "0",
+        "30",
+        "0"
+      ]
+    ],
+    "registro de compras de dolares": [
+      [
+        "ID",
+        "FECHA",
+        "CLIENTE",
+        "PRODUCTO",
+        "CANTIDAD",
+        "TASA DEL DIA",
+        "TASA EN DOLARES",
+        "MONTO EN BS",
+        "VALOR EN DOLARES",
+        null
+      ],
+      [
+        "c5fcc173",
+        "03/04/2026",
+        "neida",
+        "pantalon",
+        "1",
+        "474",
+        "30",
+        "0",
+        "20",
+        null
+      ]
+    ],
+    "inventario": [
+      [
+        "id",
+        "cantidad",
+        "nombre",
+        "marca",
+        "modelo",
+        "talla",
+        "precio usd"
+      ]
+    ],
+    "compras": [
+      [
+        "id",
+        "capital",
+        "comision binance",
+        "fecha de compra",
+        "fecha de entrega",
+        "numero de orden",
+        "plataforma",
+        "nombre del vendedor",
+        null
+      ]
+    ],
+    "ventas": [
+      [
+        "id",
+        "cantidad",
+        "item",
+        "BCV",
+        "USD",
+        "tipo de pago",
+        "comision pago movil",
+        "fecha",
+        "cliente",
+        "abono",
+        "deuda",
+        "total a pagar"
+      ]
+    ]
+  }
+}

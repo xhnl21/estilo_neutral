@@ -1,4 +1,5 @@
 import 'enums.dart';
+import 'number_parser.dart';
 
 /// Modelo de entidad Venta mapeado desde la hoja transaccional "ventas"
 /// Norma: ISO 8000 §5.3 / 3FN
@@ -76,16 +77,16 @@ class Venta {
       fecha: row.length > 1 ? DateTime.tryParse(row[1].toString()) ?? DateTime.now() : DateTime.now(),
       clienteId: row.length > 2 ? row[2].toString() : '',
       itemId: row.length > 3 ? row[3].toString() : '',
-      cantidad: row.length > 4 ? int.tryParse(row[4].toString()) ?? 1 : 1,
-      tasaBcv: row.length > 5 ? double.tryParse(row[5].toString()) ?? 0.0 : 0.0,
-      tasaUsd: row.length > 6 ? double.tryParse(row[6].toString()) ?? 0.0 : 0.0,
+      cantidad: row.length > 4 ? parseSheetInt(row[4], 1) : 1,
+      tasaBcv: row.length > 5 ? parseSheetDouble(row[5]) : 0.0,
+      tasaUsd: row.length > 6 ? parseSheetDouble(row[6]) : 0.0,
       tipoPago: row.length > 7 ? TipoPago.fromString(row[7].toString()) : TipoPago.otro,
-      comisionPagoMovilBs: row.length > 8 ? double.tryParse(row[8].toString()) ?? 0.0 : 0.0,
-      montoBs: row.length > 9 ? double.tryParse(row[9].toString()) ?? 0.0 : 0.0,
-      montoUsd: row.length > 10 ? double.tryParse(row[10].toString()) ?? 0.0 : 0.0,
-      abonoUsd: row.length > 11 ? double.tryParse(row[11].toString()) ?? 0.0 : 0.0,
-      deudaUsd: row.length > 12 ? double.tryParse(row[12].toString()) ?? 0.0 : 0.0,
-      totalPagarUsd: row.length > 13 ? double.tryParse(row[13].toString()) ?? 0.0 : 0.0,
+      comisionPagoMovilBs: row.length > 8 ? parseSheetDouble(row[8]) : 0.0,
+      montoBs: row.length > 9 ? parseSheetDouble(row[9]) : 0.0,
+      montoUsd: row.length > 10 ? parseSheetDouble(row[10]) : 0.0,
+      abonoUsd: row.length > 11 ? parseSheetDouble(row[11]) : 0.0,
+      deudaUsd: row.length > 12 ? parseSheetDouble(row[12]) : 0.0,
+      totalPagarUsd: row.length > 13 ? parseSheetDouble(row[13]) : 0.0,
       validacion: row.length > 14 ? row[14].toString() : 'OK',
       estado: row.length > 15 ? EstadoVenta.fromString(row[15].toString()) : EstadoVenta.pendiente,
     );

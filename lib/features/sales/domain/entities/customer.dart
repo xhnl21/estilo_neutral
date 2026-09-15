@@ -8,7 +8,7 @@ import '../events/sales_events.dart';
 /// Aggregate Root: Customer (Cliente)
 /// Invariantes: saldoDeudaUsd >= 0, telefono E.164, email válido
 class Customer extends AggregateRoot<CustomerId> {
-  String _name;
+  final String _name;
   String _phone;
   String _email;
   MoneyUsd _debtBalance;
@@ -18,7 +18,7 @@ class Customer extends AggregateRoot<CustomerId> {
   static final RegExp _emailRegex = RegExp(r'^[^@]+@[^@]+\.[^@]+$');
 
   Customer({
-    required CustomerId id,
+    required super.id,
     required String name,
     required String phone,
     required String email,
@@ -28,8 +28,7 @@ class Customer extends AggregateRoot<CustomerId> {
         _phone = phone,
         _email = email,
         _debtBalance = debtBalance,
-        _registeredAt = registeredAt,
-        super(id: id) {
+        _registeredAt = registeredAt {
     _validate();
   }
 

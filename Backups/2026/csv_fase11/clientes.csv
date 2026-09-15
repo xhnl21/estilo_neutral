@@ -1,0 +1,2 @@
+﻿id,nombre,telefono,email,saldo_deuda_usd,fecha_registro
+c00000001,Neida,+584120000001,neida.cliente@ejemplo.com,"=IFERROR(SUMIF(ventas!C:C, A2, ventas!M:M), 0)",2026-04-03

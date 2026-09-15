@@ -16,11 +16,12 @@ class AppEmptyState extends StatelessWidget {
   const AppEmptyState({
     super.key,
     required this.title,
-    this.subtitle,
+    String? subtitle,
+    String? description,
     this.icon = AppIcons.summary,
     this.actionLabel,
     this.onAction,
-  });
+  }) : subtitle = description ?? subtitle;
 
   @override
   Widget build(BuildContext context) {

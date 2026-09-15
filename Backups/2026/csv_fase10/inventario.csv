@@ -1,0 +1,2 @@
+﻿id,cantidad,nombre,marca,modelo,talla,precio_usd,foto_url,foto
+p00000001,10,Pantalon,Generica,Casual,M,20,https://lh3.googleusercontent.com/d/1_DRIVE_FILE_ID_PANTALON_CASUAL,"=IF(H2="""","""",IMAGE(H2))"

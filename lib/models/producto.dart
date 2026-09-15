@@ -1,3 +1,5 @@
+import 'number_parser.dart';
+
 /// Modelo de entidad Producto mapeado desde la hoja "inventario"
 /// Norma: ISO 8000 §4.2 / RFC 3986
 class Producto {
@@ -42,12 +44,12 @@ class Producto {
   factory Producto.fromRow(List<dynamic> row) {
     return Producto(
       id: row.isNotEmpty ? row[0].toString() : '',
-      cantidad: row.length > 1 ? int.tryParse(row[1].toString()) ?? 0 : 0,
+      cantidad: row.length > 1 ? parseSheetInt(row[1]) : 0,
       nombre: row.length > 2 ? row[2].toString() : '',
       marca: row.length > 3 ? row[3].toString() : '',
       modelo: row.length > 4 ? row[4].toString() : '',
       talla: row.length > 5 ? row[5].toString() : '',
-      precioUsd: row.length > 6 ? double.tryParse(row[6].toString()) ?? 0.0 : 0.0,
+      precioUsd: row.length > 6 ? parseSheetDouble(row[6]) : 0.0,
       fotoUrl: row.length > 7 && row[7].toString().isNotEmpty ? row[7].toString() : null,
     );
   }

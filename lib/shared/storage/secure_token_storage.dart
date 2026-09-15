@@ -19,4 +19,14 @@ class SecureTokenStorage {
   Future<void> clearToken() async {
     await _storage.delete(key: _tokenKey);
   }
+
+  static const _appsScriptUrlKey = 'apps_script_url_key';
+
+  Future<void> saveAppsScriptUrl(String url) async {
+    await _storage.write(key: _appsScriptUrlKey, value: url);
+  }
+
+  Future<String?> getAppsScriptUrl() async {
+    return await _storage.read(key: _appsScriptUrlKey);
+  }
 }

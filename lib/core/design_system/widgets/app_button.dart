@@ -10,6 +10,7 @@ class AppButton extends StatelessWidget {
   final IconData? icon;
   final bool isLoading;
   final bool isFullWidth;
+  final EdgeInsetsGeometry? padding;
 
   const AppButton({
     super.key,
@@ -18,6 +19,7 @@ class AppButton extends StatelessWidget {
     this.icon,
     this.isLoading = false,
     this.isFullWidth = false,
+    this.padding,
   });
 
   @override
@@ -39,12 +41,16 @@ class AppButton extends StatelessWidget {
                 Icon(icon, size: 18, color: AppPalette.surface),
                 const SizedBox(width: AppSpacing.sm),
               ],
-              Text(
-                label,
-                style: AppTypography.labelSmall.copyWith(
-                  color: AppPalette.surface,
-                  fontWeight: FontWeight.w600,
-                  fontSize: 14,
+              Flexible(
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: AppTypography.labelSmall.copyWith(
+                    color: AppPalette.surface,
+                    fontWeight: FontWeight.w600,
+                    fontSize: 14,
+                  ),
                 ),
               ),
             ],
@@ -57,7 +63,7 @@ class AppButton extends StatelessWidget {
         foregroundColor: AppPalette.surface,
         disabledBackgroundColor: AppPalette.blue700.withValues(alpha: 0.5),
         minimumSize: const Size(0, 48),
-        padding: AppSpacing.pxLg,
+        padding: padding ?? AppSpacing.pxLg,
         elevation: 0,
         shape: const RoundedRectangleBorder(
           borderRadius: AppSpacing.roundedPill,

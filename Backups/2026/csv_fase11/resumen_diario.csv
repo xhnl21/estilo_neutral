@@ -1,0 +1,2 @@
+﻿fecha,nro_ventas,total_bs,total_usd,tasa_bcv,tasa_usd,usd_comprados,usd_vendidos
+2026-04-03,"=COUNTIF(ventas!B:B, A2)","=SUMIF(ventas!B:B, A2, ventas!J:J)","=SUMIF(ventas!B:B, A2, ventas!K:K)","=IFERROR(AVERAGEIF(ventas!B:B, A2, ventas!F:F), ""SIN DATOS"")","=IFERROR(AVERAGEIF(ventas!B:B, A2, ventas!G:G), ""SIN DATOS"")","=SUMIF(compras_divisas!B:B, A2, compras_divisas!D:D)","=SUMIF(ventas!B:B, A2, ventas!L:L)"

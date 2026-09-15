@@ -1,185 +1,357 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import '../../../../core/design_system/tokens/colors.dart';
 import '../../../../core/design_system/tokens/icons.dart';
 import '../../../../core/design_system/tokens/spacing.dart';
 import '../../../../core/design_system/tokens/typography.dart';
+import '../../../../core/design_system/widgets/app_button.dart';
 import '../../../../core/design_system/widgets/app_card.dart';
+import '../../../../core/design_system/widgets/app_empty_state.dart';
 import '../../../../core/design_system/widgets/app_money_text.dart';
+import '../../../../core/design_system/widgets/app_outlined_button.dart';
 import '../../../../core/design_system/widgets/app_refresh_button.dart';
 import '../../../../core/design_system/widgets/app_scaffold.dart';
+import '../../../../core/design_system/widgets/app_text_field.dart';
+import '../../../../models/resumen_diario.dart';
+import '../../../../shared/google_sheets/sheets_data_service.dart';
 
-/// Vista de Reportes y Resumen Diario (Read-Only).
-/// Gráficos minimalistas construidos con CustomPaint nativo (cero dependencias pesadas).
+/// Vista de Reportes y Resumen Diario (hoja: resumen_diario)
+/// CRUD completo con KPIs, cierres contables y Cero Polling.
 class ReportingPage extends StatefulWidget {
-  const ReportingPage({super.key});
+  final SheetsDataService dataService;
+
+  const ReportingPage({super.key, required this.dataService});
 
   @override
   State<ReportingPage> createState() => _ReportingPageState();
 }
 
 class _ReportingPageState extends State<ReportingPage> {
-  bool _isLoading = false;
-
-  void _refreshData() {
-    setState(() => _isLoading = true);
-    Future.delayed(const Duration(milliseconds: 500), () {
-      if (mounted) setState(() => _isLoading = false);
-    });
-  }
-
   @override
   Widget build(BuildContext context) {
-    return AppScaffold(
-      title: 'Reportes',
-      actions: [
-        AppRefreshButton(
-          isRefreshing: _isLoading,
-          onRefresh: _refreshData,
-        ),
-      ],
-      body: RefreshIndicator(
-        color: AppPalette.blue700,
-        backgroundColor: AppPalette.surface,
-        onRefresh: () async => _refreshData(),
-        child: ListView(
-          padding: const EdgeInsets.all(AppSpacing.lg),
-          children: [
-            // Card Destacada: Resumen del Día
-            AppCard(
-              padding: AppSpacing.pLg,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(
-                        'RESUMEN DIARIO CONSOLIDADO',
-                        style: AppTypography.labelSmall.copyWith(letterSpacing: 0.5),
-                      ),
-                      const Icon(AppIcons.summary, size: 18, color: AppPalette.blue700),
-                    ],
-                  ),
-                  const SizedBox(height: AppSpacing.md),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      _buildMetricCol('Ventas Totales', 20.00, MoneyNature.neutral),
-                      _buildMetricCol('Abonos Recibidos', 20.00, MoneyNature.credit),
-                      _buildMetricCol('Deuda Vigente', 0.00, MoneyNature.neutral),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: AppSpacing.lg),
+    return ListenableBuilder(
+      listenable: widget.dataService,
+      builder: (context, _) {
+        final resumenes = widget.dataService.resumenesDiarios;
+        final totalVentasUsd = resumenes.fold<double>(0.0, (s, r) => s + r.totalUsd);
+        final totalBs = resumenes.fold<double>(0.0, (s, r) => s + r.totalBs);
 
-            // Gráfico Sintético de Rendimiento (CustomPaint minimalista)
-            Text(
-              'Tendencia Semanal de Facturación',
-              style: AppTypography.titleLarge.copyWith(
-                fontSize: 16,
-                color: AppPalette.blue900,
-              ),
-            ),
-            const SizedBox(height: AppSpacing.sm),
-            AppCard(
-              padding: AppSpacing.pLg,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Distribución de Ingresos (USD)',
-                    style: AppTypography.labelSmall,
-                  ),
-                  const SizedBox(height: AppSpacing.md),
-                  SizedBox(
-                    height: 120,
-                    width: double.infinity,
-                    child: CustomPaint(
-                      painter: _MinimalBarChartPainter(),
-                    ),
-                  ),
-                  const SizedBox(height: AppSpacing.sm),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceAround,
-                    children: ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom']
-                        .map(
-                          (day) => Text(
-                            day,
-                            style: AppTypography.labelSmall.copyWith(fontSize: 11),
-                          ),
-                        )
-                        .toList(),
-                  ),
-                ],
-              ),
+        return AppScaffold(
+          title: 'Resumen Diario',
+          subtitle: 'Hoja resumen_diario • ${resumenes.length} cierres contables',
+          actions: [
+            AppRefreshButton(
+              onRefresh: () => widget.dataService.fetchAllSheets(),
+              isLoading: widget.dataService.isLoading,
             ),
           ],
-        ),
-      ),
+          floatingActionButton: FloatingActionButton.extended(
+            backgroundColor: AppPalette.primary,
+            foregroundColor: Colors.white,
+            icon: const Icon(CupertinoIcons.calendar_badge_plus, size: 20),
+            label: const Text('Nuevo Cierre', style: TextStyle(fontWeight: FontWeight.w600)),
+            onPressed: () => _showCierreDialog(context),
+          ),
+          body: ListView(
+            padding: const EdgeInsets.fromLTRB(AppSpacing.lg, AppSpacing.sm, AppSpacing.lg, 80),
+            children: [
+              // Card Destacada: Resumen General Consolidado
+              AppCard(
+                padding: AppSpacing.pLg,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text('CONSOLIDADO GENERAL DE CIERRES', style: AppTypography.labelSmall.copyWith(letterSpacing: 0.5)),
+                        const Icon(AppIcons.summary, size: 18, color: AppPalette.blue700),
+                      ],
+                    ),
+                    const SizedBox(height: AppSpacing.md),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        _buildMetricCol('Ventas Acumuladas', totalVentasUsd, MoneyCurrency.usd),
+                        _buildMetricCol('Monto en Bolívares', totalBs, MoneyCurrency.bs),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: AppSpacing.md),
+
+              Text('Histórico de Cierres Diarios', style: AppTypography.titleLarge.copyWith(fontSize: 16)),
+              const SizedBox(height: AppSpacing.sm),
+
+              if (resumenes.isEmpty)
+                const AppEmptyState(
+                  title: 'No hay cierres diarios registrados',
+                  description: 'Registra el primer cierre con "Nuevo Cierre".',
+                  icon: CupertinoIcons.doc_chart,
+                )
+              else
+                ...resumenes.map((r) {
+                  final fechaStr = r.fecha.toIso8601String().split('T').first;
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+                    child: AppCard(
+                      padding: AppSpacing.pMd,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Wrap(
+                            alignment: WrapAlignment.spaceBetween,
+                            crossAxisAlignment: WrapCrossAlignment.center,
+                            spacing: AppSpacing.sm,
+                            runSpacing: 4,
+                            children: [
+                              Text(
+                                'Fecha: $fechaStr',
+                                style: AppTypography.titleLarge.copyWith(fontSize: 15),
+                              ),
+                              AppMoneyText(
+                                amount: r.totalUsd,
+                                currency: MoneyCurrency.usd,
+                                fontSize: 16,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            'Nro. Ventas: ${r.nroVentas} • Total Bs: ${r.totalBs.toStringAsFixed(2)} Bs.',
+                            style: AppTypography.bodyMedium.copyWith(fontSize: 13),
+                          ),
+                          Text(
+                            'Tasa BCV: ${r.tasaBcv} • Paralelo: ${r.tasaUsd} • Comprados: USD ${r.usdComprados} • Vendidos: USD ${r.usdVendidos}',
+                            style: AppTypography.labelSmall.copyWith(color: AppPalette.textSecondary),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          const SizedBox(height: 6),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.end,
+                            children: [
+                              IconButton(
+                                visualDensity: VisualDensity.compact,
+                                padding: EdgeInsets.zero,
+                                constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                                icon: const Icon(CupertinoIcons.pencil, size: 18, color: AppPalette.blue700),
+                                tooltip: 'Editar Cierre',
+                                onPressed: () => _showCierreDialog(context, resumen: r),
+                              ),
+                              const SizedBox(width: 4),
+                              IconButton(
+                                visualDensity: VisualDensity.compact,
+                                padding: EdgeInsets.zero,
+                                constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                                icon: const Icon(CupertinoIcons.trash, size: 18, color: AppPalette.error),
+                                tooltip: 'Eliminar Cierre',
+                                onPressed: () => _confirmDelete(context, r),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                }),
+            ],
+          ),
+        );
+      },
     );
   }
 
-  Widget _buildMetricCol(String label, double val, MoneyNature nature) {
+  Widget _buildMetricCol(String label, double amount, MoneyCurrency currency) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(label, style: AppTypography.labelSmall),
         const SizedBox(height: 2),
         AppMoneyText(
-          amount: val,
-          currency: MoneyCurrency.usd,
-          nature: nature,
+          amount: amount,
+          currency: currency,
           fontSize: 16,
+          fontWeight: FontWeight.w700,
         ),
       ],
     );
   }
-}
 
-/// Gráfico de barras minimalista con paleta oficial de Estilo Neutral
-class _MinimalBarChartPainter extends CustomPainter {
-  @override
-  void paint(Canvas canvas, Size size) {
-    final barPaint = Paint()
-      ..color = AppPalette.blue700
-      ..style = PaintingStyle.fill;
+  void _showCierreDialog(BuildContext context, {ResumenDiario? resumen}) {
+    final isEditing = resumen != null;
+    final fechaStr = resumen != null ? resumen.fecha.toIso8601String().split('T').first : DateTime.now().toIso8601String().split('T').first;
+    final fechaController = TextEditingController(text: fechaStr);
+    final nroVentasController = TextEditingController(text: resumen?.nroVentas.toString() ?? '1');
+    final totalUsdController = TextEditingController(text: resumen?.totalUsd.toStringAsFixed(2) ?? '20.00');
+    final totalBsController = TextEditingController(text: resumen?.totalBs.toStringAsFixed(2) ?? '9480.00');
+    final tasaBcvController = TextEditingController(text: resumen?.tasaBcv.toStringAsFixed(2) ?? '474.00');
+    final tasaUsdController = TextEditingController(text: resumen?.tasaUsd.toStringAsFixed(2) ?? '480.00');
+    final compradosController = TextEditingController(text: resumen?.usdComprados.toStringAsFixed(2) ?? '0.00');
+    final vendidosController = TextEditingController(text: resumen?.usdVendidos.toStringAsFixed(2) ?? '20.00');
 
-    final inactivePaint = Paint()
-      ..color = AppPalette.blue100
-      ..style = PaintingStyle.fill;
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
+      builder: (ctx) => Padding(
+        padding: EdgeInsets.only(
+          bottom: MediaQuery.of(ctx).viewInsets.bottom + AppSpacing.lg,
+          left: AppSpacing.lg,
+          right: AppSpacing.lg,
+          top: AppSpacing.lg,
+        ),
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    isEditing ? 'Editar Cierre Diario ($fechaStr)' : 'Nuevo Cierre Diario',
+                    style: AppTypography.titleLarge.copyWith(fontSize: 17),
+                  ),
+                  IconButton(
+                    icon: const Icon(CupertinoIcons.xmark_circle_fill, color: AppPalette.textSecondary),
+                    onPressed: () => Navigator.pop(ctx),
+                  ),
+                ],
+              ),
+              const SizedBox(height: AppSpacing.md),
+              AppTextField(
+                label: 'Fecha (YYYY-MM-DD)',
+                controller: fechaController,
+              ),
+              const SizedBox(height: AppSpacing.sm),
+              Row(
+                children: [
+                  Expanded(
+                    child: AppTextField(
+                      label: 'Nro. Ventas',
+                      controller: nroVentasController,
+                      keyboardType: TextInputType.number,
+                    ),
+                  ),
+                  const SizedBox(width: AppSpacing.md),
+                  Expanded(
+                    child: AppTextField(
+                      label: 'Total USD',
+                      controller: totalUsdController,
+                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: AppSpacing.sm),
+              AppTextField(
+                label: 'Total en Bolívares (Bs.)',
+                controller: totalBsController,
+                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              ),
+              const SizedBox(height: AppSpacing.sm),
+              Row(
+                children: [
+                  Expanded(
+                    child: AppTextField(
+                      label: 'Tasa BCV',
+                      controller: tasaBcvController,
+                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                    ),
+                  ),
+                  const SizedBox(width: AppSpacing.md),
+                  Expanded(
+                    child: AppTextField(
+                      label: 'Tasa USD',
+                      controller: tasaUsdController,
+                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: AppSpacing.sm),
+              Row(
+                children: [
+                  Expanded(
+                    child: AppTextField(
+                      label: 'USD Comprados',
+                      controller: compradosController,
+                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                    ),
+                  ),
+                  const SizedBox(width: AppSpacing.md),
+                  Expanded(
+                    child: AppTextField(
+                      label: 'USD Vendidos',
+                      controller: vendidosController,
+                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: AppSpacing.lg),
+              Row(
+                children: [
+                  Expanded(
+                    child: AppOutlinedButton(label: 'Cancelar', onPressed: () => Navigator.pop(ctx)),
+                  ),
+                  const SizedBox(width: AppSpacing.md),
+                  Expanded(
+                    child: AppButton(
+                      label: isEditing ? 'Guardar Cambios' : 'Registrar Cierre',
+                      icon: CupertinoIcons.check_mark,
+                      onPressed: () {
+                        final fecha = DateTime.tryParse(fechaController.text.trim()) ?? DateTime.now();
+                        final r = ResumenDiario(
+                          fecha: fecha,
+                          nroVentas: int.tryParse(nroVentasController.text) ?? 0,
+                          totalBs: double.tryParse(totalBsController.text.replaceAll(',', '.')) ?? 0.0,
+                          totalUsd: double.tryParse(totalUsdController.text.replaceAll(',', '.')) ?? 0.0,
+                          tasaBcv: double.tryParse(tasaBcvController.text.replaceAll(',', '.')) ?? 474.0,
+                          tasaUsd: double.tryParse(tasaUsdController.text.replaceAll(',', '.')) ?? 480.0,
+                          usdComprados: double.tryParse(compradosController.text.replaceAll(',', '.')) ?? 0.0,
+                          usdVendidos: double.tryParse(vendidosController.text.replaceAll(',', '.')) ?? 0.0,
+                        );
 
-    final linePaint = Paint()
-      ..color = AppPalette.divider
-      ..strokeWidth = 1;
-
-    // Líneas guía base
-    canvas.drawLine(
-      Offset(0, size.height),
-      Offset(size.width, size.height),
-      linePaint,
+                        if (isEditing) {
+                          widget.dataService.updateResumenDiario(r);
+                        } else {
+                          widget.dataService.addResumenDiario(r);
+                        }
+                        Navigator.pop(ctx);
+                      },
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
     );
-
-    const values = [0.4, 0.65, 0.3, 0.85, 0.5, 0.95, 0.2];
-    final slotWidth = size.width / values.length;
-    const barWidth = 16.0;
-
-    for (int i = 0; i < values.length; i++) {
-      final x = (i * slotWidth) + (slotWidth - barWidth) / 2;
-      final barHeight = size.height * values[i];
-      final y = size.height - barHeight;
-
-      final rect = RRect.fromRectAndRadius(
-        Rect.fromLTWH(x, y, barWidth, barHeight),
-        const Radius.circular(4),
-      );
-
-      // Resaltar barra de mayor rendimiento con blue700, resto con blue100
-      canvas.drawRRect(rect, values[i] > 0.8 ? barPaint : inactivePaint);
-    }
   }
 
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+  void _confirmDelete(BuildContext context, ResumenDiario r) {
+    final fechaStr = r.fecha.toIso8601String().split('T').first;
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('¿Eliminar cierre diario?'),
+        content: Text('Se eliminará el balance del día $fechaStr por USD ${r.totalUsd}.'),
+        actions: [
+          TextButton(child: const Text('Cancelar'), onPressed: () => Navigator.pop(ctx)),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: AppPalette.error),
+            child: const Text('Eliminar'),
+            onPressed: () {
+              widget.dataService.deleteResumenDiario(r.fecha);
+              Navigator.pop(ctx);
+            },
+          ),
+        ],
+      ),
+    );
+  }
 }

@@ -18,6 +18,7 @@ class EstiloNeutralApp extends StatelessWidget {
       themeMode: ThemeMode.light,
       home: MainShell(
         salesController: ServiceLocator().salesController,
+        dataService: ServiceLocator().sheetsDataService,
       ),
     );
   }

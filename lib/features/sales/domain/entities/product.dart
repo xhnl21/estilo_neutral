@@ -9,15 +9,15 @@ import '../events/sales_events.dart';
 /// Invariantes: stock >= 0, precioUsd > 0
 class Product extends AggregateRoot<ProductId> {
   StockQuantity _stock;
-  String _name;
-  String _brand;
-  String _model;
-  String _size;
+  final String _name;
+  final String _brand;
+  final String _model;
+  final String _size;
   MoneyUsd _priceUsd;
-  String? _photoUrl;
+  final String? _photoUrl;
 
   Product({
-    required ProductId id,
+    required super.id,
     required StockQuantity stock,
     required String name,
     required String brand,
@@ -31,8 +31,7 @@ class Product extends AggregateRoot<ProductId> {
         _model = model,
         _size = size,
         _priceUsd = priceUsd,
-        _photoUrl = photoUrl,
-        super(id: id) {
+        _photoUrl = photoUrl {
     if (_name.trim().isEmpty) {
       throw const ValidationFailure('El nombre del producto no puede estar vacío.');
     }

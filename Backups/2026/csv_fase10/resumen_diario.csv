@@ -1,0 +1,2 @@
+﻿fecha,nro_ventas,total_bs,total_usd,tasa_bcv,tasa_usd,usd_comprados,usd_vendidos
+2026-04-03,"=COUNTIF(ventas!B:B, A2)","=SUMIF(ventas!B:B, A2, ventas!J:J)","=SUMIF(ventas!B:B, A2, ventas!K:K)","=IFERROR(VLOOKUP(A2, ventas!B:F, 5, FALSE), 474.00)",800,"=SUMIF(compras_divisas!B:B, A2, compras_divisas!D:D)","=SUMIF(ventas!B:B, A2, ventas!K:K)"

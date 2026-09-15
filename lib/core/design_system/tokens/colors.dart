@@ -13,6 +13,7 @@ abstract final class AppPalette {
   /// Azul medio (#4D82BC) — Botones primarios, FAB, íconos activos.
   /// Contraste sobre surface: ~3.2:1 (AA Large / Elementos gráficos).
   static const Color blue700 = Color(0xFF4D82BC);
+  static const Color primary = blue700;
 
   /// Azul claro (#84B6F4) — Hover/pressed, chips secundarios, acentos.
   /// Contraste sobre surface: ~2.1:1 (Solo decorativo/fondos).

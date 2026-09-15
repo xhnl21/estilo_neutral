@@ -46,13 +46,13 @@ abstract final class AppTheme {
       ),
 
       // Card minimalista: fondo blanco azulado, borde sutil
-      cardTheme: CardThemeData(
+      cardTheme: const CardThemeData(
         color: AppPalette.surface,
         elevation: 0,
         margin: EdgeInsets.zero,
         shape: RoundedRectangleBorder(
           borderRadius: AppSpacing.roundedMd,
-          side: const BorderSide(color: AppPalette.border, width: 1),
+          side: BorderSide(color: AppPalette.border, width: 1),
         ),
       ),
 

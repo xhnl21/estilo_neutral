@@ -15,9 +15,10 @@ class AppRefreshButton extends StatelessWidget {
   const AppRefreshButton({
     super.key,
     required this.onRefresh,
-    this.isRefreshing = false,
+    bool isRefreshing = false,
+    bool? isLoading,
     this.label = 'Actualizar',
-  });
+  }) : isRefreshing = isLoading ?? isRefreshing;
 
   @override
   Widget build(BuildContext context) {
@@ -52,11 +53,15 @@ class AppRefreshButton extends StatelessWidget {
                 color: AppPalette.blue700,
               ),
             const SizedBox(width: AppSpacing.xs),
-            Text(
-              label,
-              style: AppTypography.labelSmall.copyWith(
-                color: AppPalette.blue700,
-                fontWeight: FontWeight.w600,
+            Flexible(
+              child: Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: AppTypography.labelSmall.copyWith(
+                  color: AppPalette.blue700,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
             ),
           ],

@@ -29,7 +29,7 @@ class Sale extends AggregateRoot<SaleId> {
   SaleStatus _status;
 
   Sale({
-    required SaleId id,
+    required super.id,
     required IsoDate date,
     required CustomerId customerId,
     required List<SaleItem> items,
@@ -47,8 +47,7 @@ class Sale extends AggregateRoot<SaleId> {
         _paymentMethod = paymentMethod,
         _mobilePaymentFeeBs = mobilePaymentFeeBs,
         _paidAmount = paidAmount,
-        _status = status,
-        super(id: id) {
+        _status = status {
     _validateInvariants();
   }
 

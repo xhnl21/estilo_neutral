@@ -1,3 +1,5 @@
+import 'number_parser.dart';
+
 /// Modelo de entidad Cliente mapeado desde la hoja "clientes"
 /// Norma: ISO 8000 §4.2 / GDPR Art. 5
 class Cliente {
@@ -34,7 +36,7 @@ class Cliente {
       nombre: row.length > 1 ? row[1].toString() : '',
       telefono: row.length > 2 ? row[2].toString() : '',
       email: row.length > 3 ? row[3].toString() : '',
-      saldoDeudaUsd: row.length > 4 ? double.tryParse(row[4].toString()) ?? 0.0 : 0.0,
+      saldoDeudaUsd: row.length > 4 ? parseSheetDouble(row[4]) : 0.0,
       fechaRegistro: row.length > 5 ? DateTime.tryParse(row[5].toString()) ?? DateTime.now() : DateTime.now(),
     );
   }

@@ -20,7 +20,7 @@ class CurrencyPurchase extends AggregateRoot<PurchaseId> {
   final ExchangeRate _usdRate;
 
   CurrencyPurchase({
-    required PurchaseId id,
+    required super.id,
     required IsoDate purchaseDate,
     required IsoDate deliveryDate,
     required MoneyUsd capitalUsd,
@@ -38,8 +38,7 @@ class CurrencyPurchase extends AggregateRoot<PurchaseId> {
         _platform = platform,
         _seller = seller,
         _bcvRate = bcvRate,
-        _usdRate = usdRate,
-        super(id: id) {
+        _usdRate = usdRate {
     if (_deliveryDate.isBefore(_purchaseDate)) {
       throw const ValidationFailure('La fecha de entrega no puede ser anterior a la fecha de compra.');
     }

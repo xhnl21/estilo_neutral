@@ -1,31 +1,33 @@
+import 'number_parser.dart';
+
 /// Modelo de entidad CompraDivisa mapeado desde la hoja "compras_divisas"
-/// Norma: ISO 8000 §4.2 / COBIT 2019
+/// Norma: ISO 8000 §4.1 / Trazabilidad cambiaria
 class CompraDivisa {
-  /// Columna A: ID único (formato d00000001)
+  /// Columna A: ID de la operación (formato cd00000001)
   final String id;
 
-  /// Columna B: Fecha en que se emite la compra
+  /// Columna B: Fecha de la compra ISO 8601 (YYYY-MM-DD)
   final DateTime fechaCompra;
 
-  /// Columna C: Fecha en que se recibe la divisa
+  /// Columna C: Fecha de recepción/entrega de fondos ISO 8601 (YYYY-MM-DD)
   final DateTime fechaEntrega;
 
-  /// Columna D: Capital en USD adquirido
+  /// Columna D: Monto de capital en USD adquirido
   final double capitalUsd;
 
-  /// Columna E: Comisión cobrada en Binance u otra plataforma
+  /// Columna E: Comisión cobrada por Binance/P2P en USD
   final double comisionBinanceUsd;
 
-  /// Columna F: Número identificador de orden
+  /// Columna F: Número de orden externo en la plataforma
   final String numeroOrden;
 
-  /// Columna G: Plataforma (Binance, Banco, etc.)
+  /// Columna G: Plataforma utilizada (Binance, Zinli, etc.)
   final String plataforma;
 
-  /// Columna H: Vendedor o contraparte P2P
+  /// Columna H: Contraparte / Vendedor P2P
   final String vendedor;
 
-  /// Columna I: Tasa oficial BCV de referencia
+  /// Columna I: Tasa oficial BCV del día
   final double tasaBcv;
 
   /// Columna J: Tasa efectiva en USD
@@ -53,13 +55,13 @@ class CompraDivisa {
       id: row.isNotEmpty ? row[0].toString() : '',
       fechaCompra: row.length > 1 ? DateTime.tryParse(row[1].toString()) ?? DateTime.now() : DateTime.now(),
       fechaEntrega: row.length > 2 ? DateTime.tryParse(row[2].toString()) ?? DateTime.now() : DateTime.now(),
-      capitalUsd: row.length > 3 ? double.tryParse(row[3].toString()) ?? 0.0 : 0.0,
-      comisionBinanceUsd: row.length > 4 ? double.tryParse(row[4].toString()) ?? 0.0 : 0.0,
+      capitalUsd: row.length > 3 ? parseSheetDouble(row[3]) : 0.0,
+      comisionBinanceUsd: row.length > 4 ? parseSheetDouble(row[4]) : 0.0,
       numeroOrden: row.length > 5 ? row[5].toString() : '',
       plataforma: row.length > 6 ? row[6].toString() : '',
       vendedor: row.length > 7 ? row[7].toString() : '',
-      tasaBcv: row.length > 8 ? double.tryParse(row[8].toString()) ?? 0.0 : 0.0,
-      tasaUsd: row.length > 9 ? double.tryParse(row[9].toString()) ?? 0.0 : 0.0,
+      tasaBcv: row.length > 8 ? parseSheetDouble(row[8]) : 0.0,
+      tasaUsd: row.length > 9 ? parseSheetDouble(row[9]) : 0.0,
       validacion: row.length > 10 ? row[10].toString() : 'OK',
     );
   }

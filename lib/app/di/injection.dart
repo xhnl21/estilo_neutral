@@ -17,6 +17,7 @@ import '../../shared/storage/secure_token_storage.dart';
 import '../../shared/google_sheets/sheets_auth.dart';
 import '../../shared/google_sheets/sheets_client.dart';
 import '../../shared/google_sheets/sheets_config.dart';
+import '../../shared/google_sheets/sheets_data_service.dart';
 
 class ServiceLocator {
   static final ServiceLocator _instance = ServiceLocator._internal();
@@ -27,6 +28,7 @@ class ServiceLocator {
   late final SecureTokenStorage tokenStorage;
   late final SheetsAuth sheetsAuth;
   late final SheetsClient sheetsClient;
+  late final SheetsDataService sheetsDataService;
 
   late final SalesSheetsDataSource salesDataSource;
   late final CustomerRepository customerRepository;
@@ -47,6 +49,9 @@ class ServiceLocator {
       tokenStorage: tokenStorage,
       spreadsheetId: SheetsConfig.defaultSpreadsheetId,
     );
+    sheetsDataService = SheetsDataService(
+      spreadsheetId: SheetsConfig.defaultSpreadsheetId,
+    )..initialize();
 
     // Inicializar DataSource con datos reales normalizados de la hoja
     salesDataSource = InMemorySalesSheetsDataSource(

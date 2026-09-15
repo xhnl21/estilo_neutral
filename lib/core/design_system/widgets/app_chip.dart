@@ -51,11 +51,15 @@ class AppChip extends StatelessWidget {
             Icon(icon, size: 14, color: text),
             const SizedBox(width: AppSpacing.xs),
           ],
-          Text(
-            label,
-            style: AppTypography.labelSmall.copyWith(
-              color: text,
-              fontWeight: FontWeight.w600,
+          Flexible(
+            child: Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: AppTypography.labelSmall.copyWith(
+                color: text,
+                fontWeight: FontWeight.w600,
+              ),
             ),
           ),
         ],

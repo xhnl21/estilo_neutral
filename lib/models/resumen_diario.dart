@@ -1,28 +1,30 @@
+import 'number_parser.dart';
+
 /// Modelo de entidad ResumenDiario mapeado desde la hoja "resumen_diario"
-/// Entidad de SOLO LECTURA (Protegida bajo ISO/IEC 27001 §9.2)
+/// Norma: ISO 8000 §5.3 / Automatización de métricas
 class ResumenDiario {
-  /// Columna A: Fecha consolidada
+  /// Columna A: Fecha del resumen ISO 8601 (YYYY-MM-DD)
   final DateTime fecha;
 
-  /// Columna B: Número total de ventas del día (=COUNTIF)
+  /// Columna B: Cantidad de ventas realizadas en el día
   final int nroVentas;
 
-  /// Columna C: Monto total facturado en Bs (=SUMIF)
+  /// Columna C: Monto total recaudado en Bolívares
   final double totalBs;
 
-  /// Columna D: Monto total facturado en USD (=SUMIF)
+  /// Columna D: Monto total consolidado en USD
   final double totalUsd;
 
-  /// Columna E: Tasa promedio BCV del día (=AVERAGEIF)
+  /// Columna E: Tasa oficial BCV ponderada del día
   final double tasaBcv;
 
-  /// Columna F: Tasa promedio paralela/Binance del día (=AVERAGEIF)
+  /// Columna F: Tasa paralela/Binance promedio del día
   final double tasaUsd;
 
-  /// Columna G: Total USD adquiridos mediante compras_divisas (=SUMIF)
+  /// Columna G: Total de USD comprados en operaciones P2P
   final double usdComprados;
 
-  /// Columna H: Total USD cobrados/abonados de ventas (=SUMIF ventas!L:L)
+  /// Columna H: Total de USD vendidos a clientes
   final double usdVendidos;
 
   const ResumenDiario({
@@ -39,13 +41,13 @@ class ResumenDiario {
   factory ResumenDiario.fromRow(List<dynamic> row) {
     return ResumenDiario(
       fecha: row.isNotEmpty ? DateTime.tryParse(row[0].toString()) ?? DateTime.now() : DateTime.now(),
-      nroVentas: row.length > 1 ? int.tryParse(row[1].toString()) ?? 0 : 0,
-      totalBs: row.length > 2 ? double.tryParse(row[2].toString()) ?? 0.0 : 0.0,
-      totalUsd: row.length > 3 ? double.tryParse(row[3].toString()) ?? 0.0 : 0.0,
-      tasaBcv: row.length > 4 ? double.tryParse(row[4].toString()) ?? 0.0 : 0.0,
-      tasaUsd: row.length > 5 ? double.tryParse(row[5].toString()) ?? 0.0 : 0.0,
-      usdComprados: row.length > 6 ? double.tryParse(row[6].toString()) ?? 0.0 : 0.0,
-      usdVendidos: row.length > 7 ? double.tryParse(row[7].toString()) ?? 0.0 : 0.0,
+      nroVentas: row.length > 1 ? parseSheetInt(row[1]) : 0,
+      totalBs: row.length > 2 ? parseSheetDouble(row[2]) : 0.0,
+      totalUsd: row.length > 3 ? parseSheetDouble(row[3]) : 0.0,
+      tasaBcv: row.length > 4 ? parseSheetDouble(row[4]) : 0.0,
+      tasaUsd: row.length > 5 ? parseSheetDouble(row[5]) : 0.0,
+      usdComprados: row.length > 6 ? parseSheetDouble(row[6]) : 0.0,
+      usdVendidos: row.length > 7 ? parseSheetDouble(row[7]) : 0.0,
     );
   }
 

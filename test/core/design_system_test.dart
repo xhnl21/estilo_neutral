@@ -129,12 +129,41 @@ void main() {
       expect(find.text('Contenido Card'), findsOneWidget);
     });
 
+    testWidgets('AppButton and AppOutlinedButton fit without overflow in narrow constraints', (tester) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: AppTheme.light,
+          home: Scaffold(
+            body: Center(
+              child: SizedBox(
+                width: 142.4, // Exact constraint from Redmi Note 8 crash log
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: AppButton(
+                        label: 'Guardar Cambios',
+                        icon: CupertinoIcons.check_mark,
+                        onPressed: () {},
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+
+      expect(tester.takeException(), isNull);
+      expect(find.text('Guardar Cambios'), findsOneWidget);
+    });
+
     test('Palette colors match exact hexadecimal specifications', () {
-      expect(AppPalette.blue900.value, equals(0xFF005187));
-      expect(AppPalette.blue700.value, equals(0xFF4D82BC));
-      expect(AppPalette.blue400.value, equals(0xFF84B6F4));
-      expect(AppPalette.blue100.value, equals(0xFFC4DAFA));
-      expect(AppPalette.surface.value, equals(0xFFFCFFFF));
+      expect(AppPalette.blue900.toARGB32(), equals(0xFF005187));
+      expect(AppPalette.blue700.toARGB32(), equals(0xFF4D82BC));
+      expect(AppPalette.blue400.toARGB32(), equals(0xFF84B6F4));
+      expect(AppPalette.blue100.toARGB32(), equals(0xFFC4DAFA));
+      expect(AppPalette.surface.toARGB32(), equals(0xFFFCFFFF));
     });
   });
 }

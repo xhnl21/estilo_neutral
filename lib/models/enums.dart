@@ -1,5 +1,6 @@
 /// Enums de negocio para el sistema Estilo Neutral
 /// Cumplimiento: ISO 8000 §4.2
+library;
 
 /// Tipos de pago permitidos en la hoja "ventas" (Columna H)
 enum TipoPago {
