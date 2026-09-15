@@ -12,9 +12,18 @@
  */
 
 const DRIVE_FOLDER_ID = "1hgdY89REZHD0xWfojjIgnbfhmJ0JluYD";
+const DEFAULT_SPREADSHEET_ID = "1zJWnxXk3QSG-keyOHMEOrfY72cmtLUdv";
+
+function getSpreadsheet() {
+  try {
+    const active = SpreadsheetApp.getActiveSpreadsheet();
+    if (active) return active;
+  } catch (e) {}
+  return SpreadsheetApp.openById(DEFAULT_SPREADSHEET_ID);
+}
 
 function doGet(e) {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ss = getSpreadsheet();
   return ContentService.createTextOutput(JSON.stringify({
     status: "ok",
     message: "Estilo Neutral Apps Script Web App está activo",
@@ -45,7 +54,7 @@ function doPost(e) {
     const data = payload.data || {};
     const id = payload.id || (data ? data.id : null);
 
-    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const ss = getSpreadsheet();
 
     // =========================================================================
     // ACCIÓN ESPECIAL: SUBIR IMAGEN A GOOGLE DRIVE

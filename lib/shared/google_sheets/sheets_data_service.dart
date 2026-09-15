@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
+import '../../core/utils/logger.dart';
 import '../../models/models.dart';
 import '../storage/secure_token_storage.dart';
 import 'sheets_config.dart';
@@ -110,7 +111,17 @@ class SheetsDataService extends ChangeNotifier {
         _lastSync = DateTime.now();
         _errorMessage = null;
       } else {
-        _errorMessage = 'Sin conexión con Google Sheets: operando con caché local.';
+        final isPrivateDoc = errors.any((e) => e.contains('401') || e.contains('Privado'));
+        if (isPrivateDoc) {
+          _errorMessage = 'Documento privado: En Google Sheets haz clic en "Compartir" y selecciona "Cualquier persona con el enlace".';
+          Logger.error(
+            'SheetsDataService: Acceso no autorizado (HTTP 401). El documento de Google Sheets está en modo "Restringido". '
+            'Para permitir lectura pública por GViz, en tu hoja de Google Sheets ve a Compartir > Acceso general > '
+            'cambia de "Restringido" a "Cualquier persona que tenga el vínculo" (Lector).',
+          );
+        } else {
+          _errorMessage = 'Sin conexión con Google Sheets: operando con caché local.';
+        }
       }
     } catch (e) {
       _errorMessage = 'Sin conexión con Google Sheets: operando con caché local.';
@@ -131,6 +142,9 @@ class SheetsDataService extends ChangeNotifier {
     }).timeout(const Duration(seconds: 15));
 
     if (response.statusCode == 200 && response.body.isNotEmpty) {
+      if (response.body.contains('<html') || response.body.contains('ServiceLogin')) {
+        throw Exception('HTTP 401: Documento Privado');
+      }
       final rows = parseCsv(response.body);
       if (rows.length > 1) {
         parser(rows.sublist(1));
@@ -234,17 +248,60 @@ class SheetsDataService extends ChangeNotifier {
   Future<bool> _postToAppsScript(Map<String, dynamic> payload) async {
     final url = appsScriptUrl;
     if (url == null || url.trim().isEmpty) {
+      Logger.warning(
+        'SheetsDataService: APPS_SCRIPT_URL no está configurada en variables de entorno (.env). El cambio se guardó localmente.',
+      );
       return false;
     }
+
+    if (url.contains('docs.google.com/spreadsheets')) {
+      Logger.error(
+        'SheetsDataService Error de Configuración: APPS_SCRIPT_URL tiene una URL de visualización de Google Sheets ($url). '
+        'Google Sheets rechaza peticiones POST directas con error HTTP 405 (Method Not Allowed). '
+        'Para guardar en el documento de Google Sheets, se requiere desplegar google_apps_script.js como Web App '
+        'y colocar la URL de ejecución (ej. https://script.google.com/macros/s/.../exec) en tu archivo .env.',
+      );
+      return false;
+    }
+
     try {
-      final response = await _httpClient.post(
+      final sheet = payload['sheet'] ?? 'desconocida';
+      final action = payload['action'] ?? 'desconocida';
+      Logger.api('POST $url [Hoja: $sheet, Acción: $action]', isRequest: true);
+      Logger.object('Payload Apps Script', payload);
+
+      var response = await _httpClient.post(
         Uri.parse(url),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode(payload),
       ).timeout(const Duration(seconds: 15));
-      return response.statusCode == 200;
-    } catch (e) {
-      debugPrint('AppsScript sync error: $e');
+
+      // Google Apps Script responde con 302 Found redirigiendo a googleusercontent.com
+      if ((response.statusCode == 302 || response.statusCode == 303 || response.statusCode == 307) &&
+          response.headers.containsKey('location')) {
+        final redirectUrl = response.headers['location']!;
+        Logger.api('Siguiendo redirección de Apps Script: $redirectUrl', isRequest: true);
+        try {
+          response = await _httpClient.get(Uri.parse(redirectUrl)).timeout(const Duration(seconds: 15));
+        } catch (_) {
+          // Si el redirect falla por red o timeout pero ya se recibió 302 de Apps Script, la acción ya fue procesada
+        }
+      }
+
+      Logger.api('${response.statusCode} - Respuesta Apps Script: ${response.body}', isRequest: false);
+
+      final isOk = response.statusCode == 200 || response.statusCode == 302;
+      if (isOk) {
+        Logger.success('SheetsDataService: Sincronización exitosa en Google Sheets (Hoja: $sheet, Acción: $action).');
+        return true;
+      } else {
+        Logger.error(
+          'SheetsDataService: Falló sincronización con Google Sheets. Código HTTP: ${response.statusCode}. Respuesta: ${response.body}',
+        );
+        return false;
+      }
+    } catch (e, stackTrace) {
+      Logger.error('SheetsDataService: Excepción al conectar con Apps Script', e, stackTrace);
       return false;
     }
   }
@@ -261,7 +318,7 @@ class SheetsDataService extends ChangeNotifier {
     }
     try {
       final base64Data = base64Encode(bytes);
-      final response = await _httpClient.post(
+      var response = await _httpClient.post(
         Uri.parse(url),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({
@@ -271,6 +328,14 @@ class SheetsDataService extends ChangeNotifier {
           'base64Data': base64Data,
         }),
       ).timeout(const Duration(seconds: 30));
+
+      if ((response.statusCode == 302 || response.statusCode == 303 || response.statusCode == 307) &&
+          response.headers.containsKey('location')) {
+        final redirectUrl = response.headers['location']!;
+        try {
+          response = await _httpClient.get(Uri.parse(redirectUrl)).timeout(const Duration(seconds: 30));
+        } catch (_) {}
+      }
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
@@ -298,6 +363,7 @@ class SheetsDataService extends ChangeNotifier {
   }
 
   Future<bool> addCliente(Cliente cliente) async {
+    Logger.info('SheetsDataService: Registrando nuevo cliente localmente: ${cliente.id} (${cliente.nombre})');
     _clientes.add(cliente);
     _logAudit(
       hoja: 'clientes',
@@ -309,14 +375,22 @@ class SheetsDataService extends ChangeNotifier {
       observaciones: 'Alta de cliente con teléfono ${cliente.telefono}',
     );
     notifyListeners();
-    return await _postToAppsScript({
+    Logger.info('SheetsDataService: Despachando inserción a Google Sheets para cliente ${cliente.id}...');
+    final synced = await _postToAppsScript({
       'action': 'create',
       'sheet': 'clientes',
       'data': cliente.toMap(),
     });
+    if (synced) {
+      Logger.success('SheetsDataService: Cliente ${cliente.id} sincronizado exitosamente en Google Sheets.');
+    } else {
+      Logger.warning('SheetsDataService: Cliente ${cliente.id} guardado localmente pero no sincronizado con Google Sheets.');
+    }
+    return synced;
   }
 
   void updateCliente(Cliente cliente) {
+    Logger.info('SheetsDataService: Actualizando cliente localmente: ${cliente.id} (${cliente.nombre})');
     final index = _clientes.indexWhere((c) => c.id == cliente.id);
     if (index != -1) {
       final old = _clientes[index];
@@ -341,6 +415,7 @@ class SheetsDataService extends ChangeNotifier {
   }
 
   void deleteCliente(String id) {
+    Logger.warning('SheetsDataService: Solicitada baja de cliente con ID: $id');
     final index = _clientes.indexWhere((c) => c.id == id);
     if (index != -1) {
       final old = _clientes.removeAt(index);

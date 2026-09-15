@@ -104,45 +104,6 @@
         "--dart-define-from-file",
         ".env"
       ]
-    },
-    {
-      "name": "Web - DEV (Chrome)",
-      "request": "launch",
-      "type": "dart",
-      "program": "lib/main.dart",
-      "flutterMode": "debug",
-      "args": [
-        "-d",
-        "chrome",
-        "--dart-define-from-file",
-        ".env.dev"
-      ]
-    },
-    {
-      "name": "Web - TEST/QA (Chrome)",
-      "request": "launch",
-      "type": "dart",
-      "program": "lib/main.dart",
-      "flutterMode": "debug",
-      "args": [
-        "-d",
-        "chrome",
-        "--dart-define-from-file",
-        ".env.test"
-      ]
-    },
-    {
-      "name": "Web - PROD (Chrome)",
-      "request": "launch",
-      "type": "dart",
-      "program": "lib/main.dart",
-      "flutterMode": "release",
-      "args": [
-        "-d",
-        "chrome",
-        "--dart-define-from-file",
-        ".env"
-      ]
-    }
+    }    
   ]
 }
