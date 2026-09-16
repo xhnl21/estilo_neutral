@@ -1,23 +1,9 @@
-import '../../core/events/event_bus.dart';
-import '../../features/sales/domain/repositories/customer_repository.dart';
-import '../../features/sales/domain/repositories/product_repository.dart';
-import '../../features/sales/domain/repositories/sale_repository.dart';
-import '../../features/sales/infrastructure/datasources/sales_sheets_datasource.dart';
-import '../../features/sales/infrastructure/repositories/customer_repository_impl.dart';
-import '../../features/sales/infrastructure/repositories/product_repository_impl.dart';
-import '../../features/sales/infrastructure/repositories/sale_repository_impl.dart';
-import '../../features/sales/infrastructure/models/customer_model.dart';
-import '../../features/sales/infrastructure/models/product_model.dart';
-import '../../features/sales/infrastructure/models/sale_model.dart';
-import '../../features/sales/application/usecases/create_sale.dart';
-import '../../features/sales/application/usecases/register_payment.dart';
-import '../../features/sales/application/usecases/refresh_sales_data.dart';
-import '../../features/sales/presentation/controllers/sales_controller.dart';
-import '../../shared/storage/secure_token_storage.dart';
-import '../../shared/google_sheets/sheets_auth.dart';
-import '../../shared/google_sheets/sheets_client.dart';
-import '../../shared/google_sheets/sheets_config.dart';
-import '../../shared/google_sheets/sheets_data_service.dart';
+import '../../core/core.dart';
+import '../../core/router/router.dart';
+import '../../features/auth/auth.dart';
+import '../../features/sales/infrastructure/infrastructure.dart';
+import '../../features/sales/sales.dart';
+import '../../shared/shared.dart';
 
 class ServiceLocator {
   static final ServiceLocator _instance = ServiceLocator._internal();
@@ -39,6 +25,9 @@ class ServiceLocator {
   late final RegisterPaymentUseCase registerPaymentUseCase;
   late final RefreshSalesDataUseCase refreshSalesDataUseCase;
   late final SalesController salesController;
+
+  late final AuthNotifier authNotifier;
+  late final AppRouter appRouter;
 
   bool _initialized = false;
   bool get isInitialized => _initialized;
@@ -133,5 +122,13 @@ class ServiceLocator {
       refreshSalesDataUseCase: refreshSalesDataUseCase,
       saleRepository: saleRepository,
     );
+
+    authNotifier = AuthNotifier();
+    appRouter = AppRouter(
+      authNotifier: authNotifier,
+      salesController: salesController,
+      dataService: sheetsDataService,
+    );
   }
 }
+

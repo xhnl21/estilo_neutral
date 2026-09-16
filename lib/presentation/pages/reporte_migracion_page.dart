@@ -1,19 +1,9 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import '../../core/config/environment_config.dart';
-import '../../core/design_system/tokens/colors.dart';
-import '../../core/design_system/tokens/spacing.dart';
-import '../../core/design_system/tokens/typography.dart';
-import '../../core/design_system/widgets/app_button.dart';
-import '../../core/design_system/widgets/app_card.dart';
-import '../../core/design_system/widgets/app_chip.dart';
-import '../../core/design_system/widgets/app_empty_state.dart';
-import '../../core/design_system/widgets/app_outlined_button.dart';
-import '../../core/design_system/widgets/app_refresh_button.dart';
-import '../../core/design_system/widgets/app_scaffold.dart';
-import '../../core/design_system/widgets/app_text_field.dart';
-import '../../models/reporte_migracion.dart';
-import '../../shared/google_sheets/sheets_data_service.dart';
+import '../../core/design_system/design_system.dart';
+import '../../models/models.dart';
+import '../../shared/shared.dart';
 
 /// Vista de Reporte de Migración y Calidad de Datos (hoja: reporte_migracion)
 /// Cumplimiento ISO 25010, ISO 8000 y CRUD de controles.
@@ -53,14 +43,20 @@ class _ReporteMigracionPageState extends State<ReporteMigracionPage> {
             label: const Text('Nuevo Control', style: TextStyle(fontWeight: FontWeight.w600)),
             onPressed: () => _showReporteDialog(context),
           ),
-          body: reportes.isEmpty
-              ? const AppEmptyState(
-                  title: 'No hay controles de migración registrados',
-                  description: 'Añade el primer control con "Nuevo Control".',
-                  icon: CupertinoIcons.doc_text,
-                )
-              : ListView.builder(
-                  padding: const EdgeInsets.fromLTRB(AppSpacing.lg, AppSpacing.sm, AppSpacing.lg, 80),
+          body: AnimatedSwitcher(
+            duration: const Duration(milliseconds: 300),
+            child: widget.dataService.isLoading && reportes.isEmpty
+                ? const ReporteMigracionSkeleton(key: ValueKey('reporte_migracion_skeleton'))
+                : reportes.isEmpty
+                    ? const AppEmptyState(
+                        key: ValueKey('reporte_migracion_empty'),
+                        title: 'No hay controles de migración registrados',
+                        description: 'Añade el primer control con "Nuevo Control".',
+                        icon: CupertinoIcons.doc_text,
+                      )
+                    : ListView.builder(
+                        key: const ValueKey('reporte_migracion_list'),
+                        padding: const EdgeInsets.fromLTRB(AppSpacing.lg, AppSpacing.sm, AppSpacing.lg, 80),
                   itemCount: reportes.length,
                   itemBuilder: (context, index) {
                     final rep = reportes[index];
@@ -119,7 +115,8 @@ class _ReporteMigracionPageState extends State<ReporteMigracionPage> {
                     );
                   },
                 ),
-        );
+        ),
+      );
       },
     );
   }

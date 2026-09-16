@@ -2,21 +2,10 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../core/config/environment_config.dart';
-import '../../core/design_system/tokens/colors.dart';
-import '../../core/design_system/tokens/icons.dart';
-import '../../core/design_system/tokens/spacing.dart';
-import '../../core/design_system/tokens/typography.dart';
-import '../../core/design_system/widgets/app_button.dart';
-import '../../core/design_system/widgets/app_card.dart';
-import '../../core/design_system/widgets/app_empty_state.dart';
-import '../../core/design_system/widgets/app_money_text.dart';
-import '../../core/design_system/widgets/app_outlined_button.dart';
-import '../../core/design_system/widgets/app_refresh_button.dart';
-import '../../core/design_system/widgets/app_scaffold.dart';
-import '../../core/design_system/widgets/app_text_field.dart';
+import '../../core/design_system/design_system.dart';
 import '../../core/utils/logger.dart';
-import '../../models/cliente.dart';
-import '../../shared/google_sheets/sheets_data_service.dart';
+import '../../models/models.dart';
+import '../../shared/shared.dart';
 import '../cubits/clientes/clientes_cubit.dart';
 import '../cubits/clientes/clientes_state.dart';
 
@@ -129,22 +118,30 @@ class _ClientesView extends StatelessWidget {
                   ),
                 ),
 
-              // Lista reactiva de clientes
+              // Lista reactiva de clientes con Skeleton progresivo
               Expanded(
-                child: clientes.isEmpty
-                    ? const AppEmptyState(
-                        title: 'No hay clientes registrados',
-                        description:
-                            'Usa el botón "Nuevo Cliente" para registrar uno.',
-                        icon: CupertinoIcons.person_2,
-                      )
-                    : ListView.builder(
-                        padding: const EdgeInsets.fromLTRB(
-                          AppSpacing.lg,
-                          0,
-                          AppSpacing.lg,
-                          80,
-                        ),
+                child: AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 300),
+                  child: state.isInitialLoading
+                      ? const ClientesListSkeleton(
+                          key: ValueKey('clientes_skeleton'),
+                        )
+                      : clientes.isEmpty
+                          ? const AppEmptyState(
+                              key: ValueKey('clientes_empty'),
+                              title: 'No hay clientes registrados',
+                              description:
+                                  'Usa el botón "Nuevo Cliente" para registrar uno.',
+                              icon: CupertinoIcons.person_2,
+                            )
+                          : ListView.builder(
+                              key: const ValueKey('clientes_list'),
+                              padding: const EdgeInsets.fromLTRB(
+                                AppSpacing.lg,
+                                0,
+                                AppSpacing.lg,
+                                80,
+                              ),
                         itemCount: clientes.length,
                         itemBuilder: (context, index) {
                           final cliente = clientes[index];
@@ -292,6 +289,7 @@ class _ClientesView extends StatelessWidget {
                           );
                         },
                       ),
+                ),
               ),
             ],
           ),

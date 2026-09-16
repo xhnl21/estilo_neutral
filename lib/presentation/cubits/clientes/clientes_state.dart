@@ -39,6 +39,10 @@ class ClientesState extends Equatable {
     );
   }
 
+  bool get isInitialLoading =>
+      (status == ClientesStatus.loading || status == ClientesStatus.initial) &&
+      clientes.isEmpty;
+
   @override
   List<Object?> get props => [
         status,

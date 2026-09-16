@@ -1,32 +1,27 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import '../../core/config/environment_config.dart';
-import '../../core/design_system/tokens/colors.dart';
-import '../../core/design_system/tokens/spacing.dart';
-import '../../core/design_system/tokens/typography.dart';
-import '../../features/reporting/presentation/pages/reporting_page.dart';
-import '../../features/sales/presentation/controllers/sales_controller.dart';
-import '../../features/sales/presentation/pages/sales_page.dart';
-import '../../features/treasury/presentation/pages/treasury_page.dart';
-import '../../shared/google_sheets/sheets_config.dart';
-import '../../shared/google_sheets/sheets_data_service.dart';
-import '../pages/audit_log_page.dart';
-import '../pages/checklist_iso_page.dart';
-import '../pages/clientes_page.dart';
-import '../pages/cuarentena_page.dart';
-import '../pages/inventario_page.dart';
-import '../pages/reporte_migracion_page.dart';
+import '../../core/design_system/design_system.dart';
+import '../../features/reporting/reporting.dart';
+import '../../features/sales/sales.dart';
+import '../../features/treasury/treasury.dart';
+import '../../shared/shared.dart';
+import '../pages/pages.dart';
+
+import 'package:go_router/go_router.dart';
 
 /// Shell principal con navegación para las 9 vistas correspondientes a cada hoja
 /// de la base de datos Google Sheets "Estilo Neutral".
 class MainShell extends StatefulWidget {
   final SalesController salesController;
   final SheetsDataService dataService;
+  final StatefulNavigationShell? navigationShell;
 
   const MainShell({
     super.key,
     required this.salesController,
     required this.dataService,
+    this.navigationShell,
   });
 
   @override
@@ -34,8 +29,10 @@ class MainShell extends StatefulWidget {
 }
 
 class _MainShellState extends State<MainShell> {
-  int _currentIndex = 2; // Inicia en Ventas por defecto
+  int _localIndex = 2; // Inicia en Ventas por defecto si no hay navigationShell
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
+
+  int get _currentIndex => widget.navigationShell?.currentIndex ?? _localIndex;
 
   late final List<Widget> _pages;
 
@@ -68,7 +65,14 @@ class _MainShellState extends State<MainShell> {
   }
 
   void _navigateToIndex(int index) {
-    setState(() => _currentIndex = index);
+    if (widget.navigationShell != null) {
+      widget.navigationShell!.goBranch(
+        index,
+        initialLocation: index == widget.navigationShell!.currentIndex,
+      );
+    } else {
+      setState(() => _localIndex = index);
+    }
     if (_scaffoldKey.currentState?.isDrawerOpen ?? false) {
       Navigator.of(context).pop();
     }
@@ -140,10 +144,12 @@ class _MainShellState extends State<MainShell> {
           const SizedBox(width: 8),
         ],
       ),
-      body: IndexedStack(
-        index: _currentIndex,
-        children: _pages,
-      ),
+      body: widget.navigationShell ??
+          IndexedStack(
+            index: _currentIndex,
+            children: _pages,
+          ),
+
       bottomNavigationBar: Container(
         decoration: const BoxDecoration(
           border: Border(

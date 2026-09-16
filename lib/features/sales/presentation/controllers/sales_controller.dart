@@ -1,10 +1,7 @@
 import 'package:flutter/foundation.dart';
-import '../../application/dtos/sale_dto.dart';
-import '../../application/usecases/create_sale.dart';
-import '../../application/usecases/register_payment.dart';
-import '../../application/usecases/refresh_sales_data.dart';
-import '../../../../core/usecase/use_case.dart';
-import '../../domain/repositories/sale_repository.dart';
+import '../../../../core/core.dart';
+import '../../application/application.dart';
+import '../../domain/domain.dart';
 
 /// Estados sellados de la interfaz de ventas (Sealed Classes)
 sealed class SalesState {

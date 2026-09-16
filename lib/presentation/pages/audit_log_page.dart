@@ -1,19 +1,9 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import '../../core/config/environment_config.dart';
-import '../../core/design_system/tokens/colors.dart';
-import '../../core/design_system/tokens/spacing.dart';
-import '../../core/design_system/tokens/typography.dart';
-import '../../core/design_system/widgets/app_button.dart';
-import '../../core/design_system/widgets/app_card.dart';
-import '../../core/design_system/widgets/app_chip.dart';
-import '../../core/design_system/widgets/app_empty_state.dart';
-import '../../core/design_system/widgets/app_outlined_button.dart';
-import '../../core/design_system/widgets/app_refresh_button.dart';
-import '../../core/design_system/widgets/app_scaffold.dart';
-import '../../core/design_system/widgets/app_text_field.dart';
-import '../../models/audit_log.dart';
-import '../../shared/google_sheets/sheets_data_service.dart';
+import '../../core/design_system/design_system.dart';
+import '../../models/models.dart';
+import '../../shared/shared.dart';
 
 /// Vista de Registro de Auditoría Forense (hoja: audit_log)
 /// Cumplimiento estricto ISO/IEC 27001 §8.13, COBIT 2019 e inmutabilidad.
@@ -60,9 +50,14 @@ class _AuditLogPageState extends State<AuditLogPage> {
             label: const Text('Nuevo Checkpoint', style: TextStyle(fontWeight: FontWeight.w600)),
             onPressed: () => _showAuditDialog(context),
           ),
-          body: Column(
-            children: [
-              // Selector de hoja
+          body: AnimatedSwitcher(
+            duration: const Duration(milliseconds: 300),
+            child: widget.dataService.isLoading && logs.isEmpty
+                ? const AuditLogSkeleton(key: ValueKey('audit_log_skeleton'))
+                : Column(
+                    key: const ValueKey('audit_log_content'),
+                    children: [
+                      // Selector de hoja
               SizedBox(
                 height: 48,
                 child: ListView(
@@ -188,7 +183,8 @@ class _AuditLogPageState extends State<AuditLogPage> {
               ),
             ],
           ),
-        );
+        ),
+      );
       },
     );
   }

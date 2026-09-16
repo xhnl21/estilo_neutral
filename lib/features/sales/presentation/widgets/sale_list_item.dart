@@ -1,12 +1,6 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
-import '../../../../core/design_system/tokens/colors.dart';
-import '../../../../core/design_system/tokens/icons.dart';
-import '../../../../core/design_system/tokens/spacing.dart';
-import '../../../../core/design_system/tokens/typography.dart';
-import '../../../../core/design_system/widgets/app_card.dart';
-import '../../../../core/design_system/widgets/app_chip.dart';
-import '../../../../core/design_system/widgets/app_money_text.dart';
+import '../../../../core/design_system/design_system.dart';
 import '../../application/dtos/sale_dto.dart';
 
 /// Ítem de lista de venta minimalista con AppCard, AppMoneyText y AppChip.
