@@ -1,19 +1,9 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import '../../core/config/environment_config.dart';
-import '../../core/design_system/tokens/colors.dart';
-import '../../core/design_system/tokens/spacing.dart';
-import '../../core/design_system/tokens/typography.dart';
-import '../../core/design_system/widgets/app_button.dart';
-import '../../core/design_system/widgets/app_card.dart';
-import '../../core/design_system/widgets/app_chip.dart';
-import '../../core/design_system/widgets/app_empty_state.dart';
-import '../../core/design_system/widgets/app_outlined_button.dart';
-import '../../core/design_system/widgets/app_refresh_button.dart';
-import '../../core/design_system/widgets/app_scaffold.dart';
-import '../../core/design_system/widgets/app_text_field.dart';
-import '../../models/checklist_iso.dart';
-import '../../shared/google_sheets/sheets_data_service.dart';
+import '../../core/design_system/design_system.dart';
+import '../../models/models.dart';
+import '../../shared/shared.dart';
 
 /// Vista de Matriz de Cumplimiento Normativo (hoja: checklist_iso)
 /// Controles ISO 27001, ISO 8000, ISO 25010, WCAG 2.2 AA y CRUD interactivo.
@@ -55,8 +45,13 @@ class _ChecklistIsoPageState extends State<ChecklistIsoPage> {
             label: const Text('Nuevo Requisito', style: TextStyle(fontWeight: FontWeight.w600)),
             onPressed: () => _showChecklistDialog(context),
           ),
-          body: ListView(
-            padding: const EdgeInsets.fromLTRB(AppSpacing.lg, AppSpacing.sm, AppSpacing.lg, 80),
+          body: AnimatedSwitcher(
+            duration: const Duration(milliseconds: 300),
+            child: widget.dataService.isLoading && items.isEmpty
+                ? const ChecklistIsoSkeleton(key: ValueKey('checklist_iso_skeleton'))
+                : ListView(
+                    key: const ValueKey('checklist_iso_content'),
+                    padding: const EdgeInsets.fromLTRB(AppSpacing.lg, AppSpacing.sm, AppSpacing.lg, 80),
             children: [
               // Card de avance de conformidad
               AppCard(
@@ -170,7 +165,8 @@ class _ChecklistIsoPageState extends State<ChecklistIsoPage> {
                 }),
             ],
           ),
-        );
+        ),
+      );
       },
     );
   }

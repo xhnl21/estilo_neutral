@@ -1,13 +1,6 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
-import '../../../../core/design_system/tokens/colors.dart';
-import '../../../../core/design_system/tokens/icons.dart';
-import '../../../../core/design_system/tokens/spacing.dart';
-import '../../../../core/design_system/tokens/typography.dart';
-import '../../../../core/design_system/widgets/app_card.dart';
-import '../../../../core/design_system/widgets/app_chip.dart';
-import '../../../../core/design_system/widgets/app_refresh_button.dart';
-import '../../../../core/design_system/widgets/app_scaffold.dart';
+import '../../../../core/design_system/design_system.dart';
 
 /// Vista de Auditoría y Trazabilidad (Read-Only).
 /// Visualización estricta sin mutación de registros ISO 8000 / 27001.
@@ -90,16 +83,31 @@ class _AuditPageState extends State<AuditPage> {
   }
 
   Widget _buildTabContent() {
-    switch (_selectedTabIndex) {
-      case 0:
-        return _buildAuditLogList();
-      case 1:
-        return _buildQuarantineList();
-      case 2:
-        return _buildChecklistIso();
-      default:
-        return const SizedBox.shrink();
-    }
+    return AnimatedSwitcher(
+      duration: const Duration(milliseconds: 300),
+      child: _isLoading
+          ? switch (_selectedTabIndex) {
+              0 => const AuditLogSkeleton(key: ValueKey('audit_tab_skeleton')),
+              1 => const CuarentenaSkeleton(key: ValueKey('cuarentena_tab_skeleton')),
+              2 => const ChecklistIsoSkeleton(key: ValueKey('checklist_tab_skeleton')),
+              _ => const SizedBox.shrink(),
+            }
+          : switch (_selectedTabIndex) {
+              0 => KeyedSubtree(
+                  key: const ValueKey('audit_tab_content'),
+                  child: _buildAuditLogList(),
+                ),
+              1 => KeyedSubtree(
+                  key: const ValueKey('cuarentena_tab_content'),
+                  child: _buildQuarantineList(),
+                ),
+              2 => KeyedSubtree(
+                  key: const ValueKey('checklist_tab_content'),
+                  child: _buildChecklistIso(),
+                ),
+              _ => const SizedBox.shrink(),
+            },
+    );
   }
 
   Widget _buildAuditLogList() {

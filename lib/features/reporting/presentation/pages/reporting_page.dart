@@ -1,20 +1,9 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import '../../../../core/config/environment_config.dart';
-import '../../../../core/design_system/tokens/colors.dart';
-import '../../../../core/design_system/tokens/icons.dart';
-import '../../../../core/design_system/tokens/spacing.dart';
-import '../../../../core/design_system/tokens/typography.dart';
-import '../../../../core/design_system/widgets/app_button.dart';
-import '../../../../core/design_system/widgets/app_card.dart';
-import '../../../../core/design_system/widgets/app_empty_state.dart';
-import '../../../../core/design_system/widgets/app_money_text.dart';
-import '../../../../core/design_system/widgets/app_outlined_button.dart';
-import '../../../../core/design_system/widgets/app_refresh_button.dart';
-import '../../../../core/design_system/widgets/app_scaffold.dart';
-import '../../../../core/design_system/widgets/app_text_field.dart';
-import '../../../../models/resumen_diario.dart';
-import '../../../../shared/google_sheets/sheets_data_service.dart';
+import '../../../../core/design_system/design_system.dart';
+import '../../../../models/models.dart';
+import '../../../../shared/shared.dart';
 
 /// Vista de Reportes y Resumen Diario (hoja: resumen_diario)
 /// CRUD completo con KPIs, cierres contables y Cero Polling.
@@ -56,8 +45,13 @@ class _ReportingPageState extends State<ReportingPage> {
             label: const Text('Nuevo Cierre', style: TextStyle(fontWeight: FontWeight.w600)),
             onPressed: () => _showCierreDialog(context),
           ),
-          body: ListView(
-            padding: const EdgeInsets.fromLTRB(AppSpacing.lg, AppSpacing.sm, AppSpacing.lg, 80),
+          body: AnimatedSwitcher(
+            duration: const Duration(milliseconds: 300),
+            child: widget.dataService.isLoading && resumenes.isEmpty
+                ? const ReportingSkeleton(key: ValueKey('reporting_skeleton'))
+                : ListView(
+                    key: const ValueKey('reporting_content'),
+                    padding: const EdgeInsets.fromLTRB(AppSpacing.lg, AppSpacing.sm, AppSpacing.lg, 80),
             children: [
               // Card Destacada: Resumen General Consolidado
               AppCard(
@@ -162,7 +156,8 @@ class _ReportingPageState extends State<ReportingPage> {
                 }),
             ],
           ),
-        );
+        ),
+      );
       },
     );
   }

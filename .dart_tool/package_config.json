@@ -212,6 +212,12 @@
       "languageVersion": "3.11"
     },
     {
+      "name": "go_router",
+      "rootUri": "file:///Users/programacion/.pub-cache/hosted/pub.dev/go_router-14.8.1",
+      "packageUri": "lib/",
+      "languageVersion": "3.4"
+    },
+    {
       "name": "google_fonts",
       "rootUri": "file:///Users/programacion/.pub-cache/hosted/pub.dev/google_fonts-6.3.3",
       "packageUri": "lib/",

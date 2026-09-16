@@ -1,35 +1,28 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import '../../core/config/environment_config.dart';
-import '../../core/design_system/tokens/colors.dart';
-import '../../core/design_system/tokens/spacing.dart';
-import '../../core/design_system/tokens/typography.dart';
-import '../../core/design_system/widgets/app_button.dart';
-import '../../core/design_system/widgets/app_card.dart';
-import '../../core/design_system/widgets/app_chip.dart';
-import '../../core/design_system/widgets/app_empty_state.dart';
-import '../../core/design_system/widgets/app_money_text.dart';
-import '../../core/design_system/widgets/app_outlined_button.dart';
-import '../../core/design_system/widgets/app_refresh_button.dart';
-import '../../core/design_system/widgets/app_scaffold.dart';
-import '../../core/design_system/widgets/app_text_field.dart';
-import '../../models/producto.dart';
-import '../../shared/google_drive/google_drive_helper.dart';
-import '../../shared/google_sheets/sheets_data_service.dart';
+import '../../core/design_system/design_system.dart';
+import '../../models/models.dart';
+import '../../shared/shared.dart';
 
 /// Vista de Inventario / Catálogo de Productos (hoja: inventario)
 /// Integración directa con Google Drive para almacenamiento, actualización y reemplazo de fotos.
 class InventarioPage extends StatefulWidget {
   final SheetsDataService dataService;
+  final String? initialSearchQuery;
 
-  const InventarioPage({super.key, required this.dataService});
+  const InventarioPage({
+    super.key,
+    required this.dataService,
+    this.initialSearchQuery,
+  });
 
   @override
   State<InventarioPage> createState() => _InventarioPageState();
 }
 
 class _InventarioPageState extends State<InventarioPage> {
-  String _searchQuery = '';
+  late String _searchQuery = widget.initialSearchQuery ?? '';
 
   @override
   Widget build(BuildContext context) {
@@ -128,16 +121,24 @@ class _InventarioPageState extends State<InventarioPage> {
                 ),
               ),
 
-              // Lista de productos
+              // Lista de productos con Skeleton progresivo
               Expanded(
-                child: productos.isEmpty
-                    ? const AppEmptyState(
-                        title: 'No hay productos en inventario',
-                        description: 'Registra prendas usando el botón "Nuevo Producto".',
-                        icon: CupertinoIcons.tag,
-                      )
-                    : ListView.builder(
-                        padding: const EdgeInsets.fromLTRB(AppSpacing.lg, 0, AppSpacing.lg, 80),
+                child: AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 300),
+                  child: widget.dataService.isLoading && productos.isEmpty
+                      ? const InventarioSkeleton(
+                          key: ValueKey('inventario_skeleton'),
+                        )
+                      : productos.isEmpty
+                          ? const AppEmptyState(
+                              key: ValueKey('inventario_empty'),
+                              title: 'No hay productos en inventario',
+                              description: 'Registra prendas usando el botón "Nuevo Producto".',
+                              icon: CupertinoIcons.tag,
+                            )
+                          : ListView.builder(
+                              key: const ValueKey('inventario_list'),
+                              padding: const EdgeInsets.fromLTRB(AppSpacing.lg, 0, AppSpacing.lg, 80),
                         itemCount: productos.length,
                         itemBuilder: (context, index) {
                           final producto = productos[index];
@@ -328,6 +329,7 @@ class _InventarioPageState extends State<InventarioPage> {
                           );
                         },
                       ),
+                ),
               ),
             ],
           ),

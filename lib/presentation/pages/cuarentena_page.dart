@@ -1,20 +1,9 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import '../../core/config/environment_config.dart';
-import '../../core/design_system/tokens/colors.dart';
-import '../../core/design_system/tokens/icons.dart';
-import '../../core/design_system/tokens/spacing.dart';
-import '../../core/design_system/tokens/typography.dart';
-import '../../core/design_system/widgets/app_button.dart';
-import '../../core/design_system/widgets/app_card.dart';
-import '../../core/design_system/widgets/app_chip.dart';
-import '../../core/design_system/widgets/app_empty_state.dart';
-import '../../core/design_system/widgets/app_outlined_button.dart';
-import '../../core/design_system/widgets/app_refresh_button.dart';
-import '../../core/design_system/widgets/app_scaffold.dart';
-import '../../core/design_system/widgets/app_text_field.dart';
-import '../../models/registro_cuarentena.dart';
-import '../../shared/google_sheets/sheets_data_service.dart';
+import '../../core/design_system/design_system.dart';
+import '../../models/models.dart';
+import '../../shared/shared.dart';
 
 /// Vista de Bandeja de Cuarentena (hoja: cuarentena)
 /// Operaciones CRUD completas y análisis de anomalías forenses.
@@ -54,14 +43,20 @@ class _CuarentenaPageState extends State<CuarentenaPage> {
             label: const Text('Reportar Anomalía', style: TextStyle(fontWeight: FontWeight.w600)),
             onPressed: () => _showCuarentenaDialog(context),
           ),
-          body: items.isEmpty
-              ? const AppEmptyState(
-                  title: 'Bandeja de Cuarentena Limpia',
-                  description: 'No hay anomalías contables activas.',
-                  icon: CupertinoIcons.shield_lefthalf_fill,
-                )
-              : ListView.builder(
-                  padding: const EdgeInsets.fromLTRB(AppSpacing.lg, AppSpacing.sm, AppSpacing.lg, 80),
+          body: AnimatedSwitcher(
+            duration: const Duration(milliseconds: 300),
+            child: widget.dataService.isLoading && items.isEmpty
+                ? const CuarentenaSkeleton(key: ValueKey('cuarentena_skeleton'))
+                : items.isEmpty
+                    ? const AppEmptyState(
+                        key: ValueKey('cuarentena_empty'),
+                        title: 'Bandeja de Cuarentena Limpia',
+                        description: 'No hay anomalías contables activas.',
+                        icon: CupertinoIcons.shield_lefthalf_fill,
+                      )
+                    : ListView.builder(
+                        key: const ValueKey('cuarentena_list'),
+                        padding: const EdgeInsets.fromLTRB(AppSpacing.lg, AppSpacing.sm, AppSpacing.lg, 80),
                   itemCount: items.length,
                   itemBuilder: (context, index) {
                     final item = items[index];
@@ -141,7 +136,8 @@ class _CuarentenaPageState extends State<CuarentenaPage> {
                     );
                   },
                 ),
-        );
+        ),
+      );
       },
     );
   }
