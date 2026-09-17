@@ -255,6 +255,9 @@ class _InventarioSearchViewState extends State<_InventarioSearchView> {
                 horizontal: AppSpacing.md,
                 vertical: AppSpacing.md,
               ),
+              mergeSemantics: true,
+              semanticLabel: '${producto.name}, marca ${producto.marca}, ID ${producto.id}, precio ${producto.precioUsd.toStringAsFixed(2)} dólares',
+              semanticHint: 'Toca dos veces para seleccionar este producto',
               onTap: () {
                 if (widget.onItemSelected != null) {
                   widget.onItemSelected!(producto);

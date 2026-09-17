@@ -104,9 +104,13 @@ class _MainShellState extends State<MainShell> {
           children: [
             Row(
               children: [
-                Text(
-                  currentInfo.title,
-                  style: AppTypography.titleLarge.copyWith(fontSize: 16),
+                Semantics(
+                  header: true,
+                  headingLevel: 1,
+                  child: Text(
+                    currentInfo.title,
+                    style: AppTypography.titleLarge.copyWith(fontSize: 16),
+                  ),
                 ),
                 if (EnvironmentConfig.showTechnicalInfo) ...[
                   const SizedBox(width: AppSpacing.xs),
@@ -279,15 +283,19 @@ class _MainShellState extends State<MainShell> {
   }
 
   Widget _buildCategoryHeader(String title) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(AppSpacing.lg, AppSpacing.sm, AppSpacing.lg, AppSpacing.xs),
-      child: Text(
-        title,
-        style: AppTypography.labelSmall.copyWith(
-          letterSpacing: 0.8,
-          fontSize: 11,
-          color: AppPalette.blue900,
-          fontWeight: FontWeight.w700,
+    return Semantics(
+      header: true,
+      headingLevel: 2,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(AppSpacing.lg, AppSpacing.sm, AppSpacing.lg, AppSpacing.xs),
+        child: Text(
+          title,
+          style: AppTypography.labelSmall.copyWith(
+            letterSpacing: 0.8,
+            fontSize: 11,
+            color: AppPalette.blue900,
+            fontWeight: FontWeight.w700,
+          ),
         ),
       ),
     );
@@ -296,33 +304,43 @@ class _MainShellState extends State<MainShell> {
   Widget _buildDrawerItem(int index, ({String title, String sheet, IconData icon, String category}) info) {
     final isSelected = _currentIndex == index;
 
-    return ListTile(
-      dense: true,
+    return Semantics(
+      button: true,
       selected: isSelected,
-      selectedTileColor: AppPalette.blue100.withValues(alpha: 0.5),
-      leading: Icon(
-        info.icon,
-        color: isSelected ? AppPalette.blue900 : AppPalette.blue700,
-        size: 20,
-      ),
-      title: Text(
-        info.title,
-        style: TextStyle(
-          color: isSelected ? AppPalette.blue900 : AppPalette.textPrimary,
-          fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
-          fontSize: 14,
+      label: '${info.title}, categoría ${info.category}',
+      hint: 'Navegar a la vista de ${info.title}',
+      child: ListTile(
+        dense: true,
+        selected: isSelected,
+        selectedTileColor: AppPalette.blue100.withValues(alpha: 0.5),
+        leading: ExcludeSemantics(
+          child: Icon(
+            info.icon,
+            color: isSelected ? AppPalette.blue900 : AppPalette.blue700,
+            size: 20,
+          ),
         ),
+        title: Text(
+          info.title,
+          style: TextStyle(
+            color: isSelected ? AppPalette.blue900 : AppPalette.textPrimary,
+            fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+            fontSize: 14,
+          ),
+        ),
+        subtitle: EnvironmentConfig.showTechnicalInfo
+            ? Text(
+                'Hoja: ${info.sheet}',
+                style: const TextStyle(fontSize: 11, color: AppPalette.textSecondary),
+              )
+            : null,
+        trailing: isSelected
+            ? const ExcludeSemantics(
+                child: Icon(CupertinoIcons.checkmark_alt, size: 16, color: AppPalette.blue900),
+              )
+            : null,
+        onTap: () => _navigateToIndex(index),
       ),
-      subtitle: EnvironmentConfig.showTechnicalInfo
-          ? Text(
-              'Hoja: ${info.sheet}',
-              style: const TextStyle(fontSize: 11, color: AppPalette.textSecondary),
-            )
-          : null,
-      trailing: isSelected
-          ? const Icon(CupertinoIcons.checkmark_alt, size: 16, color: AppPalette.blue900)
-          : null,
-      onTap: () => _navigateToIndex(index),
     );
   }
 }

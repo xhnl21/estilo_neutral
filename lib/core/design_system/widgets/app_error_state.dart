@@ -27,16 +27,23 @@ class AppErrorState extends StatelessWidget {
           mainAxisAlignment: MainAxisAlignment.center,
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            const Icon(
-              AppIcons.error,
-              size: AppIcons.xl,
-              color: AppPalette.error,
+            const ExcludeSemantics(
+              child: Icon(
+                AppIcons.error,
+                size: AppIcons.xl,
+                color: AppPalette.error,
+              ),
             ),
             const SizedBox(height: AppSpacing.lg),
-            Text(
-              'Ocurrió un error',
-              textAlign: TextAlign.center,
-              style: AppTypography.titleLarge.copyWith(color: AppPalette.error),
+            Semantics(
+              header: true,
+              headingLevel: 2,
+              liveRegion: true,
+              child: Text(
+                'Ocurrió un error',
+                textAlign: TextAlign.center,
+                style: AppTypography.titleLarge.copyWith(color: AppPalette.error),
+              ),
             ),
             const SizedBox(height: AppSpacing.sm),
             Text(

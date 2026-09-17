@@ -118,15 +118,23 @@ class _CuarentenaPageState extends State<CuarentenaPage> {
                             Row(
                               mainAxisAlignment: MainAxisAlignment.end,
                               children: [
-                                IconButton(
-                                  icon: const Icon(CupertinoIcons.pencil, size: 18, color: AppPalette.blue700),
-                                  tooltip: 'Editar / Resolver Anomalía',
-                                  onPressed: () => _showCuarentenaDialog(context, item: item),
+                                Semantics(
+                                  button: true,
+                                  label: 'Editar o resolver anomalía del registro ${item.idRegistroOriginal}',
+                                  child: IconButton(
+                                    icon: const Icon(CupertinoIcons.pencil, size: 18, color: AppPalette.blue700),
+                                    tooltip: 'Editar / Resolver Anomalía',
+                                    onPressed: () => _showCuarentenaDialog(context, item: item),
+                                  ),
                                 ),
-                                IconButton(
-                                  icon: const Icon(CupertinoIcons.trash, size: 18, color: AppPalette.error),
-                                  tooltip: 'Purgar de Cuarentena',
-                                  onPressed: () => _confirmDelete(context, item),
+                                Semantics(
+                                  button: true,
+                                  label: 'Purgar de cuarentena registro ${item.idRegistroOriginal}',
+                                  child: IconButton(
+                                    icon: const Icon(CupertinoIcons.trash, size: 18, color: AppPalette.error),
+                                    tooltip: 'Purgar de Cuarentena',
+                                    onPressed: () => _confirmDelete(context, item),
+                                  ),
                                 ),
                               ],
                             ),

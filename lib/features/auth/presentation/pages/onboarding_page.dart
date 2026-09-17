@@ -23,24 +23,30 @@ class OnboardingPage extends StatelessWidget {
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Container(
-                  width: 72,
-                  height: 72,
-                  decoration: const BoxDecoration(
-                    color: AppPalette.blue100,
-                    shape: BoxShape.circle,
-                  ),
-                  child: const Icon(
-                    CupertinoIcons.sparkles,
-                    color: AppPalette.blue900,
-                    size: 36,
+                ExcludeSemantics(
+                  child: Container(
+                    width: 72,
+                    height: 72,
+                    decoration: const BoxDecoration(
+                      color: AppPalette.blue100,
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(
+                      CupertinoIcons.sparkles,
+                      color: AppPalette.blue900,
+                      size: 36,
+                    ),
                   ),
                 ),
                 const SizedBox(height: AppSpacing.lg),
-                Text(
-                  'Bienvenido a Estilo Neutral',
-                  style: AppTypography.headlineMedium,
-                  textAlign: TextAlign.center,
+                Semantics(
+                  header: true,
+                  headingLevel: 1,
+                  child: Text(
+                    'Bienvenido a Estilo Neutral',
+                    style: AppTypography.headlineMedium,
+                    textAlign: TextAlign.center,
+                  ),
                 ),
                 const SizedBox(height: AppSpacing.sm),
                 Text(
@@ -96,33 +102,37 @@ class OnboardingPage extends StatelessWidget {
     required String title,
     required String description,
   }) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: AppSpacing.xs),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(icon, color: AppPalette.blue700, size: 22),
-          const SizedBox(width: AppSpacing.md),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  style: AppTypography.titleLarge.copyWith(fontSize: 15),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  description,
-                  style: AppTypography.bodyMedium.copyWith(
-                    fontSize: 13,
-                    color: AppPalette.textSecondary,
-                  ),
-                ),
-              ],
+    return MergeSemantics(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: AppSpacing.xs),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            ExcludeSemantics(
+              child: Icon(icon, color: AppPalette.blue700, size: 22),
             ),
-          ),
-        ],
+            const SizedBox(width: AppSpacing.md),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: AppTypography.titleLarge.copyWith(fontSize: 15),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    description,
+                    style: AppTypography.bodyMedium.copyWith(
+                      fontSize: 13,
+                      color: AppPalette.textSecondary,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

@@ -45,9 +45,13 @@ class AppScaffold extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text(
-              title,
-              style: AppTypography.headlineMedium,
+            Semantics(
+              header: true,
+              headingLevel: 1,
+              child: Text(
+                title,
+                style: AppTypography.headlineMedium,
+              ),
             ),
             if (subtitle != null) ...[
               const SizedBox(height: 1),

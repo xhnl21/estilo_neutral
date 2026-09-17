@@ -69,11 +69,15 @@ class _ChecklistIsoPageState extends State<ChecklistIsoPage> {
                     const SizedBox(height: AppSpacing.sm),
                     ClipRRect(
                       borderRadius: BorderRadius.circular(4),
-                      child: LinearProgressIndicator(
-                        value: items.isNotEmpty ? totalConformes / items.length : 0.0,
-                        backgroundColor: AppPalette.divider,
-                        valueColor: const AlwaysStoppedAnimation<Color>(AppPalette.success),
-                        minHeight: 8,
+                      child: Semantics(
+                        label: 'Cumplimiento normativo global',
+                        value: '$porcentaje%',
+                        child: LinearProgressIndicator(
+                          value: items.isNotEmpty ? totalConformes / items.length : 0.0,
+                          backgroundColor: AppPalette.divider,
+                          valueColor: const AlwaysStoppedAnimation<Color>(AppPalette.success),
+                          minHeight: 8,
+                        ),
                       ),
                     ),
                   ],
@@ -81,7 +85,11 @@ class _ChecklistIsoPageState extends State<ChecklistIsoPage> {
               ),
               const SizedBox(height: AppSpacing.md),
 
-              Text('Requisitos y Evidencias de Cumplimiento', style: AppTypography.titleLarge.copyWith(fontSize: 16)),
+              Semantics(
+                header: true,
+                headingLevel: 2,
+                child: Text('Requisitos y Evidencias de Cumplimiento', style: AppTypography.titleLarge.copyWith(fontSize: 16)),
+              ),
               const SizedBox(height: AppSpacing.sm),
 
               if (items.isEmpty)
@@ -102,14 +110,20 @@ class _ChecklistIsoPageState extends State<ChecklistIsoPage> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           // Botón interactivo para alternar conformidad
-                          IconButton(
-                            icon: Icon(
-                              isConforme ? CupertinoIcons.check_mark_circled_solid : CupertinoIcons.circle,
-                              color: isConforme ? AppPalette.success : AppPalette.textSecondary,
-                              size: 26,
+                          Semantics(
+                            button: true,
+                            checked: isConforme,
+                            label: 'Control #${item.nro} ${item.control}',
+                            hint: 'Toca dos veces para marcar o desmarcar conformidad',
+                            child: IconButton(
+                              icon: Icon(
+                                isConforme ? CupertinoIcons.check_mark_circled_solid : CupertinoIcons.circle,
+                                color: isConforme ? AppPalette.success : AppPalette.textSecondary,
+                                size: 26,
+                              ),
+                              tooltip: 'Alternar conformidad',
+                              onPressed: () => widget.dataService.toggleChecklistEstado(item.nro),
                             ),
-                            tooltip: 'Alternar conformidad',
-                            onPressed: () => widget.dataService.toggleChecklistEstado(item.nro),
                           ),
                           const SizedBox(width: AppSpacing.sm),
                           Expanded(

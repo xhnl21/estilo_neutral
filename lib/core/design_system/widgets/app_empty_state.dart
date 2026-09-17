@@ -32,16 +32,22 @@ class AppEmptyState extends StatelessWidget {
           mainAxisAlignment: MainAxisAlignment.center,
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            Icon(
-              icon,
-              size: AppIcons.xl,
-              color: AppPalette.blue400,
+            ExcludeSemantics(
+              child: Icon(
+                icon,
+                size: AppIcons.xl,
+                color: AppPalette.blue400,
+              ),
             ),
             const SizedBox(height: AppSpacing.lg),
-            Text(
-              title,
-              textAlign: TextAlign.center,
-              style: AppTypography.titleLarge.copyWith(color: AppPalette.blue900),
+            Semantics(
+              header: true,
+              headingLevel: 2,
+              child: Text(
+                title,
+                textAlign: TextAlign.center,
+                style: AppTypography.titleLarge.copyWith(color: AppPalette.blue900),
+              ),
             ),
             if (subtitle != null) ...[
               const SizedBox(height: AppSpacing.sm),

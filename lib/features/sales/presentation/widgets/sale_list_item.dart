@@ -27,6 +27,9 @@ class SaleListItem extends StatelessWidget {
       child: AppCard(
         onTap: onTap,
         padding: AppSpacing.pMd,
+        mergeSemantics: true,
+        semanticLabel: 'Venta #${sale.id}, estado: ${isPaid ? "Pagada" : "Pendiente"}, cliente: ${sale.customerId}, total: ${sale.totalPagarUsd.toStringAsFixed(2)} dólares',
+        semanticHint: onTap != null ? 'Toca dos veces para ver el detalle de la venta' : null,
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
@@ -38,10 +41,12 @@ class SaleListItem extends StatelessWidget {
                 color: isPaid ? const Color(0xFFE8F5E9) : AppPalette.blue100,
                 shape: BoxShape.circle,
               ),
-              child: Icon(
-                isPaid ? AppIcons.success : AppIcons.sale,
-                size: 20,
-                color: isPaid ? AppPalette.success : AppPalette.blue700,
+              child: ExcludeSemantics(
+                child: Icon(
+                  isPaid ? AppIcons.success : AppIcons.sale,
+                  size: 20,
+                  color: isPaid ? AppPalette.success : AppPalette.blue700,
+                ),
               ),
             ),
             const SizedBox(width: AppSpacing.md),

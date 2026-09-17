@@ -94,21 +94,29 @@ class _ReporteMigracionPageState extends State<ReporteMigracionPage> {
                               'Obs: ${rep.observaciones}',
                               style: AppTypography.bodyMedium.copyWith(fontSize: 12),
                             ),
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.end,
-                              children: [
-                                IconButton(
-                                  icon: const Icon(CupertinoIcons.pencil, size: 18, color: AppPalette.blue700),
-                                  tooltip: 'Editar Control',
-                                  onPressed: () => _showReporteDialog(context, index: index, reporte: rep),
-                                ),
-                                IconButton(
-                                  icon: const Icon(CupertinoIcons.trash, size: 18, color: AppPalette.error),
-                                  tooltip: 'Eliminar Control',
-                                  onPressed: () => _confirmDelete(context, index, rep),
-                                ),
-                              ],
-                            ),
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.end,
+                                children: [
+                                  Semantics(
+                                    button: true,
+                                    label: 'Editar control ${rep.metrica}',
+                                    child: IconButton(
+                                      icon: const Icon(CupertinoIcons.pencil, size: 18, color: AppPalette.blue700),
+                                      tooltip: 'Editar Control',
+                                      onPressed: () => _showReporteDialog(context, index: index, reporte: rep),
+                                    ),
+                                  ),
+                                  Semantics(
+                                    button: true,
+                                    label: 'Eliminar control ${rep.metrica}',
+                                    child: IconButton(
+                                      icon: const Icon(CupertinoIcons.trash, size: 18, color: AppPalette.error),
+                                      tooltip: 'Eliminar Control',
+                                      onPressed: () => _confirmDelete(context, index, rep),
+                                    ),
+                                  ),
+                                ],
+                              ),
                           ],
                         ),
                       ),

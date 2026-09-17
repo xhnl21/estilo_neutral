@@ -56,6 +56,7 @@ class _ReportingPageState extends State<ReportingPage> {
               // Card Destacada: Resumen General Consolidado
               AppCard(
                 padding: AppSpacing.pLg,
+                mergeSemantics: true,
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -63,7 +64,9 @@ class _ReportingPageState extends State<ReportingPage> {
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
                         Text('CONSOLIDADO GENERAL DE CIERRES', style: AppTypography.labelSmall.copyWith(letterSpacing: 0.5)),
-                        const Icon(AppIcons.summary, size: 18, color: AppPalette.blue700),
+                        const ExcludeSemantics(
+                          child: Icon(AppIcons.summary, size: 18, color: AppPalette.blue700),
+                        ),
                       ],
                     ),
                     const SizedBox(height: AppSpacing.md),
@@ -79,7 +82,11 @@ class _ReportingPageState extends State<ReportingPage> {
               ),
               const SizedBox(height: AppSpacing.md),
 
-              Text('Histórico de Cierres Diarios', style: AppTypography.titleLarge.copyWith(fontSize: 16)),
+              Semantics(
+                header: true,
+                headingLevel: 2,
+                child: Text('Histórico de Cierres Diarios', style: AppTypography.titleLarge.copyWith(fontSize: 16)),
+              ),
               const SizedBox(height: AppSpacing.sm),
 
               if (resumenes.isEmpty)

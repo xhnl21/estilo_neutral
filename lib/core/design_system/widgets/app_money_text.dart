@@ -13,6 +13,7 @@ class AppMoneyText extends StatelessWidget {
   final MoneyNature nature;
   final double fontSize;
   final FontWeight fontWeight;
+  final String? semanticLabel;
 
   const AppMoneyText({
     super.key,
@@ -21,6 +22,7 @@ class AppMoneyText extends StatelessWidget {
     this.nature = MoneyNature.neutral,
     this.fontSize = 16.0,
     this.fontWeight = FontWeight.w600,
+    this.semanticLabel,
   });
 
   Color _getColor() {
@@ -39,14 +41,29 @@ class AppMoneyText extends StatelessWidget {
     return '$prefix${amount.toStringAsFixed(2)}';
   }
 
+  String _getNaturalSemanticLabel() {
+    final cur = currency == MoneyCurrency.usd ? 'dólares' : 'bolívares';
+    final natureStr = switch (nature) {
+      MoneyNature.credit => ', a favor',
+      MoneyNature.debt => ', en deuda',
+      MoneyNature.neutral => '',
+    };
+    return '${amount.toStringAsFixed(2)} $cur$natureStr';
+  }
+
   @override
   Widget build(BuildContext context) {
-    return Text(
-      _formatAmount(),
-      style: AppTypography.moneyStyle(
-        fontSize: fontSize,
-        fontWeight: fontWeight,
-        color: _getColor(),
+    return Semantics(
+      container: true,
+      label: semanticLabel ?? _getNaturalSemanticLabel(),
+      excludeSemantics: true,
+      child: Text(
+        _formatAmount(),
+        style: AppTypography.moneyStyle(
+          fontSize: fontSize,
+          fontWeight: fontWeight,
+          color: _getColor(),
+        ),
       ),
     );
   }

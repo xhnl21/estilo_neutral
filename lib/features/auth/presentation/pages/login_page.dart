@@ -53,25 +53,31 @@ class _LoginPageState extends State<LoginPage> {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   Center(
-                    child: Container(
-                      width: 56,
-                      height: 56,
-                      decoration: const BoxDecoration(
-                        color: AppPalette.blue100,
-                        shape: BoxShape.circle,
-                      ),
-                      child: const Icon(
-                        CupertinoIcons.lock_shield,
-                        color: AppPalette.blue900,
-                        size: 28,
+                    child: ExcludeSemantics(
+                      child: Container(
+                        width: 56,
+                        height: 56,
+                        decoration: const BoxDecoration(
+                          color: AppPalette.blue100,
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(
+                          CupertinoIcons.lock_shield,
+                          color: AppPalette.blue900,
+                          size: 28,
+                        ),
                       ),
                     ),
                   ),
                   const SizedBox(height: AppSpacing.md),
-                  Text(
-                    'Iniciar Sesión',
-                    style: AppTypography.headlineMedium,
-                    textAlign: TextAlign.center,
+                  Semantics(
+                    header: true,
+                    headingLevel: 1,
+                    child: Text(
+                      'Iniciar Sesión',
+                      style: AppTypography.headlineMedium,
+                      textAlign: TextAlign.center,
+                    ),
                   ),
                   const SizedBox(height: AppSpacing.xs),
                   Text(

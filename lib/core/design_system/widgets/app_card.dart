@@ -9,6 +9,9 @@ class AppCard extends StatelessWidget {
   final VoidCallback? onTap;
   final Color? backgroundColor;
   final bool hasShadow;
+  final String? semanticLabel;
+  final String? semanticHint;
+  final bool mergeSemantics;
 
   const AppCard({
     super.key,
@@ -17,6 +20,9 @@ class AppCard extends StatelessWidget {
     this.onTap,
     this.backgroundColor,
     this.hasShadow = false,
+    this.semanticLabel,
+    this.semanticHint,
+    this.mergeSemantics = false,
   });
 
   @override
@@ -28,27 +34,53 @@ class AppCard extends StatelessWidget {
       boxShadow: hasShadow ? AppSpacing.shadowSoft : AppSpacing.shadowNone,
     );
 
+    Widget result;
     if (onTap != null) {
-      return Material(
+      result = Material(
         color: Colors.transparent,
-        child: InkWell(
-          onTap: onTap,
-          borderRadius: AppSpacing.roundedMd,
-          child: Ink(
-            decoration: decoration,
-            child: Padding(
-              padding: padding,
-              child: child,
+        child: Semantics(
+          container: true,
+          button: true,
+          enabled: true,
+          label: semanticLabel,
+          hint: semanticHint,
+          excludeSemantics: semanticLabel != null,
+          child: InkWell(
+            onTap: onTap,
+            borderRadius: AppSpacing.roundedMd,
+            child: Ink(
+              decoration: decoration,
+              child: Padding(
+                padding: padding,
+                child: child,
+              ),
             ),
           ),
         ),
       );
+    } else if (semanticLabel != null) {
+      result = Semantics(
+        container: true,
+        label: semanticLabel,
+        hint: semanticHint,
+        excludeSemantics: true,
+        child: Container(
+          decoration: decoration,
+          padding: padding,
+          child: child,
+        ),
+      );
+    } else {
+      result = Container(
+        decoration: decoration,
+        padding: padding,
+        child: child,
+      );
     }
 
-    return Container(
-      decoration: decoration,
-      padding: padding,
-      child: child,
-    );
+    if (mergeSemantics) {
+      return MergeSemantics(child: result);
+    }
+    return result;
   }
 }

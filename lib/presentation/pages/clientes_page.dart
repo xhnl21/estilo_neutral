@@ -154,131 +154,143 @@ class _ClientesView extends StatelessWidget {
                               child: Row(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  CircleAvatar(
-                                    radius: 20,
-                                    backgroundColor: hasDebt
-                                        ? const Color(0xFFFFEBEE)
-                                        : AppPalette.blue100,
-                                    child: Icon(
-                                      CupertinoIcons.person_fill,
-                                      color: hasDebt
-                                          ? AppPalette.error
-                                          : AppPalette.blue700,
-                                      size: 20,
+                                  ExcludeSemantics(
+                                    child: CircleAvatar(
+                                      radius: 20,
+                                      backgroundColor: hasDebt
+                                          ? const Color(0xFFFFEBEE)
+                                          : AppPalette.blue100,
+                                      child: Icon(
+                                        CupertinoIcons.person_fill,
+                                        color: hasDebt
+                                            ? AppPalette.error
+                                            : AppPalette.blue700,
+                                        size: 20,
+                                      ),
                                     ),
                                   ),
                                   const SizedBox(width: AppSpacing.md),
                                   Expanded(
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        Text.rich(
-                                          TextSpan(
-                                            text: cliente.nombre,
-                                            style: AppTypography.titleLarge
-                                                .copyWith(fontSize: 15),
+                                    child: MergeSemantics(
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Text.rich(
+                                            TextSpan(
+                                              text: cliente.nombre,
+                                              style: AppTypography.titleLarge
+                                                  .copyWith(fontSize: 15),
+                                              children: [
+                                                TextSpan(
+                                                  text: ' (${cliente.id})',
+                                                  style: AppTypography.labelSmall
+                                                      .copyWith(
+                                                    color:
+                                                        AppPalette.textSecondary,
+                                                    fontSize: 12,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                          const SizedBox(height: 2),
+                                          Text(
+                                            '📞 ${cliente.telefono} • ✉️ ${cliente.email}',
+                                            style: AppTypography.bodyMedium
+                                                .copyWith(fontSize: 12),
+                                            overflow: TextOverflow.ellipsis,
+                                            maxLines: 1,
+                                          ),
+                                          const SizedBox(height: 4),
+                                          Wrap(
+                                            crossAxisAlignment:
+                                                WrapCrossAlignment.center,
+                                            spacing: 4,
+                                            runSpacing: 2,
                                             children: [
-                                              TextSpan(
-                                                text: ' (${cliente.id})',
+                                              Text(
+                                                'Deuda: ',
                                                 style: AppTypography.labelSmall
                                                     .copyWith(
-                                                  color:
-                                                      AppPalette.textSecondary,
-                                                  fontSize: 12,
+                                                  color: hasDebt
+                                                      ? AppPalette.error
+                                                      : AppPalette.textSecondary,
+                                                  fontWeight: FontWeight.w600,
+                                                ),
+                                              ),
+                                              AppMoneyText(
+                                                amount: cliente.saldoDeudaUsd,
+                                                currency: MoneyCurrency.usd,
+                                                nature: hasDebt
+                                                    ? MoneyNature.debt
+                                                    : MoneyNature.neutral,
+                                                fontSize: 13,
+                                                fontWeight: FontWeight.w600,
+                                              ),
+                                              Text(
+                                                '• Reg: ${cliente.fechaRegistro.toIso8601String().split('T').first}',
+                                                style: AppTypography.labelSmall
+                                                    .copyWith(
+                                                  fontSize: 11,
+                                                  color: AppPalette.textSecondary,
                                                 ),
                                               ),
                                             ],
                                           ),
-                                          maxLines: 1,
-                                          overflow: TextOverflow.ellipsis,
-                                        ),
-                                        const SizedBox(height: 2),
-                                        Text(
-                                          '📞 ${cliente.telefono} • ✉️ ${cliente.email}',
-                                          style: AppTypography.bodyMedium
-                                              .copyWith(fontSize: 12),
-                                          overflow: TextOverflow.ellipsis,
-                                          maxLines: 1,
-                                        ),
-                                        const SizedBox(height: 4),
-                                        Wrap(
-                                          crossAxisAlignment:
-                                              WrapCrossAlignment.center,
-                                          spacing: 4,
-                                          runSpacing: 2,
-                                          children: [
-                                            Text(
-                                              'Deuda: ',
-                                              style: AppTypography.labelSmall
-                                                  .copyWith(
-                                                color: hasDebt
-                                                    ? AppPalette.error
-                                                    : AppPalette.textSecondary,
-                                                fontWeight: FontWeight.w600,
-                                              ),
-                                            ),
-                                            AppMoneyText(
-                                              amount: cliente.saldoDeudaUsd,
-                                              currency: MoneyCurrency.usd,
-                                              nature: hasDebt
-                                                  ? MoneyNature.debt
-                                                  : MoneyNature.neutral,
-                                              fontSize: 13,
-                                              fontWeight: FontWeight.w600,
-                                            ),
-                                            Text(
-                                              '• Reg: ${cliente.fechaRegistro.toIso8601String().split('T').first}',
-                                              style: AppTypography.labelSmall
-                                                  .copyWith(
-                                                fontSize: 11,
-                                                color: AppPalette.textSecondary,
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      ],
+                                        ],
+                                      ),
                                     ),
                                   ),
                                   // Acciones CRUD
                                   Row(
                                     mainAxisSize: MainAxisSize.min,
                                     children: [
-                                      IconButton(
-                                        visualDensity: VisualDensity.compact,
-                                        padding: EdgeInsets.zero,
-                                        constraints: const BoxConstraints(
-                                          minWidth: 32,
-                                          minHeight: 32,
-                                        ),
-                                        icon: const Icon(
-                                          CupertinoIcons.pencil,
-                                          size: 18,
-                                          color: AppPalette.blue700,
-                                        ),
-                                        tooltip: 'Editar Cliente',
-                                        onPressed: () => _showClienteDialog(
-                                          context,
-                                          cliente: cliente,
+                                      Semantics(
+                                        button: true,
+                                        label: 'Editar cliente ${cliente.nombre}',
+                                        child: IconButton(
+                                          visualDensity: VisualDensity.compact,
+                                          padding: EdgeInsets.zero,
+                                          constraints: const BoxConstraints(
+                                            minWidth: 32,
+                                            minHeight: 32,
+                                          ),
+                                          icon: const Icon(
+                                            CupertinoIcons.pencil,
+                                            size: 18,
+                                            color: AppPalette.blue700,
+                                          ),
+                                          tooltip: 'Editar Cliente',
+                                          onPressed: () => _showClienteDialog(
+                                            context,
+                                            cliente: cliente,
+                                          ),
                                         ),
                                       ),
                                       const SizedBox(width: 4),
-                                      IconButton(
-                                        visualDensity: VisualDensity.compact,
-                                        padding: EdgeInsets.zero,
-                                        constraints: const BoxConstraints(
-                                          minWidth: 32,
-                                          minHeight: 32,
-                                        ),
-                                        icon: const Icon(
-                                          CupertinoIcons.trash,
-                                          size: 18,
-                                          color: AppPalette.error,
-                                        ),
-                                        tooltip: 'Eliminar Cliente',
-                                        onPressed: () => _confirmDelete(
-                                          context,
-                                          cliente,
+                                      Semantics(
+                                        button: true,
+                                        label: 'Eliminar cliente ${cliente.nombre}',
+                                        child: IconButton(
+                                          visualDensity: VisualDensity.compact,
+                                          padding: EdgeInsets.zero,
+                                          constraints: const BoxConstraints(
+                                            minWidth: 32,
+                                            minHeight: 32,
+                                          ),
+                                          icon: const Icon(
+                                            CupertinoIcons.trash,
+                                            size: 18,
+                                            color: AppPalette.error,
+                                          ),
+                                          tooltip: 'Eliminar Cliente',
+                                          onPressed: () => _confirmDelete(
+                                            context,
+                                            cliente,
+                                          ),
                                         ),
                                       ),
                                     ],

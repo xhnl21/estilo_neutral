@@ -11,6 +11,8 @@ class AppButton extends StatelessWidget {
   final bool isLoading;
   final bool isFullWidth;
   final EdgeInsetsGeometry? padding;
+  final String? semanticLabel;
+  final String? semanticHint;
 
   const AppButton({
     super.key,
@@ -20,6 +22,8 @@ class AppButton extends StatelessWidget {
     this.isLoading = false,
     this.isFullWidth = false,
     this.padding,
+    this.semanticLabel,
+    this.semanticHint,
   });
 
   @override
@@ -38,7 +42,9 @@ class AppButton extends StatelessWidget {
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               if (icon != null) ...[
-                Icon(icon, size: 18, color: AppPalette.surface),
+                ExcludeSemantics(
+                  child: Icon(icon, size: 18, color: AppPalette.surface),
+                ),
                 const SizedBox(width: AppSpacing.sm),
               ],
               Flexible(
@@ -56,20 +62,30 @@ class AppButton extends StatelessWidget {
             ],
           );
 
-    final button = ElevatedButton(
-      onPressed: isLoading ? null : onPressed,
-      style: ElevatedButton.styleFrom(
-        backgroundColor: AppPalette.blue700,
-        foregroundColor: AppPalette.surface,
-        disabledBackgroundColor: AppPalette.blue700.withValues(alpha: 0.5),
-        minimumSize: const Size(0, 48),
-        padding: padding ?? AppSpacing.pxLg,
-        elevation: 0,
-        shape: const RoundedRectangleBorder(
-          borderRadius: AppSpacing.roundedPill,
+    final effectiveLabel = isLoading ? 'Cargando $label' : (semanticLabel ?? label);
+
+    final button = Semantics(
+      button: true,
+      enabled: !isLoading && onPressed != null,
+      label: effectiveLabel,
+      hint: semanticHint,
+      excludeSemantics: true,
+      onTap: isLoading ? null : onPressed,
+      child: ElevatedButton(
+        onPressed: isLoading ? null : onPressed,
+        style: ElevatedButton.styleFrom(
+          backgroundColor: AppPalette.blue700,
+          foregroundColor: AppPalette.surface,
+          disabledBackgroundColor: AppPalette.blue700.withValues(alpha: 0.5),
+          minimumSize: const Size(0, 48),
+          padding: padding ?? AppSpacing.pxLg,
+          elevation: 0,
+          shape: const RoundedRectangleBorder(
+            borderRadius: AppSpacing.roundedPill,
+          ),
         ),
+        child: effectiveChild,
       ),
-      child: effectiveChild,
     );
 
     if (isFullWidth) {

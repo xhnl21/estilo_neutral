@@ -56,6 +56,7 @@ class _TreasuryPageState extends State<TreasuryPage> {
               // Tasas de referencia y resumen
               AppCard(
                 padding: AppSpacing.pMd,
+                mergeSemantics: true,
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -106,7 +107,11 @@ class _TreasuryPageState extends State<TreasuryPage> {
               ),
               const SizedBox(height: AppSpacing.md),
 
-              Text('Historial de Compras de Divisas', style: AppTypography.titleLarge.copyWith(fontSize: 16)),
+              Semantics(
+                header: true,
+                headingLevel: 2,
+                child: Text('Historial de Compras de Divisas', style: AppTypography.titleLarge.copyWith(fontSize: 16)),
+              ),
               const SizedBox(height: AppSpacing.sm),
 
               if (compras.isEmpty)

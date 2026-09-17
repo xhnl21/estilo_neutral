@@ -10,6 +10,8 @@ class AppOutlinedButton extends StatelessWidget {
   final IconData? icon;
   final bool isFullWidth;
   final EdgeInsetsGeometry? padding;
+  final String? semanticLabel;
+  final String? semanticHint;
 
   const AppOutlinedButton({
     super.key,
@@ -18,6 +20,8 @@ class AppOutlinedButton extends StatelessWidget {
     this.icon,
     this.isFullWidth = false,
     this.padding,
+    this.semanticLabel,
+    this.semanticHint,
   });
 
   @override
@@ -27,7 +31,9 @@ class AppOutlinedButton extends StatelessWidget {
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
         if (icon != null) ...[
-          Icon(icon, size: 18, color: AppPalette.blue700),
+          ExcludeSemantics(
+            child: Icon(icon, size: 18, color: AppPalette.blue700),
+          ),
           const SizedBox(width: AppSpacing.sm),
         ],
         Flexible(
@@ -45,18 +51,26 @@ class AppOutlinedButton extends StatelessWidget {
       ],
     );
 
-    final button = OutlinedButton(
-      onPressed: onPressed,
-      style: OutlinedButton.styleFrom(
-        foregroundColor: AppPalette.blue700,
-        side: const BorderSide(color: AppPalette.blue700, width: 1),
-        minimumSize: const Size(0, 48),
-        padding: padding ?? AppSpacing.pxLg,
-        shape: const RoundedRectangleBorder(
-          borderRadius: AppSpacing.roundedPill,
+    final button = Semantics(
+      button: true,
+      enabled: onPressed != null,
+      label: semanticLabel ?? label,
+      hint: semanticHint,
+      excludeSemantics: true,
+      onTap: onPressed,
+      child: OutlinedButton(
+        onPressed: onPressed,
+        style: OutlinedButton.styleFrom(
+          foregroundColor: AppPalette.blue700,
+          side: const BorderSide(color: AppPalette.blue700, width: 1),
+          minimumSize: const Size(0, 48),
+          padding: padding ?? AppSpacing.pxLg,
+          shape: const RoundedRectangleBorder(
+            borderRadius: AppSpacing.roundedPill,
+          ),
         ),
+        child: child,
       ),
-      child: child,
     );
 
     if (isFullWidth) {

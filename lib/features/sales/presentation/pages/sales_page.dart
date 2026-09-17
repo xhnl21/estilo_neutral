@@ -74,6 +74,7 @@ class _SalesPageState extends State<SalesPage> {
                     Expanded(
                       child: AppCard(
                         padding: AppSpacing.pMd,
+                        mergeSemantics: true,
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
@@ -93,6 +94,7 @@ class _SalesPageState extends State<SalesPage> {
                     Expanded(
                       child: AppCard(
                         padding: AppSpacing.pMd,
+                        mergeSemantics: true,
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [

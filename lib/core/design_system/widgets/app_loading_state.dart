@@ -14,28 +14,36 @@ class AppLoadingState extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Center(
-      child: Padding(
-        padding: AppSpacing.pXl,
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            const SizedBox(
-              width: 36,
-              height: 36,
-              child: CircularProgressIndicator(
-                strokeWidth: 2.5,
-                valueColor: AlwaysStoppedAnimation<Color>(AppPalette.blue700),
+    return Semantics(
+      container: true,
+      liveRegion: true,
+      label: message,
+      excludeSemantics: true,
+      child: Center(
+        child: Padding(
+          padding: AppSpacing.pXl,
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              const ExcludeSemantics(
+                child: SizedBox(
+                  width: 36,
+                  height: 36,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2.5,
+                    valueColor: AlwaysStoppedAnimation<Color>(AppPalette.blue700),
+                  ),
+                ),
               ),
-            ),
-            const SizedBox(height: AppSpacing.lg),
-            Text(
-              message,
-              style: AppTypography.bodyMedium,
-              textAlign: TextAlign.center,
-            ),
-          ],
+              const SizedBox(height: AppSpacing.lg),
+              Text(
+                message,
+                style: AppTypography.bodyMedium,
+                textAlign: TextAlign.center,
+              ),
+            ],
+          ),
         ),
       ),
     );

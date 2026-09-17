@@ -10,12 +10,14 @@ class AppChip extends StatelessWidget {
   final String label;
   final IconData? icon;
   final AppChipVariant variant;
+  final String? semanticLabel;
 
   const AppChip({
     super.key,
     required this.label,
     this.icon,
     this.variant = AppChipVariant.info,
+    this.semanticLabel,
   });
 
   (Color bg, Color text) _getColors() {
@@ -35,34 +37,41 @@ class AppChip extends StatelessWidget {
   Widget build(BuildContext context) {
     final (bg, text) = _getColors();
 
-    return Container(
-      padding: const EdgeInsets.symmetric(
-        horizontal: AppSpacing.sm,
-        vertical: AppSpacing.xs,
-      ),
-      decoration: BoxDecoration(
-        color: bg,
-        borderRadius: AppSpacing.roundedPill,
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          if (icon != null) ...[
-            Icon(icon, size: 14, color: text),
-            const SizedBox(width: AppSpacing.xs),
-          ],
-          Flexible(
-            child: Text(
-              label,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: AppTypography.labelSmall.copyWith(
-                color: text,
-                fontWeight: FontWeight.w600,
+    return Semantics(
+      container: true,
+      label: semanticLabel ?? 'Estado: $label',
+      excludeSemantics: true,
+      child: Container(
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppSpacing.sm,
+          vertical: AppSpacing.xs,
+        ),
+        decoration: BoxDecoration(
+          color: bg,
+          borderRadius: AppSpacing.roundedPill,
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (icon != null) ...[
+              ExcludeSemantics(
+                child: Icon(icon, size: 14, color: text),
+              ),
+              const SizedBox(width: AppSpacing.xs),
+            ],
+            Flexible(
+              child: Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: AppTypography.labelSmall.copyWith(
+                  color: text,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
