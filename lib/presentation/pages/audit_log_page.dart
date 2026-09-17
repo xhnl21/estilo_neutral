@@ -52,7 +52,7 @@ class _AuditLogPageState extends State<AuditLogPage> {
           ),
           body: AnimatedSwitcher(
             duration: const Duration(milliseconds: 300),
-            child: widget.dataService.isLoading && logs.isEmpty
+            child: widget.dataService.isLoading
                 ? const AuditLogSkeleton(key: ValueKey('audit_log_skeleton'))
                 : Column(
                     key: const ValueKey('audit_log_content'),

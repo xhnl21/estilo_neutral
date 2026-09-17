@@ -2,6 +2,7 @@
 /// Centraliza todos los identificadores de ruta para evitar strings mágicos.
 abstract class RoutePaths {
   // Rutas públicas y de autenticación
+  static const String splash = '/splash';
   static const String login = '/login';
   static const String onboarding = '/onboarding';
 

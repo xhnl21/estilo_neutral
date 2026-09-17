@@ -122,7 +122,7 @@ class _ClientesView extends StatelessWidget {
               Expanded(
                 child: AnimatedSwitcher(
                   duration: const Duration(milliseconds: 300),
-                  child: state.isInitialLoading
+                  child: state.status == ClientesStatus.loading
                       ? const ClientesListSkeleton(
                           key: ValueKey('clientes_skeleton'),
                         )

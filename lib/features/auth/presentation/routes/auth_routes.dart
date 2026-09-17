@@ -3,6 +3,7 @@ import '../../../../core/router/feature_route_definition.dart';
 import '../../../../core/router/route_names.dart';
 import '../../../../core/router/route_paths.dart';
 import '../../application/auth_notifier.dart';
+import '../../../../presentation/screens/splash/splash.dart';
 import '../pages/login_page.dart';
 import '../pages/onboarding_page.dart';
 
@@ -15,6 +16,11 @@ class AuthRoutes implements FeatureRouteDefinition {
   @override
   List<RouteBase> buildRoutes() {
     return [
+      GoRoute(
+        path: RoutePaths.splash,
+        name: RouteNames.splash,
+        builder: (context, state) => const SplashScreen(),
+      ),
       GoRoute(
         path: RoutePaths.login,
         name: RouteNames.login,

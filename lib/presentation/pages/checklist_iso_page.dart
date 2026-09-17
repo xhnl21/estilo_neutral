@@ -47,7 +47,7 @@ class _ChecklistIsoPageState extends State<ChecklistIsoPage> {
           ),
           body: AnimatedSwitcher(
             duration: const Duration(milliseconds: 300),
-            child: widget.dataService.isLoading && items.isEmpty
+            child: widget.dataService.isLoading
                 ? const ChecklistIsoSkeleton(key: ValueKey('checklist_iso_skeleton'))
                 : ListView(
                     key: const ValueKey('checklist_iso_content'),

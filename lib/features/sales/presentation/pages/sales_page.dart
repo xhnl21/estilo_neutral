@@ -61,7 +61,7 @@ class _SalesPageState extends State<SalesPage> {
           ),
           body: AnimatedSwitcher(
             duration: const Duration(milliseconds: 300),
-            child: ds.isLoading && ds.ventas.isEmpty
+            child: ds.isLoading
                 ? const SalesSkeleton(key: ValueKey('sales_skeleton'))
                 : Column(
                     key: const ValueKey('sales_content'),

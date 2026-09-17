@@ -45,7 +45,7 @@ class _ReporteMigracionPageState extends State<ReporteMigracionPage> {
           ),
           body: AnimatedSwitcher(
             duration: const Duration(milliseconds: 300),
-            child: widget.dataService.isLoading && reportes.isEmpty
+            child: widget.dataService.isLoading
                 ? const ReporteMigracionSkeleton(key: ValueKey('reporte_migracion_skeleton'))
                 : reportes.isEmpty
                     ? const AppEmptyState(

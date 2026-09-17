@@ -125,7 +125,7 @@ class _InventarioPageState extends State<InventarioPage> {
               Expanded(
                 child: AnimatedSwitcher(
                   duration: const Duration(milliseconds: 300),
-                  child: widget.dataService.isLoading && productos.isEmpty
+                  child: widget.dataService.isLoading
                       ? const InventarioSkeleton(
                           key: ValueKey('inventario_skeleton'),
                         )

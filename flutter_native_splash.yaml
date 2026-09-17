@@ -6,8 +6,8 @@ flutter_native_splash:
   android_12:
     color: "#D4C7B4"
     color_dark: "#D4C7B4"
-    image: "assets/Gemini_Generated_Image_siwabesiwabesiwa.png"
-    image_dark: "assets/Gemini_Generated_Image_siwabesiwabesiwa.png"
+    image: "assets/icons.png"
+    image_dark: "assets/icons.png"
     icon_background_color: "#D4C7B4"
     icon_background_color_dark: "#D4C7B4"
 

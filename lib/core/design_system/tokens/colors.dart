@@ -57,4 +57,7 @@ abstract final class AppPalette {
 
   /// Informativo (#005187) — Reutiliza primario oscuro.
   static const Color info = Color(0xFF005187);
+
+  /// Color destacado de la identidad neutral / splash (#D4C7B4) — extraído de assets/icon.png.
+  static const Color splashBackground = Color(0xFFD4C7B4);
 }

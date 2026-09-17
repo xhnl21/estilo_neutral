@@ -16,13 +16,14 @@ class AuthGuard {
     final bool isAuthenticated = authNotifier.isAuthenticated;
     final String location = state.matchedLocation;
 
+    final bool isSplashing = location == RoutePaths.splash;
     final bool isLoggingIn = location == RoutePaths.login;
     final bool isOnboarding = location == RoutePaths.onboarding;
 
     // 1. Si no está autenticado y busca acceder a una ruta privada:
     if (!isAuthenticated) {
-      if (isLoggingIn || isOnboarding) {
-        return null; // Permitir acceso a login u onboarding
+      if (isSplashing || isLoggingIn || isOnboarding) {
+        return null; // Permitir acceso a splash, login u onboarding
       }
       // Redirigir a login preservando la ruta previa en query parameters
       final Uri uri = Uri(

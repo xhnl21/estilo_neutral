@@ -2,6 +2,7 @@
 /// Facilita el uso de `context.goNamed(...)` desacoplado de las URIs.
 abstract class RouteNames {
   // Rutas públicas / sesión
+  static const String splash = 'splash';
   static const String login = 'login';
   static const String onboarding = 'onboarding';
 

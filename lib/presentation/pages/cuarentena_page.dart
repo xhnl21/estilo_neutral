@@ -45,7 +45,7 @@ class _CuarentenaPageState extends State<CuarentenaPage> {
           ),
           body: AnimatedSwitcher(
             duration: const Duration(milliseconds: 300),
-            child: widget.dataService.isLoading && items.isEmpty
+            child: widget.dataService.isLoading
                 ? const CuarentenaSkeleton(key: ValueKey('cuarentena_skeleton'))
                 : items.isEmpty
                     ? const AppEmptyState(

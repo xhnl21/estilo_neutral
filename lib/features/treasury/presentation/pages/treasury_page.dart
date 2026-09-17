@@ -47,7 +47,7 @@ class _TreasuryPageState extends State<TreasuryPage> {
           ),
           body: AnimatedSwitcher(
             duration: const Duration(milliseconds: 300),
-            child: widget.dataService.isLoading && compras.isEmpty
+            child: widget.dataService.isLoading
                 ? const TreasurySkeleton(key: ValueKey('treasury_skeleton'))
                 : ListView(
                     key: const ValueKey('treasury_content'),

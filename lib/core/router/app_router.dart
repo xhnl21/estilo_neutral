@@ -35,7 +35,7 @@ class AppRouter {
     required this.authNotifier,
     required this.salesController,
     required this.dataService,
-    this.initialLocation = RoutePaths.ventas,
+    this.initialLocation = RoutePaths.splash,
   }) {
     _authGuard = AuthGuard(authNotifier: authNotifier);
     _onboardingGuard = OnboardingGuard(authNotifier: authNotifier);

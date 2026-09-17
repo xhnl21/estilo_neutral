@@ -1,4 +1,8 @@
 import 'package:estilo_neutral/core/design_system/design_system.dart';
+import 'package:estilo_neutral/features/reporting/presentation/pages/reporting_page.dart';
+import 'package:estilo_neutral/features/treasury/presentation/pages/treasury_page.dart';
+import 'package:estilo_neutral/presentation/pages/pages.dart';
+import 'package:estilo_neutral/shared/google_sheets/sheets_data_service.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -260,4 +264,122 @@ void main() {
       expect(find.byType(ReporteMigracionSkeleton), findsOneWidget);
     });
   });
+
+  group('Page-level Skeleton Integration Tests during isLoading', () {
+    testWidgets('ClientesPage displays ClientesListSkeleton during loading', (tester) async {
+      final service = _MockLoadingDataService()..mockIsLoading = true;
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: ClientesPage(dataService: service),
+        ),
+      );
+      await tester.pump();
+
+      expect(find.byType(ClientesListSkeleton), findsOneWidget);
+    });
+
+    testWidgets('InventarioPage displays InventarioSkeleton during loading', (tester) async {
+      final service = _MockLoadingDataService()..mockIsLoading = true;
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: InventarioPage(dataService: service),
+        ),
+      );
+      await tester.pump();
+
+      expect(find.byType(InventarioSkeleton), findsOneWidget);
+    });
+
+    testWidgets('TreasuryPage displays TreasurySkeleton during loading', (tester) async {
+      final service = _MockLoadingDataService()..mockIsLoading = true;
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: TreasuryPage(dataService: service),
+        ),
+      );
+      await tester.pump();
+
+      expect(find.byType(TreasurySkeleton), findsOneWidget);
+    });
+
+    testWidgets('ReportingPage displays ReportingSkeleton during loading', (tester) async {
+      final service = _MockLoadingDataService()..mockIsLoading = true;
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: ReportingPage(dataService: service),
+        ),
+      );
+      await tester.pump();
+
+      expect(find.byType(ReportingSkeleton), findsOneWidget);
+    });
+
+    testWidgets('CuarentenaPage displays CuarentenaSkeleton during loading', (tester) async {
+      final service = _MockLoadingDataService()..mockIsLoading = true;
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: CuarentenaPage(dataService: service),
+        ),
+      );
+      await tester.pump();
+
+      expect(find.byType(CuarentenaSkeleton), findsOneWidget);
+    });
+
+    testWidgets('AuditLogPage displays AuditLogSkeleton during loading', (tester) async {
+      final service = _MockLoadingDataService()..mockIsLoading = true;
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: AuditLogPage(dataService: service),
+        ),
+      );
+      await tester.pump();
+
+      expect(find.byType(AuditLogSkeleton), findsOneWidget);
+    });
+
+    testWidgets('ChecklistIsoPage displays ChecklistIsoSkeleton during loading', (tester) async {
+      final service = _MockLoadingDataService()..mockIsLoading = true;
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: ChecklistIsoPage(dataService: service),
+        ),
+      );
+      await tester.pump();
+
+      expect(find.byType(ChecklistIsoSkeleton), findsOneWidget);
+    });
+
+    testWidgets('ReporteMigracionPage displays ReporteMigracionSkeleton during loading', (tester) async {
+      final service = _MockLoadingDataService()..mockIsLoading = true;
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: ReporteMigracionPage(dataService: service),
+        ),
+      );
+      await tester.pump();
+
+      expect(find.byType(ReporteMigracionSkeleton), findsOneWidget);
+    });
+  });
+}
+
+class _MockLoadingDataService extends SheetsDataService {
+  bool _mockIsLoading = true;
+
+  @override
+  bool get isLoading => _mockIsLoading;
+
+  set mockIsLoading(bool value) {
+    _mockIsLoading = value;
+    notifyListeners();
+  }
 }

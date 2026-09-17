@@ -47,7 +47,7 @@ class _ReportingPageState extends State<ReportingPage> {
           ),
           body: AnimatedSwitcher(
             duration: const Duration(milliseconds: 300),
-            child: widget.dataService.isLoading && resumenes.isEmpty
+            child: widget.dataService.isLoading
                 ? const ReportingSkeleton(key: ValueKey('reporting_skeleton'))
                 : ListView(
                     key: const ValueKey('reporting_content'),

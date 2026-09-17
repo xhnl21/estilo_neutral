@@ -12,19 +12,20 @@
         "equatable",
         "flutter",
         "flutter_bloc",
+        "flutter_native_splash",
         "flutter_secure_storage",
         "go_router",
         "google_fonts",
         "google_sign_in",
         "googleapis",
         "http",
-        "url_launcher"
+        "url_launcher",
+        "video_player"
       ],
       "devDependencies": [
         "change_app_package_name",
         "flutter_launcher_icons",
         "flutter_lints",
-        "flutter_native_splash",
         "flutter_test"
       ]
     },
@@ -38,23 +39,6 @@
         "image",
         "json_annotation",
         "path",
-        "yaml"
-      ]
-    },
-    {
-      "name": "flutter_native_splash",
-      "version": "2.4.8",
-      "dependencies": [
-        "ansicolor",
-        "args",
-        "flutter",
-        "flutter_web_plugins",
-        "html",
-        "image",
-        "meta",
-        "path",
-        "universal_io",
-        "xml",
         "yaml"
       ]
     },
@@ -86,6 +70,36 @@
         "stream_channel",
         "test_api",
         "vector_math"
+      ]
+    },
+    {
+      "name": "flutter_native_splash",
+      "version": "2.4.8",
+      "dependencies": [
+        "ansicolor",
+        "args",
+        "flutter",
+        "flutter_web_plugins",
+        "html",
+        "image",
+        "meta",
+        "path",
+        "universal_io",
+        "xml",
+        "yaml"
+      ]
+    },
+    {
+      "name": "video_player",
+      "version": "2.14.0",
+      "dependencies": [
+        "collection",
+        "flutter",
+        "html",
+        "video_player_android",
+        "video_player_avfoundation",
+        "video_player_platform_interface",
+        "video_player_web"
       ]
     },
     {
@@ -263,49 +277,6 @@
       "dependencies": []
     },
     {
-      "name": "ansicolor",
-      "version": "2.0.3",
-      "dependencies": []
-    },
-    {
-      "name": "xml",
-      "version": "7.0.1",
-      "dependencies": [
-        "collection",
-        "meta",
-        "petitparser"
-      ]
-    },
-    {
-      "name": "universal_io",
-      "version": "2.3.1",
-      "dependencies": [
-        "collection",
-        "meta",
-        "typed_data"
-      ]
-    },
-    {
-      "name": "meta",
-      "version": "1.18.3",
-      "dependencies": []
-    },
-    {
-      "name": "html",
-      "version": "0.15.7",
-      "dependencies": [
-        "csslib",
-        "source_span"
-      ]
-    },
-    {
-      "name": "flutter_web_plugins",
-      "version": "0.0.0",
-      "dependencies": [
-        "flutter"
-      ]
-    },
-    {
       "name": "lints",
       "version": "3.0.0",
       "dependencies": []
@@ -316,6 +287,11 @@
       "dependencies": [
         "async"
       ]
+    },
+    {
+      "name": "meta",
+      "version": "1.18.3",
+      "dependencies": []
     },
     {
       "name": "collection",
@@ -382,6 +358,80 @@
         "stream_channel",
         "string_scanner",
         "term_glyph"
+      ]
+    },
+    {
+      "name": "ansicolor",
+      "version": "2.0.3",
+      "dependencies": []
+    },
+    {
+      "name": "xml",
+      "version": "7.0.1",
+      "dependencies": [
+        "collection",
+        "meta",
+        "petitparser"
+      ]
+    },
+    {
+      "name": "universal_io",
+      "version": "2.3.1",
+      "dependencies": [
+        "collection",
+        "meta",
+        "typed_data"
+      ]
+    },
+    {
+      "name": "html",
+      "version": "0.15.7",
+      "dependencies": [
+        "csslib",
+        "source_span"
+      ]
+    },
+    {
+      "name": "flutter_web_plugins",
+      "version": "0.0.0",
+      "dependencies": [
+        "flutter"
+      ]
+    },
+    {
+      "name": "video_player_web",
+      "version": "2.4.0",
+      "dependencies": [
+        "flutter",
+        "flutter_web_plugins",
+        "video_player_platform_interface",
+        "web"
+      ]
+    },
+    {
+      "name": "video_player_platform_interface",
+      "version": "6.9.0",
+      "dependencies": [
+        "flutter",
+        "plugin_platform_interface"
+      ]
+    },
+    {
+      "name": "video_player_avfoundation",
+      "version": "2.12.0",
+      "dependencies": [
+        "flutter",
+        "meta",
+        "video_player_platform_interface"
+      ]
+    },
+    {
+      "name": "video_player_android",
+      "version": "2.12.2",
+      "dependencies": [
+        "flutter",
+        "meta",
+        "video_player_platform_interface"
       ]
     },
     {
@@ -658,28 +708,6 @@
       ]
     },
     {
-      "name": "petitparser",
-      "version": "7.0.2",
-      "dependencies": [
-        "collection",
-        "meta"
-      ]
-    },
-    {
-      "name": "typed_data",
-      "version": "1.4.0",
-      "dependencies": [
-        "collection"
-      ]
-    },
-    {
-      "name": "csslib",
-      "version": "1.0.2",
-      "dependencies": [
-        "source_span"
-      ]
-    },
-    {
       "name": "leak_tracker_testing",
       "version": "3.0.2",
       "dependencies": [
@@ -713,10 +741,25 @@
       ]
     },
     {
-      "name": "nested",
-      "version": "1.0.0",
+      "name": "petitparser",
+      "version": "7.0.2",
       "dependencies": [
-        "flutter"
+        "collection",
+        "meta"
+      ]
+    },
+    {
+      "name": "typed_data",
+      "version": "1.4.0",
+      "dependencies": [
+        "collection"
+      ]
+    },
+    {
+      "name": "csslib",
+      "version": "1.0.2",
+      "dependencies": [
+        "source_span"
       ]
     },
     {
@@ -724,6 +767,13 @@
       "version": "2.1.8",
       "dependencies": [
         "meta"
+      ]
+    },
+    {
+      "name": "nested",
+      "version": "1.0.0",
+      "dependencies": [
+        "flutter"
       ]
     },
     {

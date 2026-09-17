@@ -34,8 +34,9 @@ La implementación se realizó sobre la rama `feature/skeleton-loaders`, siguien
    - Se crearon componentes atómicos (`SkeletonBox`, `SkeletonCircle`, `SkeletonLine`, `SkeletonCard`) que permiten armar cualquier layout futuro con `const constructors` y total consistencia visual.
 4. **Compatibilidad y Barriles**:
    - Se exportan los componentes desde `lib/core/design_system/widgets/skeletons/skeletons.dart` y mediante barrel en `lib/widgets/skeletons/skeletons.dart` para soporte universal.
-5. **Transición Suave**:
-   - Se integró `AnimatedSwitcher` con curva `easeInOut` y duración de 300 ms en cada vista, evitando transiciones bruscas al llegar los datos de red.
+5. **Activación Visible y Transición Suave**:
+   - Inicialmente, las vistas condicionaban el skeleton a `isLoading && items.isEmpty`, lo que impedía ver el esqueleto debido a que `SheetsDataService` precargaba datos estáticos de respaldo (`_seedFallbackData()`).
+   - Se desacopló la condición para evaluar directamente `isLoading` (en `ClientesStatus.loading` o `dataService.isLoading`), garantizando que siempre que una vista esté en proceso asíncrono de carga o refresco de datos, el **Skeleton Loader con animación Shimmer** se renderice de forma visible, y al completarse transicione suavemente hacia el contenido real con `AnimatedSwitcher` (≤ 300 ms).
 
 ---
 
@@ -79,8 +80,11 @@ La implementación se realizó sobre la rama `feature/skeleton-loaders`, siguien
 
 ## 5. Pruebas y Validación
 - **Análisis Estático**: `flutter analyze` ejecutado con **0 errores y 0 advertencias**.
-- **Pruebas de Componentes**: 14 tests específicos en `test/presentation/skeletons_test.dart` validando renderizado, dimensiones y responsividad sin desbordamientos (`RenderFlex overflow`) en pantallas angostas (320px).
-- **Suite Completa**: 82 pruebas automatizadas en `flutter test` ejecutadas y superadas con éxito (**100% passed**).
+- **Pruebas de Componentes e Integración**: 22 tests específicos en `test/presentation/skeletons_test.dart`:
+  - 5 tests unitarios de componentes atómicos.
+  - 9 tests de responsividad y ausencia de overflow en pantallas angostas (320px).
+  - 8 tests de integración a nivel de pantalla validando que cada vista activa y renderiza visiblemente su Skeleton Loader durante `isLoading == true`.
+- **Suite Completa**: 90 pruebas automatizadas en `flutter test` ejecutadas y superadas con éxito (**100% passed**).
 
 ---
 
