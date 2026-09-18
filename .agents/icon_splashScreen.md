@@ -4,7 +4,7 @@ CONTEXTO:
 
 - Proyecto Flutter con Dart.
 - Nombre de paquete actual: <indica el actual o "por defecto, ej. com.example.mi_app">.
-- Nuevo nombre de paquete objetivo: com.innovo.zas.
+- Nuevo nombre de paquete objetivo: com.estiloneutral.es.
 - Imagen de marca (logo/ícono) disponible en: assets/Gemini_Generated_Image_siwabesiwabesiwa.png
 - El proyecto debe quedar listo para producción (release) tanto en Android como en iOS.
 
@@ -23,7 +23,7 @@ TAREA 1 — Cambiar el nombre del paquete
 
 - Añadir la dependencia de desarrollo `change_app_package_name` en el `pubspec.yaml`.
 - Ejecutar:
-  dart run change_app_package_name:main com.innovo.zas
+  dart run change_app_package_name:main com.estiloneutral.es
 - Verificar que el cambio se aplicó correctamente en:
   - android/app/build.gradle (o build.gradle.kts) → applicationId y namespace.
   - android/app/src/main/AndroidManifest.xml → package.

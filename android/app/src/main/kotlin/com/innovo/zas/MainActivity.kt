@@ -1,4 +1,4 @@
-package com.innovo.zas
+package com.estiloneutral.es
 
 import io.flutter.embedding.android.FlutterActivity
 

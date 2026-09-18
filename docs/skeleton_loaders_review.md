@@ -1,6 +1,7 @@
-# Informe de Revisión: Implementación de Skeleton Loaders Progresivos con Shimmer (Proyecto Zas)
+# Informe de Revisión: Implementación de Skeleton Loaders Progresivos con Shimmer (Proyecto Estilo Neutral)
 
 ## 1. Resumen Ejecutivo
+
 Se ha completado exitosamente la implementación del estado de carga progresiva (**Skeleton Loaders**) en todas las vistas de la aplicación que procesan datos asíncronos (Google Sheets / API). Se reemplazaron los estados en blanco y los spinners genéricos aislados por estructuras visuales de alta fidelidad con animación **Shimmer** nativa y transiciones suaves (**AnimatedSwitcher** ≤ 300 ms).
 
 La implementación se realizó sobre la rama `feature/skeleton-loaders`, siguiendo estrictamente el Design System (`AppPalette`, `AppSpacing`, `AppTypography`) y la arquitectura reactiva (BLoC / Cubit / ListenableBuilder).
@@ -9,18 +10,18 @@ La implementación se realizó sobre la rama `feature/skeleton-loaders`, siguien
 
 ## 2. Vistas Cubiertas y Componentes Asignados
 
-| Vista / Pantalla | Archivo | Componente Skeleton | Descripción Estructural |
-| :--- | :--- | :--- | :--- |
-| **Clientes** | `lib/presentation/pages/clientes_page.dart` | `ClientesListSkeleton` | Simula lista de clientes con avatar circular, líneas tipográficas para nombre, datos de contacto/email, badges de estado y balances deudores. |
-| **Ventas** | `lib/features/sales/presentation/pages/sales_page.dart` | `SalesSkeleton` | Simula métricas KPI consolidadas (Facturación Total y Deuda Pendiente), barra de filtros por chips y listado de transacciones con montos. |
-| **Inventario** | `lib/presentation/pages/inventario_page.dart` | `InventarioSkeleton` | Simula thumbnails cuadrados para prendas de Google Drive, identificadores de SKU, nombres, chips de talla/categoría, precios y badges de stock. |
-| **Tesorería** | `lib/features/treasury/presentation/pages/treasury_page.dart` | `TreasurySkeleton` | Simula tarjeta destacada de capital consolidado (USD y Bolívares) y tarjetas de compras de divisas con tasas y plataformas. |
-| **Reportes & Cierres** | `lib/features/reporting/presentation/pages/reporting_page.dart` | `ReportingSkeleton` | Simula tarjeta consolidada general de cierres diarios y listado histórico con desglose de ventas, tasas BCV y transacciones. |
-| **Cuarentena** | `lib/presentation/pages/cuarentena_page.dart` | `CuarentenaSkeleton` | Simula tarjetas de anomalías contables, chips de estatus, motivos de discrepancia y bloques de payload JSON inspeccionables. |
-| **Registro de Auditoría** | `lib/presentation/pages/audit_log_page.dart` | `AuditLogSkeleton` | Simula selector horizontal de hojas por chips y checkpoints con hashes SHA256 y diferencias detectadas. |
-| **Checklist ISO** | `lib/presentation/pages/checklist_iso_page.dart` | `ChecklistIsoSkeleton` | Simula tarjeta con barra de progreso lineal de cumplimiento normativo global y lista de requisitos ISO evaluados. |
-| **Reporte Migración** | `lib/presentation/pages/reporte_migracion_page.dart` | `ReporteMigracionSkeleton` | Simula tarjetas de métricas de migración de bases de datos, con balance origen vs destino y marcas temporales. |
-| **Auditoría (Pestañas)**| `lib/features/audit/presentation/pages/audit_page.dart` | Segmentado | Sincroniza dinámicamente con los skeletons de Audit Log, Cuarentena y Checklist ISO según la pestaña activa durante refrescos. |
+| Vista / Pantalla          | Archivo                                                         | Componente Skeleton        | Descripción Estructural                                                                                                                         |
+| :------------------------ | :-------------------------------------------------------------- | :------------------------- | :---------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Clientes**              | `lib/presentation/pages/clientes_page.dart`                     | `ClientesListSkeleton`     | Simula lista de clientes con avatar circular, líneas tipográficas para nombre, datos de contacto/email, badges de estado y balances deudores.   |
+| **Ventas**                | `lib/features/sales/presentation/pages/sales_page.dart`         | `SalesSkeleton`            | Simula métricas KPI consolidadas (Facturación Total y Deuda Pendiente), barra de filtros por chips y listado de transacciones con montos.       |
+| **Inventario**            | `lib/presentation/pages/inventario_page.dart`                   | `InventarioSkeleton`       | Simula thumbnails cuadrados para prendas de Google Drive, identificadores de SKU, nombres, chips de talla/categoría, precios y badges de stock. |
+| **Tesorería**             | `lib/features/treasury/presentation/pages/treasury_page.dart`   | `TreasurySkeleton`         | Simula tarjeta destacada de capital consolidado (USD y Bolívares) y tarjetas de compras de divisas con tasas y plataformas.                     |
+| **Reportes & Cierres**    | `lib/features/reporting/presentation/pages/reporting_page.dart` | `ReportingSkeleton`        | Simula tarjeta consolidada general de cierres diarios y listado histórico con desglose de ventas, tasas BCV y transacciones.                    |
+| **Cuarentena**            | `lib/presentation/pages/cuarentena_page.dart`                   | `CuarentenaSkeleton`       | Simula tarjetas de anomalías contables, chips de estatus, motivos de discrepancia y bloques de payload JSON inspeccionables.                    |
+| **Registro de Auditoría** | `lib/presentation/pages/audit_log_page.dart`                    | `AuditLogSkeleton`         | Simula selector horizontal de hojas por chips y checkpoints con hashes SHA256 y diferencias detectadas.                                         |
+| **Checklist ISO**         | `lib/presentation/pages/checklist_iso_page.dart`                | `ChecklistIsoSkeleton`     | Simula tarjeta con barra de progreso lineal de cumplimiento normativo global y lista de requisitos ISO evaluados.                               |
+| **Reporte Migración**     | `lib/presentation/pages/reporte_migracion_page.dart`            | `ReporteMigracionSkeleton` | Simula tarjetas de métricas de migración de bases de datos, con balance origen vs destino y marcas temporales.                                  |
+| **Auditoría (Pestañas)**  | `lib/features/audit/presentation/pages/audit_page.dart`         | Segmentado                 | Sincroniza dinámicamente con los skeletons de Audit Log, Cuarentena y Checklist ISO según la pestaña activa durante refrescos.                  |
 
 ---
 
@@ -43,6 +44,7 @@ La implementación se realizó sobre la rama `feature/skeleton-loaders`, siguien
 ## 4. Listado de Archivos Nuevos y Modificados
 
 ### Archivos Nuevos
+
 - `lib/core/design_system/widgets/skeletons/shimmer.dart`
 - `lib/core/design_system/widgets/skeletons/skeleton_box.dart`
 - `lib/core/design_system/widgets/skeletons/skeleton_circle.dart`
@@ -63,6 +65,7 @@ La implementación se realizó sobre la rama `feature/skeleton-loaders`, siguien
 - `docs/skeleton_loaders_review.md`
 
 ### Archivos Modificados
+
 - `lib/core/design_system/widgets/widgets.dart`
 - `lib/presentation/cubits/clientes/clientes_state.dart`
 - `lib/presentation/pages/clientes_page.dart`
@@ -79,6 +82,7 @@ La implementación se realizó sobre la rama `feature/skeleton-loaders`, siguien
 ---
 
 ## 5. Pruebas y Validación
+
 - **Análisis Estático**: `flutter analyze` ejecutado con **0 errores y 0 advertencias**.
 - **Pruebas de Componentes e Integración**: 22 tests específicos en `test/presentation/skeletons_test.dart`:
   - 5 tests unitarios de componentes atómicos.
@@ -89,6 +93,7 @@ La implementación se realizó sobre la rama `feature/skeleton-loaders`, siguien
 ---
 
 ## 6. Posibles Mejoras Futuras
+
 1. **Shimmer Adaptativo al Tema Oscuro**:
    - Conectar los colores de `AppShimmer` directamente con `Theme.of(context).brightness` para soportar un modo oscuro automatizado en futuras versiones.
 2. **Skeletons para Modales y Formularios**:

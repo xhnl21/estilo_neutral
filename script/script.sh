@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# Script de Compilación para Producción (Release) - Estilo Neutral / Zas
+# Script de Compilación para Producción (Release) - Estilo Neutral
 # ==============================================================================
 # Permite generar los artefactos de producción (APK y/o AppBundle AAB)
 # utilizando la configuración del flavor "prod" y las variables de entorno de .env
@@ -41,7 +41,7 @@ fi
 
 # Extraer metadatos de configuración
 APP_NAME=$(grep '^APP_NAME=' "$ENV_FILE" | cut -d '=' -f2- || echo "Estilo Neutral")
-APP_PACKAGE_NAME=$(grep '^APP_PACKAGE_NAME=' "$ENV_FILE" | cut -d '=' -f2- || echo "com.innovo.zas")
+APP_PACKAGE_NAME=$(grep '^APP_PACKAGE_NAME=' "$ENV_FILE" | cut -d '=' -f2- || echo "com.estiloneutral.es")
 ENVIRONMENT=$(grep '^ENVIRONMENT=' "$ENV_FILE" | cut -d '=' -f2- || echo "prod")
 
 echo -e "${CYAN}ℹ️  Configuración detectada:${NC}"
