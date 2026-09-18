@@ -24,7 +24,7 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 cd "$PROJECT_ROOT"
 
 echo -e "${BLUE}${BOLD}================================================================${NC}"
-echo -e "${BLUE}${BOLD}   COMPILACIÓN LOCAL DE FLUTTER (ESTILO NEUTRAL)          ${NC}"
+echo -e "${BLUE}${BOLD}   COMPILACIÓN LOCAL DE FLUTTER ( ESTILO NEUTRAL)          ${NC}"
 echo -e "${BLUE}${BOLD}================================================================${NC}"
 
 # 2. Menú Interactivo de Selección de Entorno (Flavors)
