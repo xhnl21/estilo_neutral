@@ -25,6 +25,9 @@ class RegistroCuarentena {
   /// Columna H: Hash SHA-256 inmutable de la evidencia
   final String hashEvidencia;
 
+  /// Columna I: Identificador de la organización a la que pertenece el registro
+  final String organizacionId;
+
   const RegistroCuarentena({
     required this.idRegistroOriginal,
     required this.hojaOrigen,
@@ -34,6 +37,7 @@ class RegistroCuarentena {
     required this.estado,
     required this.resolucion,
     required this.hashEvidencia,
+    this.organizacionId = '67774411-6aa1-4aa3-a4b2-d3fc6913b768',
   });
 
   factory RegistroCuarentena.fromRow(List<dynamic> row) {
@@ -46,6 +50,9 @@ class RegistroCuarentena {
       estado: row.length > 5 ? row[5].toString() : '',
       resolucion: row.length > 6 ? row[6].toString() : '',
       hashEvidencia: row.length > 7 ? row[7].toString() : '',
+      organizacionId: row.length > 8 && row[8].toString().trim().isNotEmpty
+          ? row[8].toString().trim()
+          : '67774411-6aa1-4aa3-a4b2-d3fc6913b768',
     );
   }
 
@@ -59,6 +66,7 @@ class RegistroCuarentena {
       'estado': estado,
       'resolucion': resolucion,
       'hash_evidencia': hashEvidencia,
+      'organizacion_id': organizacionId,
     };
   }
 }

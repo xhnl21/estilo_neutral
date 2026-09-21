@@ -52,6 +52,9 @@ class Venta {
   /// Columna P: Estado del ciclo de vida transaccional
   final EstadoVenta estado;
 
+  /// Columna Q: Identificador de la organización a la que pertenece el registro
+  final String organizacionId;
+
   const Venta({
     required this.id,
     required this.fecha,
@@ -69,6 +72,7 @@ class Venta {
     required this.totalPagarUsd,
     required this.validacion,
     required this.estado,
+    this.organizacionId = '67774411-6aa1-4aa3-a4b2-d3fc6913b768',
   });
 
   factory Venta.fromRow(List<dynamic> row) {
@@ -89,6 +93,9 @@ class Venta {
       totalPagarUsd: row.length > 13 ? parseSheetDouble(row[13]) : 0.0,
       validacion: row.length > 14 ? row[14].toString() : 'OK',
       estado: row.length > 15 ? EstadoVenta.fromString(row[15].toString()) : EstadoVenta.pendiente,
+      organizacionId: row.length > 16 && row[16].toString().trim().isNotEmpty
+          ? row[16].toString().trim()
+          : '67774411-6aa1-4aa3-a4b2-d3fc6913b768',
     );
   }
 
@@ -110,6 +117,7 @@ class Venta {
       '=K$rowNumber',
       '=IF(AND(ABS(J$rowNumber-E$rowNumber*INDEX(inventario!G:G,MATCH(D$rowNumber,inventario!A:A,0))*F$rowNumber)<0.01, ABS(K$rowNumber-E$rowNumber*INDEX(inventario!G:G,MATCH(D$rowNumber,inventario!A:A,0)))<0.01, ABS(M$rowNumber-(N$rowNumber-L$rowNumber))<0.01),"OK","ERROR")',
       estado.label,
+      organizacionId,
     ];
   }
 
@@ -131,6 +139,7 @@ class Venta {
       'total_pagar_usd': totalPagarUsd,
       'validacion': validacion,
       'estado': estado.label,
+      'organizacion_id': organizacionId,
     };
   }
 }

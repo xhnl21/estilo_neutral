@@ -46,9 +46,9 @@ void main() {
 
       final fittedBoxes = tester.widgetList<FittedBox>(find.byType(FittedBox)).toList();
       expect(fittedBoxes.length, equals(2));
-      // Capa de fondo: cover
+      // Capa de fondo: cover, siempre rellena el borde sin franjas negras.
       expect(fittedBoxes.first.fit, equals(BoxFit.cover));
-      // Capa de primer plano: contain
+      // Capa de primer plano: contain por defecto, no recorta el logo.
       expect(fittedBoxes.last.fit, equals(BoxFit.contain));
 
       final videoPlayerFinder = find.byType(VideoPlayer);
@@ -73,6 +73,28 @@ void main() {
       );
 
       expect(find.byType(ColorFiltered), findsOneWidget);
+    });
+
+    testWidgets('foreground layer respects a custom fit while background stays cover', (tester) async {
+      final controller = _MockVideoPlayerController(
+        const VideoPlayerValue(
+          duration: Duration(seconds: 5),
+          size: Size(1080, 1920),
+          isInitialized: true,
+        ),
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: SplashAnimationView(controller: controller, fit: BoxFit.cover),
+          ),
+        ),
+      );
+
+      final fittedBoxes = tester.widgetList<FittedBox>(find.byType(FittedBox)).toList();
+      expect(fittedBoxes.first.fit, equals(BoxFit.cover));
+      expect(fittedBoxes.last.fit, equals(BoxFit.cover));
     });
   });
 }

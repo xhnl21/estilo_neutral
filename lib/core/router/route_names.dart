@@ -21,4 +21,5 @@ abstract class RouteNames {
   static const String auditLog = 'auditLog';
   static const String reporteMigracion = 'reporteMigracion';
   static const String checklistIso = 'checklistIso';
+  static const String seguridad = 'seguridad';
 }

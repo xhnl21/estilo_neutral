@@ -22,20 +22,26 @@ class AuthNotifier extends ChangeNotifier {
   /// Email del usuario actual.
   String? get userEmail => _state.userEmail;
 
+  /// Identificador de la organización resuelta para el usuario actual.
+  String? get organizacionId => _state.organizacionId;
+
   /// Inicia sesión del usuario y notifica a los listeners.
-  void login({String email = 'usuario@estiloneutral.com'}) {
+  void login({String email = 'usuario@estiloneutral.com', String? organizacionId}) {
     _state = _state.copyWith(
       isAuthenticated: true,
       userEmail: email,
+      organizacionId: organizacionId,
     );
     notifyListeners();
   }
 
   /// Cierra la sesión activa y notifica a los listeners.
   void logout() {
-    _state = _state.copyWith(
+    _state = AuthState(
       isAuthenticated: false,
+      isOnboarded: _state.isOnboarded,
       userEmail: null,
+      organizacionId: null,
     );
     notifyListeners();
   }

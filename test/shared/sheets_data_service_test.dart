@@ -13,6 +13,9 @@ void main() {
       service = SheetsDataService();
       // Inicializar con datos de respaldo
       service.initialize();
+      // Activar la organización de respaldo para que los getters filtrados por
+      // organización expongan los datos sembrados en las pruebas.
+      service.setCurrentOrganizacion('67774411-6aa1-4aa3-a4b2-d3fc6913b768');
     });
 
     test('Inicializa con las 9 hojas cargadas en memoria', () {

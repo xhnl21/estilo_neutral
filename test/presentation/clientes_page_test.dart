@@ -17,6 +17,7 @@ void main() {
 
     final service = SheetsDataService();
     service.initialize();
+    service.setCurrentOrganizacion('67774411-6aa1-4aa3-a4b2-d3fc6913b768');
 
     // Add a customer with large debt that previously caused the 29px RenderFlex overflow
     service.addCliente(

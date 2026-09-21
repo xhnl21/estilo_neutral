@@ -27,6 +27,9 @@ class ResumenDiario {
   /// Columna H: Total de USD vendidos a clientes
   final double usdVendidos;
 
+  /// Columna I: Identificador de la organización a la que pertenece el registro
+  final String organizacionId;
+
   const ResumenDiario({
     required this.fecha,
     required this.nroVentas,
@@ -36,6 +39,7 @@ class ResumenDiario {
     required this.tasaUsd,
     required this.usdComprados,
     required this.usdVendidos,
+    this.organizacionId = '67774411-6aa1-4aa3-a4b2-d3fc6913b768',
   });
 
   factory ResumenDiario.fromRow(List<dynamic> row) {
@@ -48,6 +52,9 @@ class ResumenDiario {
       tasaUsd: row.length > 5 ? parseSheetDouble(row[5]) : 0.0,
       usdComprados: row.length > 6 ? parseSheetDouble(row[6]) : 0.0,
       usdVendidos: row.length > 7 ? parseSheetDouble(row[7]) : 0.0,
+      organizacionId: row.length > 8 && row[8].toString().trim().isNotEmpty
+          ? row[8].toString().trim()
+          : '67774411-6aa1-4aa3-a4b2-d3fc6913b768',
     );
   }
 
@@ -61,6 +68,7 @@ class ResumenDiario {
       'tasa_usd': tasaUsd,
       'usd_comprados': usdComprados,
       'usd_vendidos': usdVendidos,
+      'organizacion_id': organizacionId,
     };
   }
 }

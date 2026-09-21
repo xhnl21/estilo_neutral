@@ -8,4 +8,6 @@ export 'registro_cuarentena.dart';
 export 'audit_log.dart';
 export 'reporte_migracion.dart';
 export 'checklist_iso.dart';
+export 'seguridad.dart';
+export 'usuario.dart';
 export 'number_parser.dart';

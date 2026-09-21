@@ -12,7 +12,7 @@
  */
 
 const DRIVE_FOLDER_ID = "1hgdY89REZHD0xWfojjIgnbfhmJ0JluYD";
-const DEFAULT_SPREADSHEET_ID = "1zJWnxXk3QSG-keyOHMEOrfY72cmtLUdv";
+const DEFAULT_SPREADSHEET_ID = "1V8xBnRVtZUyz4liGW59BU6mkgCjjreEOEWzySjcZLvI";
 
 function getSpreadsheet() {
   try {
@@ -121,6 +121,10 @@ function doPost(e) {
         result = _handleToggleChecklist(ss, sheet, payload.nro, payload.estado);
         break;
 
+      case "toggle_seguridad":
+        result = _handleToggleSeguridad(ss, sheet, payload.campo, payload.valor, payload.organizacion_id);
+        break;
+
       default:
         return respond({ status: "error", message: "Acción no reconocida: " + action }, 400);
     }
@@ -149,7 +153,8 @@ function _handleCreate(ss, sheet, sheetName, data) {
       data.telefono || "",
       data.email || "",
       data.saldo_deuda_usd || 0.0,
-      data.fecha_registro || Utilities.formatDate(new Date(), "GMT-4", "yyyy-MM-dd")
+      data.fecha_registro || Utilities.formatDate(new Date(), "GMT-4", "yyyy-MM-dd"),
+      data.organizacion_id || "67774411-6aa1-4aa3-a4b2-d3fc6913b768"
     ];
   } else if (sheetName === "inventario") {
     const fotoUrl = data.foto_url || "";
@@ -163,7 +168,8 @@ function _handleCreate(ss, sheet, sheetName, data) {
       data.talla || "",
       data.precio_usd || 0.0,
       fotoUrl,
-      fotoFormula
+      fotoFormula,
+      data.organizacion_id || "67774411-6aa1-4aa3-a4b2-d3fc6913b768"
     ];
   } else if (sheetName === "ventas") {
     const r = nextRow;
@@ -183,7 +189,8 @@ function _handleCreate(ss, sheet, sheetName, data) {
       '=N' + r + '-L' + r,
       '=K' + r,
       '=IF(AND(ABS(J' + r + '-E' + r + '*INDEX(inventario!G:G,MATCH(D' + r + ',inventario!A:A,0))*F' + r + ')<0.01, ABS(K' + r + '-E' + r + '*INDEX(inventario!G:G,MATCH(D' + r + ',inventario!A:A,0)))<0.01, ABS(M' + r + '-(N' + r + '-L' + r + '))<0.01),"OK","ERROR")',
-      data.estado || "Pendiente"
+      data.estado || "Pendiente",
+      data.organizacion_id || "67774411-6aa1-4aa3-a4b2-d3fc6913b768"
     ];
   } else if (sheetName === "compras_divisas") {
     rowValues = [
@@ -197,7 +204,8 @@ function _handleCreate(ss, sheet, sheetName, data) {
       data.vendedor || "",
       data.tasa_bcv || 0.0,
       data.tasa_usd || 0.0,
-      data.validacion || "OK"
+      data.validacion || "OK",
+      data.organizacion_id || "67774411-6aa1-4aa3-a4b2-d3fc6913b768"
     ];
   } else {
     // Genérico
@@ -317,6 +325,42 @@ function _handleToggleChecklist(ss, sheet, nro, nuevoEstado) {
   return { status: "error", message: "Control #" + nro + " no encontrado" };
 }
 
+function _handleToggleSeguridad(ss, sheet, campo, valor, organizacionId) {
+  const columnMap = { biometrico: 1, desbloqueo_facial: 2, dos_factores: 3 };
+  const col = columnMap[campo];
+  if (!col) {
+    return { status: "error", message: "Campo de seguridad inválido: " + campo };
+  }
+
+  const orgId = organizacionId || "67774411-6aa1-4aa3-a4b2-d3fc6913b768";
+  const nuevoValor = !!valor;
+  const rowIndex = _findRowByOrgId(sheet, orgId);
+
+  let valorAnterior = "desconocido";
+  if (rowIndex !== -1) {
+    valorAnterior = sheet.getRange(rowIndex, col).getValue();
+    sheet.getRange(rowIndex, col).setValue(nuevoValor);
+  } else {
+    // No existe fila para esta organización todavía: se crea una nueva
+    // con valores por defecto (true), sobreescribiendo solo el campo alternado.
+    const row = [true, true, true, orgId];
+    row[col - 1] = nuevoValor;
+    sheet.appendRow(row);
+  }
+
+  _appendAuditLog(ss, {
+    hoja: "seguridad",
+    celda: String.fromCharCode(64 + col) + (rowIndex !== -1 ? rowIndex : sheet.getLastRow()),
+    valorAnterior: valorAnterior,
+    valorNuevo: nuevoValor,
+    accion: "cambio_config_seguridad",
+    norma: "ISO/IEC 27001 §9.4",
+    observaciones: "Campo '" + campo + "' de la organización '" + orgId + "' actualizado a " + nuevoValor
+  });
+
+  return { status: "success", campo: campo, valor: nuevoValor, organizacion_id: orgId };
+}
+
 // =============================================================================
 // AUDITORÍA ISO 27001 Y BÚSQUEDA
 // =============================================================================
@@ -326,6 +370,19 @@ function _findRowById(sheet, id) {
   const values = sheet.getRange(1, 1, sheet.getLastRow(), 1).getValues();
   for (let i = 1; i < values.length; i++) {
     if (values[i][0] && values[i][0].toString().trim().toLowerCase() === id.toString().trim().toLowerCase()) {
+      return i + 1;
+    }
+  }
+  return -1;
+}
+
+function _findRowByOrgId(sheet, organizacionId) {
+  if (!organizacionId) return -1;
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) return -1;
+  const values = sheet.getRange(1, 4, lastRow, 1).getValues();
+  for (let i = 1; i < values.length; i++) {
+    if (values[i][0] && values[i][0].toString().trim().toLowerCase() === organizacionId.toString().trim().toLowerCase()) {
       return i + 1;
     }
   }

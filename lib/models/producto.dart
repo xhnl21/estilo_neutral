@@ -30,6 +30,9 @@ class Producto {
   /// Nota: La Columna I ("foto") no se mapea en el cliente,
   /// ya que es una fórmula calculada =IMAGE(foto_url) en la hoja.
 
+  /// Columna J: Identificador de la organización a la que pertenece el registro
+  final String organizacionId;
+
   const Producto({
     required this.id,
     required this.cantidad,
@@ -39,6 +42,7 @@ class Producto {
     required this.talla,
     required this.precioUsd,
     this.fotoUrl,
+    this.organizacionId = '67774411-6aa1-4aa3-a4b2-d3fc6913b768',
   });
 
   factory Producto.fromRow(List<dynamic> row) {
@@ -51,6 +55,9 @@ class Producto {
       talla: row.length > 5 ? row[5].toString() : '',
       precioUsd: row.length > 6 ? parseSheetDouble(row[6]) : 0.0,
       fotoUrl: row.length > 7 && row[7].toString().isNotEmpty ? row[7].toString() : null,
+      organizacionId: row.length > 9 && row[9].toString().trim().isNotEmpty
+          ? row[9].toString().trim()
+          : '67774411-6aa1-4aa3-a4b2-d3fc6913b768',
     );
   }
 
@@ -65,6 +72,7 @@ class Producto {
       precioUsd.toStringAsFixed(2),
       fotoUrl ?? '',
       fotoUrl != null && fotoUrl!.isNotEmpty ? '=IF(H2="","",IMAGE(H2))' : '',
+      organizacionId,
     ];
   }
 
@@ -78,6 +86,7 @@ class Producto {
       'talla': talla,
       'precio_usd': precioUsd,
       'foto_url': fotoUrl,
+      'organizacion_id': organizacionId,
     };
   }
 }

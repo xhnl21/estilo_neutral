@@ -30,7 +30,8 @@ class SplashScreen extends StatefulWidget {
   /// Color de fondo corporativo de la pantalla (por defecto el tono arena de assets/icon.png).
   final Color? backgroundColor;
 
-  /// Modo de ajuste del video (por defecto BoxFit.cover para ocupar 100% edge-to-edge).
+  /// Modo de ajuste de la capa visible del video (por defecto BoxFit.contain
+  /// para no recortar el logo, que llega casi hasta los bordes del cuadro).
   final BoxFit videoFit;
 
   /// Crea una instancia de [SplashScreen].
@@ -40,7 +41,7 @@ class SplashScreen extends StatefulWidget {
     this.onVideoFinished,
     this.controller,
     this.backgroundColor,
-    this.videoFit = BoxFit.cover,
+    this.videoFit = BoxFit.contain,
   });
 
   @override

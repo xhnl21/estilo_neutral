@@ -36,6 +36,9 @@ class CompraDivisa {
   /// Columna K: Validación lógica de la transacción ('OK' | 'ERROR')
   final String validacion;
 
+  /// Columna L: Identificador de la organización a la que pertenece el registro
+  final String organizacionId;
+
   const CompraDivisa({
     required this.id,
     required this.fechaCompra,
@@ -48,6 +51,7 @@ class CompraDivisa {
     required this.tasaBcv,
     required this.tasaUsd,
     required this.validacion,
+    this.organizacionId = '67774411-6aa1-4aa3-a4b2-d3fc6913b768',
   });
 
   factory CompraDivisa.fromRow(List<dynamic> row) {
@@ -63,6 +67,9 @@ class CompraDivisa {
       tasaBcv: row.length > 8 ? parseSheetDouble(row[8]) : 0.0,
       tasaUsd: row.length > 9 ? parseSheetDouble(row[9]) : 0.0,
       validacion: row.length > 10 ? row[10].toString() : 'OK',
+      organizacionId: row.length > 11 && row[11].toString().trim().isNotEmpty
+          ? row[11].toString().trim()
+          : '67774411-6aa1-4aa3-a4b2-d3fc6913b768',
     );
   }
 
@@ -79,6 +86,7 @@ class CompraDivisa {
       tasaBcv.toStringAsFixed(2),
       tasaUsd.toStringAsFixed(2),
       '=IF(B$rowNumber="","",IF(AND(C$rowNumber>=B$rowNumber, E$rowNumber>=0, D$rowNumber>0), "OK", "ERROR"))',
+      organizacionId,
     ];
   }
 
@@ -95,6 +103,7 @@ class CompraDivisa {
       'tasa_bcv': tasaBcv,
       'tasa_usd': tasaUsd,
       'validacion': validacion,
+      'organizacion_id': organizacionId,
     };
   }
 }

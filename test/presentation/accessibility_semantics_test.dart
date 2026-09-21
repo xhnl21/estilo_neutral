@@ -1,6 +1,5 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:estilo_neutral/core/design_system/theme/app_theme.dart';
 import 'package:estilo_neutral/core/design_system/tokens/icons.dart';
@@ -17,8 +16,11 @@ import 'package:estilo_neutral/features/sales/application/dtos/sale_dto.dart';
 import 'package:estilo_neutral/features/sales/presentation/widgets/sale_list_item.dart';
 
 void main() {
-  group('Accessibility & Semantics Tests (WCAG 2.1 AA / TalkBack & VoiceOver)', () {
-    testWidgets('AppButton has button semantics, label, and excludes decorative icon', (tester) async {
+  group('Accessibility & Semantics Tests (WCAG 2.1 AA / TalkBack & VoiceOver)',
+      () {
+    testWidgets(
+        'AppButton has button semantics, label, and excludes decorative icon',
+        (tester) async {
       final handle = tester.ensureSemantics();
 
       await tester.pumpWidget(
@@ -54,7 +56,8 @@ void main() {
       handle.dispose();
     });
 
-    testWidgets('AppButton in loading state reflects loading semantics', (tester) async {
+    testWidgets('AppButton in loading state reflects loading semantics',
+        (tester) async {
       final handle = tester.ensureSemantics();
 
       await tester.pumpWidget(
@@ -84,7 +87,9 @@ void main() {
       handle.dispose();
     });
 
-    testWidgets('AppOutlinedButton provides button semantics and accessible hint', (tester) async {
+    testWidgets(
+        'AppOutlinedButton provides button semantics and accessible hint',
+        (tester) async {
       final handle = tester.ensureSemantics();
 
       await tester.pumpWidget(
@@ -117,7 +122,9 @@ void main() {
       handle.dispose();
     });
 
-    testWidgets('AppCard with onTap provides button semantics and supports mergeSemantics', (tester) async {
+    testWidgets(
+        'AppCard with onTap provides button semantics and supports mergeSemantics',
+        (tester) async {
       final handle = tester.ensureSemantics();
 
       await tester.pumpWidget(
@@ -135,12 +142,14 @@ void main() {
         ),
       );
 
-      expect(find.bySemanticsLabel('Ficha de Cliente Juan Pérez'), findsOneWidget);
+      expect(
+          find.bySemanticsLabel('Ficha de Cliente Juan Pérez'), findsOneWidget);
 
       handle.dispose();
     });
 
-    testWidgets('AppChip has container semantics and excludes decorative icon', (tester) async {
+    testWidgets('AppChip has container semantics and excludes decorative icon',
+        (tester) async {
       final handle = tester.ensureSemantics();
 
       await tester.pumpWidget(
@@ -160,7 +169,9 @@ void main() {
       handle.dispose();
     });
 
-    testWidgets('AppEmptyState marks title as heading and excludes decorative icon', (tester) async {
+    testWidgets(
+        'AppEmptyState marks title as heading and excludes decorative icon',
+        (tester) async {
       final handle = tester.ensureSemantics();
 
       await tester.pumpWidget(
@@ -175,13 +186,16 @@ void main() {
         ),
       );
 
-      final titleData = tester.getSemantics(find.text('No hay productos')).getSemanticsData();
-      expect(titleData.hasFlag(SemanticsFlag.isHeader), isTrue);
+      final titleData =
+          tester.getSemantics(find.text('No hay productos')).getSemanticsData();
+      expect(titleData.flagsCollection.isHeader, isTrue);
 
       handle.dispose();
     });
 
-    testWidgets('AppErrorState has liveRegion and heading semantics for screen readers', (tester) async {
+    testWidgets(
+        'AppErrorState has liveRegion and heading semantics for screen readers',
+        (tester) async {
       final handle = tester.ensureSemantics();
 
       await tester.pumpWidget(
@@ -194,14 +208,17 @@ void main() {
         ),
       );
 
-      final errorTitleData = tester.getSemantics(find.text('Ocurrió un error')).getSemanticsData();
-      expect(errorTitleData.hasFlag(SemanticsFlag.isHeader), isTrue);
-      expect(errorTitleData.hasFlag(SemanticsFlag.isLiveRegion), isTrue);
+      final errorTitleData =
+          tester.getSemantics(find.text('Ocurrió un error')).getSemanticsData();
+      expect(errorTitleData.flagsCollection.isHeader, isTrue);
+      expect(errorTitleData.flagsCollection.isLiveRegion, isTrue);
 
       handle.dispose();
     });
 
-    testWidgets('AppLoadingState has liveRegion and descriptive message semantics', (tester) async {
+    testWidgets(
+        'AppLoadingState has liveRegion and descriptive message semantics',
+        (tester) async {
       final handle = tester.ensureSemantics();
 
       await tester.pumpWidget(
@@ -219,7 +236,9 @@ void main() {
       handle.dispose();
     });
 
-    testWidgets('AppMoneyText speaks natural currency and nature for screen readers', (tester) async {
+    testWidgets(
+        'AppMoneyText speaks natural currency and nature for screen readers',
+        (tester) async {
       final handle = tester.ensureSemantics();
 
       await tester.pumpWidget(
@@ -250,12 +269,14 @@ void main() {
 
       expect(find.bySemanticsLabel('45.50 dólares'), findsOneWidget);
       expect(find.bySemanticsLabel('150.00 dólares, en deuda'), findsOneWidget);
-      expect(find.bySemanticsLabel('2500.00 bolívares, a favor'), findsOneWidget);
+      expect(
+          find.bySemanticsLabel('2500.00 bolívares, a favor'), findsOneWidget);
 
       handle.dispose();
     });
 
-    testWidgets('AppScaffold marks AppBar title with headingLevel 1', (tester) async {
+    testWidgets('AppScaffold marks AppBar title with headingLevel 1',
+        (tester) async {
       final handle = tester.ensureSemantics();
 
       await tester.pumpWidget(
@@ -267,13 +288,17 @@ void main() {
         ),
       );
 
-      final headingData = tester.getSemantics(find.text('Inventario General')).getSemanticsData();
-      expect(headingData.hasFlag(SemanticsFlag.isHeader), isTrue);
+      final headingData = tester
+          .getSemantics(find.text('Inventario General'))
+          .getSemanticsData();
+      expect(headingData.flagsCollection.isHeader, isTrue);
 
       handle.dispose();
     });
 
-    testWidgets('SaleListItem has unified cohesive semantics with status and amounts', (tester) async {
+    testWidgets(
+        'SaleListItem has unified cohesive semantics with status and amounts',
+        (tester) async {
       final handle = tester.ensureSemantics();
 
       const sale = SaleDto(
@@ -308,14 +333,16 @@ void main() {
       );
 
       expect(
-        find.bySemanticsLabel('Venta #v00000001, estado: Pagada, cliente: c00000001, total: 120.00 dólares'),
+        find.bySemanticsLabel(
+            'Venta #v00000001, estado: Pagada, cliente: c00000001, total: 120.00 dólares'),
         findsOneWidget,
       );
 
       handle.dispose();
     });
 
-    testWidgets('Interactive AppButton meets labeledTapTargetGuideline', (tester) async {
+    testWidgets('Interactive AppButton meets labeledTapTargetGuideline',
+        (tester) async {
       final handle = tester.ensureSemantics();
 
       await tester.pumpWidget(

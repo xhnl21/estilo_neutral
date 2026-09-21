@@ -23,6 +23,8 @@ void main() {
         home: MainShell(
           dataService: ServiceLocator().sheetsDataService,
           salesController: ServiceLocator().salesController,
+          authNotifier: ServiceLocator().authNotifier,
+          sheetsAuth: ServiceLocator().sheetsAuth,
         ),
       ),
     );
@@ -42,6 +44,8 @@ void main() {
         home: MainShell(
           dataService: ServiceLocator().sheetsDataService,
           salesController: ServiceLocator().salesController,
+          authNotifier: ServiceLocator().authNotifier,
+          sheetsAuth: ServiceLocator().sheetsAuth,
         ),
       ),
     );

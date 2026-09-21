@@ -6,7 +6,7 @@ import '../../models/models.dart';
 import '../storage/secure_token_storage.dart';
 import 'sheets_config.dart';
 
-/// Servicio centralizado de datos y sincronización para las 9 hojas de Google Sheets.
+/// Servicio centralizado de datos y sincronización para las 10 hojas de Google Sheets.
 /// Arquitectura: Cero Polling, actualización bajo demanda, estado reactivo con CRUD completo
 /// y trazabilidad de auditoría ISO 27001 / ISO 8000.
 class SheetsDataService extends ChangeNotifier {
@@ -40,7 +40,7 @@ class SheetsDataService extends ChangeNotifier {
   DateTime? _lastSync;
   DateTime? get lastSync => _lastSync;
 
-  // Colecciones en memoria para las 9 hojas
+  // Colecciones en memoria para las 11 hojas
   List<Cliente> _clientes = [];
   List<Producto> _productos = [];
   List<Venta> _ventas = [];
@@ -50,16 +50,54 @@ class SheetsDataService extends ChangeNotifier {
   List<AuditLog> _auditLogs = [];
   List<ReporteMigracion> _reportesMigracion = [];
   List<ChecklistISO> _checklistIsos = [];
+  List<Seguridad> _seguridad = [];
+  List<Usuario> _usuarios = [];
 
-  List<Cliente> get clientes => List.unmodifiable(_clientes);
-  List<Producto> get productos => List.unmodifiable(_productos);
-  List<Venta> get ventas => List.unmodifiable(_ventas);
-  List<CompraDivisa> get comprasDivisas => List.unmodifiable(_comprasDivisas);
-  List<ResumenDiario> get resumenesDiarios => List.unmodifiable(_resumenesDiarios);
-  List<RegistroCuarentena> get cuarentenas => List.unmodifiable(_cuarentenas);
-  List<AuditLog> get auditLogs => List.unmodifiable(_auditLogs);
-  List<ReporteMigracion> get reportesMigracion => List.unmodifiable(_reportesMigracion);
-  List<ChecklistISO> get checklistIsos => List.unmodifiable(_checklistIsos);
+  /// Organización actualmente activa en la sesión (resuelta tras el login mediante
+  /// la hoja "usuarios"). Todas las colecciones expuestas (excepto [usuarios]) se
+  /// filtran client-side por esta organización.
+  String? _currentOrganizacionId;
+  String? get currentOrganizacionId => _currentOrganizacionId;
+
+  /// Establece la organización activa (o `null` para limpiar, p.ej. al cerrar sesión).
+  void setCurrentOrganizacion(String? organizacionId) {
+    _currentOrganizacionId = organizacionId;
+    notifyListeners();
+  }
+
+  bool _matchesCurrentOrg(String organizacionId) =>
+      _currentOrganizacionId != null && organizacionId == _currentOrganizacionId;
+
+  List<Cliente> get clientes =>
+      List.unmodifiable(_clientes.where((c) => _matchesCurrentOrg(c.organizacionId)));
+  List<Producto> get productos =>
+      List.unmodifiable(_productos.where((p) => _matchesCurrentOrg(p.organizacionId)));
+  List<Venta> get ventas =>
+      List.unmodifiable(_ventas.where((v) => _matchesCurrentOrg(v.organizacionId)));
+  List<CompraDivisa> get comprasDivisas =>
+      List.unmodifiable(_comprasDivisas.where((c) => _matchesCurrentOrg(c.organizacionId)));
+  List<ResumenDiario> get resumenesDiarios =>
+      List.unmodifiable(_resumenesDiarios.where((r) => _matchesCurrentOrg(r.organizacionId)));
+  List<RegistroCuarentena> get cuarentenas =>
+      List.unmodifiable(_cuarentenas.where((c) => _matchesCurrentOrg(c.organizacionId)));
+  List<AuditLog> get auditLogs =>
+      List.unmodifiable(_auditLogs.where((a) => _matchesCurrentOrg(a.organizacionId)));
+  List<ReporteMigracion> get reportesMigracion =>
+      List.unmodifiable(_reportesMigracion.where((r) => _matchesCurrentOrg(r.organizacionId)));
+  List<ChecklistISO> get checklistIsos =>
+      List.unmodifiable(_checklistIsos.where((c) => _matchesCurrentOrg(c.organizacionId)));
+
+  /// Directorio de usuarios (email -> organización). No se filtra por organización:
+  /// es intrínsecamente transversal, es la propia lista de membresía.
+  List<Usuario> get usuarios => List.unmodifiable(_usuarios);
+
+  /// Configuración de seguridad de la organización actual. Si la organización activa
+  /// aún no tiene fila propia en la hoja "seguridad", se devuelven los valores por
+  /// defecto (sin mutar el estado en memoria).
+  Seguridad get seguridad => _seguridad.firstWhere(
+        (s) => _matchesCurrentOrg(s.organizacionId),
+        orElse: () => Seguridad(organizacionId: _currentOrganizacionId ?? '67774411-6aa1-4aa3-a4b2-d3fc6913b768'),
+      );
 
   /// Carga inicial de datos
   Future<void> initialize() async {
@@ -73,7 +111,7 @@ class SheetsDataService extends ChangeNotifier {
     await fetchAllSheets();
   }
 
-  /// Carga bajo demanda de las 9 hojas desde Google Sheets mediante el endpoint GViz
+  /// Carga bajo demanda de las 10 hojas desde Google Sheets mediante el endpoint GViz
   Future<void> fetchAllSheets({bool silent = false}) async {
     if (!silent) {
       _isLoading = true;
@@ -105,6 +143,8 @@ class SheetsDataService extends ChangeNotifier {
         safeFetch('audit_log', _parseAuditLogs),
         safeFetch('reporte_migracion', _parseReportes),
         safeFetch('checklist_iso', _parseChecklists),
+        safeFetch('seguridad', _parseSeguridad),
+        safeFetch('usuarios', _parseUsuarios),
       ]);
 
       if (successCount > 0) {
@@ -217,6 +257,19 @@ class SheetsDataService extends ChangeNotifier {
     _checklistIsos = rows.map((r) => ChecklistISO.fromRow(r)).toList();
   }
 
+  void _parseSeguridad(List<List<String>> rows) {
+    if (rows.isEmpty) return;
+    _seguridad = rows.map((r) => Seguridad.fromRow(r)).toList();
+  }
+
+  void _parseUsuarios(List<List<String>> rows) {
+    if (rows.isEmpty) return;
+    _usuarios = rows
+        .where((r) => r.isNotEmpty && r.first.trim().isNotEmpty)
+        .map((r) => Usuario.fromRow(r))
+        .toList();
+  }
+
   // ===========================================================================
   // AUDIT LOG HELPER (ISO 27001 §8.13 / ISO 8000)
   // ===========================================================================
@@ -240,6 +293,7 @@ class SheetsDataService extends ChangeNotifier {
       accion: accion,
       normaAplicada: norma,
       observaciones: observaciones,
+      organizacionId: _currentOrganizacionId ?? '67774411-6aa1-4aa3-a4b2-d3fc6913b768',
     );
     _auditLogs.insert(0, log);
   }
@@ -363,28 +417,37 @@ class SheetsDataService extends ChangeNotifier {
   }
 
   Future<bool> addCliente(Cliente cliente) async {
-    Logger.info('SheetsDataService: Registrando nuevo cliente localmente: ${cliente.id} (${cliente.nombre})');
-    _clientes.add(cliente);
+    final stamped = Cliente(
+      id: cliente.id,
+      nombre: cliente.nombre,
+      telefono: cliente.telefono,
+      email: cliente.email,
+      saldoDeudaUsd: cliente.saldoDeudaUsd,
+      fechaRegistro: cliente.fechaRegistro,
+      organizacionId: _currentOrganizacionId ?? '67774411-6aa1-4aa3-a4b2-d3fc6913b768',
+    );
+    Logger.info('SheetsDataService: Registrando nuevo cliente localmente: ${stamped.id} (${stamped.nombre})');
+    _clientes.add(stamped);
     _logAudit(
       hoja: 'clientes',
       celda: 'A${_clientes.length + 1}',
       valorAnterior: 'null',
-      valorNuevo: '${cliente.id} (${cliente.nombre})',
+      valorNuevo: '${stamped.id} (${stamped.nombre})',
       accion: 'creacion_cliente',
       norma: 'ISO 8000 §4.2',
-      observaciones: 'Alta de cliente con teléfono ${cliente.telefono}',
+      observaciones: 'Alta de cliente con teléfono ${stamped.telefono}',
     );
     notifyListeners();
-    Logger.info('SheetsDataService: Despachando inserción a Google Sheets para cliente ${cliente.id}...');
+    Logger.info('SheetsDataService: Despachando inserción a Google Sheets para cliente ${stamped.id}...');
     final synced = await _postToAppsScript({
       'action': 'create',
       'sheet': 'clientes',
-      'data': cliente.toMap(),
+      'data': stamped.toMap(),
     });
     if (synced) {
-      Logger.success('SheetsDataService: Cliente ${cliente.id} sincronizado exitosamente en Google Sheets.');
+      Logger.success('SheetsDataService: Cliente ${stamped.id} sincronizado exitosamente en Google Sheets.');
     } else {
-      Logger.warning('SheetsDataService: Cliente ${cliente.id} guardado localmente pero no sincronizado con Google Sheets.');
+      Logger.warning('SheetsDataService: Cliente ${stamped.id} guardado localmente pero no sincronizado con Google Sheets.');
     }
     return synced;
   }
@@ -451,20 +514,31 @@ class SheetsDataService extends ChangeNotifier {
   }
 
   void addProducto(Producto producto) {
-    _productos.add(producto);
+    final stamped = Producto(
+      id: producto.id,
+      cantidad: producto.cantidad,
+      nombre: producto.nombre,
+      marca: producto.marca,
+      modelo: producto.modelo,
+      talla: producto.talla,
+      precioUsd: producto.precioUsd,
+      fotoUrl: producto.fotoUrl,
+      organizacionId: _currentOrganizacionId ?? '67774411-6aa1-4aa3-a4b2-d3fc6913b768',
+    );
+    _productos.add(stamped);
     _logAudit(
       hoja: 'inventario',
       celda: 'A${_productos.length + 1}',
       valorAnterior: 'null',
-      valorNuevo: '${producto.id} (${producto.nombre})',
+      valorNuevo: '${stamped.id} (${stamped.nombre})',
       accion: 'creacion_producto',
       norma: 'ISO 8000 §4.2',
-      observaciones: 'Nuevo producto en inventario. Stock inicial: ${producto.cantidad}',
+      observaciones: 'Nuevo producto en inventario. Stock inicial: ${stamped.cantidad}',
     );
     _postToAppsScript({
       'action': 'create',
       'sheet': 'inventario',
-      'data': producto.toMap(),
+      'data': stamped.toMap(),
     });
     notifyListeners();
   }
@@ -507,6 +581,7 @@ class SheetsDataService extends ChangeNotifier {
         talla: old.talla,
         precioUsd: old.precioUsd,
         fotoUrl: old.fotoUrl,
+        organizacionId: old.organizacionId,
       );
       _logAudit(
         hoja: 'inventario',
@@ -563,14 +638,33 @@ class SheetsDataService extends ChangeNotifier {
   }
 
   void addVenta(Venta venta) {
-    _ventas.insert(0, venta);
+    final stamped = Venta(
+      id: venta.id,
+      fecha: venta.fecha,
+      clienteId: venta.clienteId,
+      itemId: venta.itemId,
+      cantidad: venta.cantidad,
+      tasaBcv: venta.tasaBcv,
+      tasaUsd: venta.tasaUsd,
+      tipoPago: venta.tipoPago,
+      comisionPagoMovilBs: venta.comisionPagoMovilBs,
+      montoBs: venta.montoBs,
+      montoUsd: venta.montoUsd,
+      abonoUsd: venta.abonoUsd,
+      deudaUsd: venta.deudaUsd,
+      totalPagarUsd: venta.totalPagarUsd,
+      validacion: venta.validacion,
+      estado: venta.estado,
+      organizacionId: _currentOrganizacionId ?? '67774411-6aa1-4aa3-a4b2-d3fc6913b768',
+    );
+    _ventas.insert(0, stamped);
 
     // Decrementar existencias en inventario
-    adjustStock(venta.itemId, -venta.cantidad);
+    adjustStock(stamped.itemId, -stamped.cantidad);
 
     // Ajustar saldo de deuda del cliente si queda saldo pendiente
-    if (venta.deudaUsd > 0) {
-      final cIdx = _clientes.indexWhere((c) => c.id == venta.clienteId);
+    if (stamped.deudaUsd > 0) {
+      final cIdx = _clientes.indexWhere((c) => c.id == stamped.clienteId);
       if (cIdx != -1) {
         final c = _clientes[cIdx];
         _clientes[cIdx] = Cliente(
@@ -578,8 +672,9 @@ class SheetsDataService extends ChangeNotifier {
           nombre: c.nombre,
           telefono: c.telefono,
           email: c.email,
-          saldoDeudaUsd: c.saldoDeudaUsd + venta.deudaUsd,
+          saldoDeudaUsd: c.saldoDeudaUsd + stamped.deudaUsd,
           fechaRegistro: c.fechaRegistro,
+          organizacionId: c.organizacionId,
         );
       }
     }
@@ -588,15 +683,15 @@ class SheetsDataService extends ChangeNotifier {
       hoja: 'ventas',
       celda: 'A${_ventas.length + 1}',
       valorAnterior: 'null',
-      valorNuevo: '${venta.id} por USD ${venta.totalPagarUsd.toStringAsFixed(2)}',
+      valorNuevo: '${stamped.id} por USD ${stamped.totalPagarUsd.toStringAsFixed(2)}',
       accion: 'creacion_venta',
       norma: 'ISO 8000 §5.3',
-      observaciones: 'Venta registrada a cliente ${venta.clienteId}, ítem ${venta.itemId}',
+      observaciones: 'Venta registrada a cliente ${stamped.clienteId}, ítem ${stamped.itemId}',
     );
     _postToAppsScript({
       'action': 'create',
       'sheet': 'ventas',
-      'data': venta.toMap(),
+      'data': stamped.toMap(),
     });
     notifyListeners();
   }
@@ -649,6 +744,7 @@ class SheetsDataService extends ChangeNotifier {
         totalPagarUsd: old.totalPagarUsd,
         validacion: 'OK',
         estado: nuevoEstado,
+        organizacionId: old.organizacionId,
       );
 
       // Reducir saldo de deuda del cliente
@@ -662,6 +758,7 @@ class SheetsDataService extends ChangeNotifier {
           email: c.email,
           saldoDeudaUsd: (c.saldoDeudaUsd - montoAbono).clamp(0.0, double.infinity),
           fechaRegistro: c.fechaRegistro,
+          organizacionId: c.organizacionId,
         );
       }
 
@@ -720,20 +817,34 @@ class SheetsDataService extends ChangeNotifier {
   }
 
   void addCompraDivisa(CompraDivisa compra) {
-    _comprasDivisas.insert(0, compra);
+    final stamped = CompraDivisa(
+      id: compra.id,
+      fechaCompra: compra.fechaCompra,
+      fechaEntrega: compra.fechaEntrega,
+      capitalUsd: compra.capitalUsd,
+      comisionBinanceUsd: compra.comisionBinanceUsd,
+      numeroOrden: compra.numeroOrden,
+      plataforma: compra.plataforma,
+      vendedor: compra.vendedor,
+      tasaBcv: compra.tasaBcv,
+      tasaUsd: compra.tasaUsd,
+      validacion: compra.validacion,
+      organizacionId: _currentOrganizacionId ?? '67774411-6aa1-4aa3-a4b2-d3fc6913b768',
+    );
+    _comprasDivisas.insert(0, stamped);
     _logAudit(
       hoja: 'compras_divisas',
       celda: 'A${_comprasDivisas.length + 1}',
       valorAnterior: 'null',
-      valorNuevo: '${compra.id}: USD ${compra.capitalUsd}',
+      valorNuevo: '${stamped.id}: USD ${stamped.capitalUsd}',
       accion: 'registro_compra_divisa',
       norma: 'ISO 8000 §4.2',
-      observaciones: 'Compra cambiaria en ${compra.plataforma} por ${compra.vendedor}',
+      observaciones: 'Compra cambiaria en ${stamped.plataforma} por ${stamped.vendedor}',
     );
     _postToAppsScript({
       'action': 'create',
       'sheet': 'compras_divisas',
-      'data': compra.toMap(),
+      'data': stamped.toMap(),
     });
     notifyListeners();
   }
@@ -788,20 +899,31 @@ class SheetsDataService extends ChangeNotifier {
   // ===========================================================================
 
   void addResumenDiario(ResumenDiario resumen) {
-    final existingIdx = _resumenesDiarios.indexWhere((r) => r.fecha == resumen.fecha);
+    final stamped = ResumenDiario(
+      fecha: resumen.fecha,
+      nroVentas: resumen.nroVentas,
+      totalBs: resumen.totalBs,
+      totalUsd: resumen.totalUsd,
+      tasaBcv: resumen.tasaBcv,
+      tasaUsd: resumen.tasaUsd,
+      usdComprados: resumen.usdComprados,
+      usdVendidos: resumen.usdVendidos,
+      organizacionId: _currentOrganizacionId ?? '67774411-6aa1-4aa3-a4b2-d3fc6913b768',
+    );
+    final existingIdx = _resumenesDiarios.indexWhere((r) => r.fecha == stamped.fecha);
     if (existingIdx != -1) {
-      _resumenesDiarios[existingIdx] = resumen;
+      _resumenesDiarios[existingIdx] = stamped;
     } else {
-      _resumenesDiarios.insert(0, resumen);
+      _resumenesDiarios.insert(0, stamped);
     }
     _logAudit(
       hoja: 'resumen_diario',
       celda: 'A${_resumenesDiarios.length + 1}',
       valorAnterior: 'null',
-      valorNuevo: 'Cierre ${resumen.fecha}: USD ${resumen.totalUsd}',
+      valorNuevo: 'Cierre ${stamped.fecha}: USD ${stamped.totalUsd}',
       accion: 'cierre_diario',
       norma: 'COBIT 2019 / ISO 27001',
-      observaciones: 'Registro de balance diario para ${resumen.fecha}',
+      observaciones: 'Registro de balance diario para ${stamped.fecha}',
     );
     notifyListeners();
   }
@@ -845,15 +967,26 @@ class SheetsDataService extends ChangeNotifier {
   // ===========================================================================
 
   void addCuarentena(RegistroCuarentena item) {
-    _cuarentenas.insert(0, item);
+    final stamped = RegistroCuarentena(
+      idRegistroOriginal: item.idRegistroOriginal,
+      hojaOrigen: item.hojaOrigen,
+      fechaDeteccion: item.fechaDeteccion,
+      motivoCuarentena: item.motivoCuarentena,
+      datosOriginalesJson: item.datosOriginalesJson,
+      estado: item.estado,
+      resolucion: item.resolucion,
+      hashEvidencia: item.hashEvidencia,
+      organizacionId: _currentOrganizacionId ?? '67774411-6aa1-4aa3-a4b2-d3fc6913b768',
+    );
+    _cuarentenas.insert(0, stamped);
     _logAudit(
       hoja: 'cuarentena',
       celda: 'A${_cuarentenas.length + 1}',
       valorAnterior: 'null',
-      valorNuevo: '${item.idRegistroOriginal} (${item.motivoCuarentena})',
+      valorNuevo: '${stamped.idRegistroOriginal} (${stamped.motivoCuarentena})',
       accion: 'ingreso_cuarentena',
       norma: 'COBIT 2019 DSS05',
-      observaciones: 'Anomalía aislada desde hoja ${item.hojaOrigen}',
+      observaciones: 'Anomalía aislada desde hoja ${stamped.hojaOrigen}',
     );
     notifyListeners();
   }
@@ -897,7 +1030,19 @@ class SheetsDataService extends ChangeNotifier {
   // ===========================================================================
 
   void addAuditLogManual(AuditLog log) {
-    _auditLogs.insert(0, log);
+    final stamped = AuditLog(
+      timestampIso8601: log.timestampIso8601,
+      usuario: log.usuario,
+      hoja: log.hoja,
+      celda: log.celda,
+      valorAnterior: log.valorAnterior,
+      valorNuevo: log.valorNuevo,
+      accion: log.accion,
+      normaAplicada: log.normaAplicada,
+      observaciones: log.observaciones,
+      organizacionId: _currentOrganizacionId ?? '67774411-6aa1-4aa3-a4b2-d3fc6913b768',
+    );
+    _auditLogs.insert(0, stamped);
     notifyListeners();
   }
 
@@ -914,6 +1059,7 @@ class SheetsDataService extends ChangeNotifier {
         accion: old.accion,
         normaAplicada: old.normaAplicada,
         observaciones: nuevasObservaciones,
+        organizacionId: old.organizacionId,
       );
       notifyListeners();
     }
@@ -931,15 +1077,22 @@ class SheetsDataService extends ChangeNotifier {
   // ===========================================================================
 
   void addReporteMigracion(ReporteMigracion rep) {
-    _reportesMigracion.add(rep);
+    final stamped = ReporteMigracion(
+      metrica: rep.metrica,
+      valorEstado: rep.valorEstado,
+      normaAplicada: rep.normaAplicada,
+      observaciones: rep.observaciones,
+      organizacionId: _currentOrganizacionId ?? '67774411-6aa1-4aa3-a4b2-d3fc6913b768',
+    );
+    _reportesMigracion.add(stamped);
     _logAudit(
       hoja: 'reporte_migracion',
       celda: 'A${_reportesMigracion.length + 1}',
       valorAnterior: 'null',
-      valorNuevo: '${rep.metrica}: ${rep.valorEstado}',
+      valorNuevo: '${stamped.metrica}: ${stamped.valorEstado}',
       accion: 'alta_control_migracion',
-      norma: rep.normaAplicada,
-      observaciones: rep.observaciones,
+      norma: stamped.normaAplicada,
+      observaciones: stamped.observaciones,
     );
     notifyListeners();
   }
@@ -981,15 +1134,24 @@ class SheetsDataService extends ChangeNotifier {
   // ===========================================================================
 
   void addChecklistIso(ChecklistISO check) {
-    _checklistIsos.add(check);
+    final stamped = ChecklistISO(
+      nro: check.nro,
+      control: check.control,
+      norma: check.norma,
+      estado: check.estado,
+      evidencia: check.evidencia,
+      timestamp: check.timestamp,
+      organizacionId: _currentOrganizacionId ?? '67774411-6aa1-4aa3-a4b2-d3fc6913b768',
+    );
+    _checklistIsos.add(stamped);
     _logAudit(
       hoja: 'checklist_iso',
       celda: 'A${_checklistIsos.length + 1}',
       valorAnterior: 'null',
-      valorNuevo: '${check.control} (${check.norma})',
+      valorNuevo: '${stamped.control} (${stamped.norma})',
       accion: 'alta_requisito_iso',
-      norma: check.norma,
-      observaciones: check.evidencia,
+      norma: stamped.norma,
+      observaciones: stamped.evidencia,
     );
     notifyListeners();
   }
@@ -1006,6 +1168,7 @@ class SheetsDataService extends ChangeNotifier {
         estado: nuevoEstado,
         evidencia: old.evidencia,
         timestamp: DateTime.now(),
+        organizacionId: old.organizacionId,
       );
       _logAudit(
         hoja: 'checklist_iso',
@@ -1073,6 +1236,7 @@ class SheetsDataService extends ChangeNotifier {
         email: 'neida.cliente@ejemplo.com',
         saldoDeudaUsd: 0.0,
         fechaRegistro: DateTime(2026, 4, 3),
+        organizacionId: '67774411-6aa1-4aa3-a4b2-d3fc6913b768',
       ),
     ];
 
@@ -1086,6 +1250,7 @@ class SheetsDataService extends ChangeNotifier {
         talla: 'M',
         precioUsd: 20.0,
         fotoUrl: 'https://lh3.googleusercontent.com/d/1_DRIVE_FILE_ID_PANTALON_CASUAL',
+        organizacionId: '67774411-6aa1-4aa3-a4b2-d3fc6913b768',
       ),
     ];
 
@@ -1107,6 +1272,7 @@ class SheetsDataService extends ChangeNotifier {
         totalPagarUsd: 20.0,
         validacion: 'OK',
         estado: EstadoVenta.pagada,
+        organizacionId: '67774411-6aa1-4aa3-a4b2-d3fc6913b768',
       ),
     ];
 
@@ -1123,6 +1289,7 @@ class SheetsDataService extends ChangeNotifier {
         tasaBcv: 474.0,
         tasaUsd: 480.0,
         validacion: 'OK',
+        organizacionId: '67774411-6aa1-4aa3-a4b2-d3fc6913b768',
       ),
     ];
 
@@ -1136,6 +1303,7 @@ class SheetsDataService extends ChangeNotifier {
         tasaUsd: 480.0,
         usdComprados: 100.0,
         usdVendidos: 20.0,
+        organizacionId: '67774411-6aa1-4aa3-a4b2-d3fc6913b768',
       ),
     ];
 
@@ -1149,6 +1317,7 @@ class SheetsDataService extends ChangeNotifier {
         estado: 'CONSOLIDADO',
         resolucion: 'Trasladado a hoja resumen_diario como métrica consolidada para fecha 2026-04-03.',
         hashEvidencia: '06191282aec0e96133e5e6a7ee87ae4e36fafd79bb70021f6c3a7e75b3621f79',
+        organizacionId: '67774411-6aa1-4aa3-a4b2-d3fc6913b768',
       ),
       RegistroCuarentena(
         idRegistroOriginal: 'c5fcc173',
@@ -1159,6 +1328,7 @@ class SheetsDataService extends ChangeNotifier {
         estado: 'CORREGIDO',
         resolucion: 'Normalizado 3FN: Cliente c00000001, Producto p00000001, Venta v00000001',
         hashEvidencia: '7d405513d81bcf69f714196f2f67d17e6cbf04142cd59614b1d54340ec807fdb',
+        organizacionId: '67774411-6aa1-4aa3-a4b2-d3fc6913b768',
       ),
     ];
 
@@ -1173,6 +1343,7 @@ class SheetsDataService extends ChangeNotifier {
         accion: 'seguridad_backup_previa',
         normaAplicada: 'ISO/IEC 27001 §8.13',
         observaciones: 'Respaldo íntegro tripartito en Backups/2026/ verificado',
+        organizacionId: '67774411-6aa1-4aa3-a4b2-d3fc6913b768',
       ),
       AuditLog(
         timestampIso8601: DateTime.parse('2026-09-14T09:01:55.343995-04:00'),
@@ -1184,6 +1355,7 @@ class SheetsDataService extends ChangeNotifier {
         accion: 'creacion_entidad',
         normaAplicada: 'GDPR Art. 5 / NIST SP 800-53',
         observaciones: 'Teléfono E.164 +584120000001 y email regex compliant',
+        organizacionId: '67774411-6aa1-4aa3-a4b2-d3fc6913b768',
       ),
     ];
 
@@ -1193,18 +1365,21 @@ class SheetsDataService extends ChangeNotifier {
         valorEstado: '100% Conforme',
         normaAplicada: 'ISO 8000 §4.2',
         observaciones: '0 referencias huérfanas en clientes e inventario',
+        organizacionId: '67774411-6aa1-4aa3-a4b2-d3fc6913b768',
       ),
       const ReporteMigracion(
         metrica: 'Cumplimiento Formatos Internacionales',
         valorEstado: 'E.164 y ISO 8601',
         normaAplicada: 'RFC 4180 / ISO 8601',
         observaciones: 'Fechas estandarizadas en YYYY-MM-DD y teléfonos con prefijo de país',
+        organizacionId: '67774411-6aa1-4aa3-a4b2-d3fc6913b768',
       ),
       const ReporteMigracion(
         metrica: 'Seguridad y Cero Polling',
         valorEstado: 'Activo',
         normaAplicada: 'ISO/IEC 25010 / ISO 27001',
         observaciones: 'Actualizaciones bajo demanda manual sin temporizadores periódicos',
+        organizacionId: '67774411-6aa1-4aa3-a4b2-d3fc6913b768',
       ),
     ];
 
@@ -1216,6 +1391,7 @@ class SheetsDataService extends ChangeNotifier {
         estado: '☑',
         evidencia: 'Backups/2026/Estilo Neutral_BACKUP_FASE10',
         timestamp: DateTime.parse('2026-09-14T09:09:53.194152-04:00'),
+        organizacionId: '67774411-6aa1-4aa3-a4b2-d3fc6913b768',
       ),
       ChecklistISO(
         nro: 2,
@@ -1224,6 +1400,7 @@ class SheetsDataService extends ChangeNotifier {
         estado: '☑',
         evidencia: 'audit_log!E2',
         timestamp: DateTime.parse('2026-09-14T09:09:53.194152-04:00'),
+        organizacionId: '67774411-6aa1-4aa3-a4b2-d3fc6913b768',
       ),
       ChecklistISO(
         nro: 3,
@@ -1232,6 +1409,7 @@ class SheetsDataService extends ChangeNotifier {
         estado: '☑',
         evidencia: 'Hojas: clientes, inventario, ventas, compras_divisas, etc.',
         timestamp: DateTime.parse('2026-09-14T09:09:53.194152-04:00'),
+        organizacionId: '67774411-6aa1-4aa3-a4b2-d3fc6913b768',
       ),
       ChecklistISO(
         nro: 4,
@@ -1240,8 +1418,110 @@ class SheetsDataService extends ChangeNotifier {
         estado: '☑',
         evidencia: 'AppButton, AppCard y controles interactivos',
         timestamp: DateTime.parse('2026-09-14T09:09:53.194152-04:00'),
+        organizacionId: '67774411-6aa1-4aa3-a4b2-d3fc6913b768',
       ),
     ];
+
+    _seguridad = [
+      const Seguridad(
+        biometrico: true,
+        desbloqueoFacial: true,
+        dosFactores: true,
+        organizacionId: '67774411-6aa1-4aa3-a4b2-d3fc6913b768',
+      ),
+    ];
+
+    _usuarios = [
+      const Usuario(email: 'neidapulgar1989@gmail.com', organizacionId: '67774411-6aa1-4aa3-a4b2-d3fc6913b768', nombre: 'Neida'),
+      const Usuario(email: 'xhnl21@gmail.com', organizacionId: '67774411-6aa1-4aa3-a4b2-d3fc6913b768', nombre: ''),
+    ];
+  }
+
+  // ===========================================================================
+  // CRUD 10: SEGURIDAD (hoja seguridad)
+  // ===========================================================================
+
+  /// Reemplaza (o inserta si no existía aún) la fila de seguridad de la organización
+  /// activa dentro de la lista [_seguridad], que ahora contiene una fila por organización.
+  void _replaceSeguridadForCurrentOrg(Seguridad nuevo) {
+    final index = _seguridad.indexWhere((s) => _matchesCurrentOrg(s.organizacionId));
+    if (index != -1) {
+      _seguridad[index] = nuevo;
+    } else {
+      _seguridad.add(nuevo);
+    }
+  }
+
+  void toggleBiometrico() {
+    final old = seguridad;
+    final nuevoValor = !old.biometrico;
+    final nuevo = old.copyWith(biometrico: nuevoValor);
+    _replaceSeguridadForCurrentOrg(nuevo);
+    _logAudit(
+      hoja: 'seguridad',
+      celda: 'A2',
+      valorAnterior: old.biometrico.toString(),
+      valorNuevo: nuevoValor.toString(),
+      accion: 'cambio_config_seguridad',
+      norma: 'ISO/IEC 27001 §9.4',
+      observaciones: 'Autenticación biométrica ${nuevoValor ? "activada" : "desactivada"}',
+    );
+    _postToAppsScript({
+      'action': 'toggle_seguridad',
+      'sheet': 'seguridad',
+      'campo': 'biometrico',
+      'valor': nuevoValor,
+      'organizacion_id': _currentOrganizacionId ?? '67774411-6aa1-4aa3-a4b2-d3fc6913b768',
+    });
+    notifyListeners();
+  }
+
+  void toggleDesbloqueoFacial() {
+    final old = seguridad;
+    final nuevoValor = !old.desbloqueoFacial;
+    final nuevo = old.copyWith(desbloqueoFacial: nuevoValor);
+    _replaceSeguridadForCurrentOrg(nuevo);
+    _logAudit(
+      hoja: 'seguridad',
+      celda: 'B2',
+      valorAnterior: old.desbloqueoFacial.toString(),
+      valorNuevo: nuevoValor.toString(),
+      accion: 'cambio_config_seguridad',
+      norma: 'ISO/IEC 27001 §9.4',
+      observaciones: 'Desbloqueo facial ${nuevoValor ? "activado" : "desactivado"}',
+    );
+    _postToAppsScript({
+      'action': 'toggle_seguridad',
+      'sheet': 'seguridad',
+      'campo': 'desbloqueo_facial',
+      'valor': nuevoValor,
+      'organizacion_id': _currentOrganizacionId ?? '67774411-6aa1-4aa3-a4b2-d3fc6913b768',
+    });
+    notifyListeners();
+  }
+
+  void toggleDosFactores() {
+    final old = seguridad;
+    final nuevoValor = !old.dosFactores;
+    final nuevo = old.copyWith(dosFactores: nuevoValor);
+    _replaceSeguridadForCurrentOrg(nuevo);
+    _logAudit(
+      hoja: 'seguridad',
+      celda: 'C2',
+      valorAnterior: old.dosFactores.toString(),
+      valorNuevo: nuevoValor.toString(),
+      accion: 'cambio_config_seguridad',
+      norma: 'ISO/IEC 27001 §9.4',
+      observaciones: 'Verificación en dos pasos (2FA) ${nuevoValor ? "activada" : "desactivada"}',
+    );
+    _postToAppsScript({
+      'action': 'toggle_seguridad',
+      'sheet': 'seguridad',
+      'campo': 'dos_factores',
+      'valor': nuevoValor,
+      'organizacion_id': _currentOrganizacionId ?? '67774411-6aa1-4aa3-a4b2-d3fc6913b768',
+    });
+    notifyListeners();
   }
 }
 

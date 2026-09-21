@@ -2,6 +2,9 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import '../../core/config/environment_config.dart';
 import '../../core/design_system/design_system.dart';
+import '../../core/router/route_paths.dart';
+import '../../core/utils/logger.dart';
+import '../../features/auth/application/auth_notifier.dart';
 import '../../features/reporting/reporting.dart';
 import '../../features/sales/sales.dart';
 import '../../features/treasury/treasury.dart';
@@ -10,17 +13,21 @@ import '../pages/pages.dart';
 
 import 'package:go_router/go_router.dart';
 
-/// Shell principal con navegación para las 9 vistas correspondientes a cada hoja
+/// Shell principal con navegación para las 10 vistas correspondientes a cada hoja
 /// de la base de datos Google Sheets "Estilo Neutral".
 class MainShell extends StatefulWidget {
   final SalesController salesController;
   final SheetsDataService dataService;
+  final AuthNotifier authNotifier;
+  final SheetsAuth sheetsAuth;
   final StatefulNavigationShell? navigationShell;
 
   const MainShell({
     super.key,
     required this.salesController,
     required this.dataService,
+    required this.authNotifier,
+    required this.sheetsAuth,
     this.navigationShell,
   });
 
@@ -46,6 +53,7 @@ class _MainShellState extends State<MainShell> {
     (title: 'Audit Log', sheet: 'audit_log', icon: CupertinoIcons.shield, category: 'Gobierno y Calidad ISO'),
     (title: 'Reporte Migración', sheet: 'reporte_migracion', icon: CupertinoIcons.doc_text, category: 'Gobierno y Calidad ISO'),
     (title: 'Checklist ISO', sheet: 'checklist_iso', icon: CupertinoIcons.checkmark_seal, category: 'Gobierno y Calidad ISO'),
+    (title: 'Seguridad', sheet: 'seguridad', icon: CupertinoIcons.lock_shield, category: 'Gobierno y Calidad ISO'),
   ];
 
   @override
@@ -61,6 +69,7 @@ class _MainShellState extends State<MainShell> {
       AuditLogPage(dataService: widget.dataService),
       ReporteMigracionPage(dataService: widget.dataService),
       ChecklistIsoPage(dataService: widget.dataService),
+      SeguridadPage(dataService: widget.dataService),
     ];
   }
 
@@ -75,6 +84,48 @@ class _MainShellState extends State<MainShell> {
     }
     if (_scaffoldKey.currentState?.isDrawerOpen ?? false) {
       Navigator.of(context).pop();
+    }
+  }
+
+  Future<void> _handleLogout(BuildContext context) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('¿Cerrar sesión?'),
+        content: const Text(
+          'Vas a salir del sistema y necesitarás volver a iniciar sesión con Google.',
+        ),
+        actions: [
+          TextButton(
+            child: const Text('Cancelar'),
+            onPressed: () => Navigator.pop(ctx, false),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: AppPalette.error),
+            child: const Text('Cerrar sesión'),
+            onPressed: () => Navigator.pop(ctx, true),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true || !context.mounted) return;
+
+    try {
+      await widget.sheetsAuth.signOut();
+    } catch (error, stackTrace) {
+      Logger.log(
+        message: 'Error al cerrar sesión de Google',
+        type: LogType.error,
+        error: error,
+        stackTrace: stackTrace,
+      );
+    }
+
+    widget.authNotifier.logout();
+    widget.dataService.setCurrentOrganizacion(null);
+    if (context.mounted) {
+      context.go(RoutePaths.login);
     }
   }
 
@@ -95,7 +146,7 @@ class _MainShellState extends State<MainShell> {
         ),
         leading: IconButton(
           icon: const Icon(CupertinoIcons.bars, color: AppPalette.blue900),
-          tooltip: 'Menú de 9 Vistas',
+          tooltip: 'Menú de 10 Vistas',
           onPressed: () => _scaffoldKey.currentState?.openDrawer(),
         ),
         title: Column(
@@ -233,7 +284,7 @@ class _MainShellState extends State<MainShell> {
                   const SizedBox(height: 4),
                   Text(
                     EnvironmentConfig.showTechnicalInfo
-                        ? '9 Vistas sincronizadas con Google Sheets'
+                        ? '10 Vistas sincronizadas con Google Sheets'
                         : 'Módulos del Sistema',
                     style: AppTypography.bodyMedium.copyWith(fontSize: 12),
                   ),
@@ -252,7 +303,7 @@ class _MainShellState extends State<MainShell> {
               ),
             ),
 
-            // Lista categorizada de las 9 vistas
+            // Lista categorizada de las 10 vistas
             Expanded(
               child: ListView(
                 padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
@@ -273,7 +324,63 @@ class _MainShellState extends State<MainShell> {
                   _buildDrawerItem(6, _vistasInfo[6]),
                   _buildDrawerItem(7, _vistasInfo[7]),
                   _buildDrawerItem(8, _vistasInfo[8]),
+                  _buildDrawerItem(9, _vistasInfo[9]),
                 ],
+              ),
+            ),
+
+            // Pie del Drawer: usuario actual y cierre de sesión
+            Container(
+              decoration: const BoxDecoration(
+                border: Border(top: BorderSide(color: AppPalette.divider)),
+              ),
+              child: SafeArea(
+                top: false,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (widget.authNotifier.userEmail != null)
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(
+                          AppSpacing.lg,
+                          AppSpacing.sm,
+                          AppSpacing.lg,
+                          0,
+                        ),
+                        child: Text(
+                          widget.authNotifier.userEmail!,
+                          style: AppTypography.labelSmall.copyWith(
+                            color: AppPalette.textSecondary,
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    Semantics(
+                      button: true,
+                      label: 'Cerrar sesión',
+                      hint: 'Cierra la sesión actual y vuelve al inicio de sesión',
+                      child: ListTile(
+                        dense: true,
+                        leading: const ExcludeSemantics(
+                          child: Icon(
+                            CupertinoIcons.square_arrow_right,
+                            color: AppPalette.error,
+                            size: 20,
+                          ),
+                        ),
+                        title: const Text(
+                          'Cerrar sesión',
+                          style: TextStyle(
+                            color: AppPalette.error,
+                            fontWeight: FontWeight.w600,
+                            fontSize: 14,
+                          ),
+                        ),
+                        onTap: () => _handleLogout(context),
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
           ],

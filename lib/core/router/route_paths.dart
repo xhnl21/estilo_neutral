@@ -21,6 +21,7 @@ abstract class RoutePaths {
   static const String auditLog = '/audit-log';
   static const String reporteMigracion = '/reporte-migracion';
   static const String checklistIso = '/checklist-iso';
+  static const String seguridad = '/seguridad';
 
   /// Helper para construir path de detalle de venta con id
   static String buildSaleDetailPath(String id) => '/ventas/$id';

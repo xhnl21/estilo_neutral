@@ -1,0 +1,13 @@
+{
+  "name": "estilo-neutral-apps-script-tools",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Automatización de push + deploy de google_apps_script.js a la implementación existente vía clasp.",
+  "devDependencies": {
+    "@google/clasp": "^3.4.1"
+  },
+  "scripts": {
+    "login": "bash login.sh",
+    "deploy": "bash deploy.sh"
+  }
+}

@@ -123,11 +123,14 @@ class ServiceLocator {
       saleRepository: saleRepository,
     );
 
-    authNotifier = AuthNotifier();
+    authNotifier = AuthNotifier(
+      initialState: const AuthState(isAuthenticated: false),
+    );
     appRouter = AppRouter(
       authNotifier: authNotifier,
       salesController: salesController,
       dataService: sheetsDataService,
+      sheetsAuth: sheetsAuth,
     );
   }
 }

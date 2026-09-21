@@ -10,6 +10,7 @@ void main() {
   setUp(() {
     dataService = SheetsDataService();
     dataService.initialize();
+    dataService.setCurrentOrganizacion('67774411-6aa1-4aa3-a4b2-d3fc6913b768');
     cubit = ClientesCubit(dataService: dataService);
   });
 

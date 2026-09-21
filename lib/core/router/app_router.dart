@@ -9,6 +9,7 @@ import '../../features/sales/presentation/routes/sales_routes.dart';
 import '../../features/treasury/presentation/routes/treasury_routes.dart';
 import '../../presentation/routes/operations_routes.dart';
 import '../../presentation/shell/main_shell.dart';
+import '../../shared/google_sheets/sheets_auth.dart';
 import '../../shared/google_sheets/sheets_data_service.dart';
 import 'guards/auth_guard.dart';
 import 'guards/onboarding_guard.dart';
@@ -22,6 +23,7 @@ class AppRouter {
   final AuthNotifier authNotifier;
   final SalesController salesController;
   final SheetsDataService dataService;
+  final SheetsAuth sheetsAuth;
   final String initialLocation;
 
   late final AuthGuard _authGuard;
@@ -35,12 +37,13 @@ class AppRouter {
     required this.authNotifier,
     required this.salesController,
     required this.dataService,
+    required this.sheetsAuth,
     this.initialLocation = RoutePaths.splash,
   }) {
     _authGuard = AuthGuard(authNotifier: authNotifier);
     _onboardingGuard = OnboardingGuard(authNotifier: authNotifier);
 
-    final authRoutes = AuthRoutes(authNotifier: authNotifier);
+    final authRoutes = AuthRoutes(authNotifier: authNotifier, sheetsAuth: sheetsAuth, dataService: dataService);
     final salesRoutes = SalesRoutes(controller: salesController, dataService: dataService);
     final treasuryRoutes = TreasuryRoutes(dataService: dataService);
     final reportingRoutes = ReportingRoutes(dataService: dataService);
@@ -71,12 +74,14 @@ class AppRouter {
         // 1. Rutas independientes / de pantalla completa (Login y Onboarding)
         ...authRoutes.buildRoutes(),
 
-        // 2. Shell persistente con las 9 vistas del sistema
+        // 2. Shell persistente con las 10 vistas del sistema
         StatefulShellRoute.indexedStack(
           builder: (context, state, navigationShell) {
             return MainShell(
               salesController: salesController,
               dataService: dataService,
+              authNotifier: authNotifier,
+              sheetsAuth: sheetsAuth,
               navigationShell: navigationShell,
             );
           },
@@ -124,6 +129,11 @@ class AppRouter {
             // Rama 8: Checklist ISO
             StatefulShellBranch(
               routes: [auditRoutesList[3]],
+            ),
+
+            // Rama 9: Seguridad
+            StatefulShellBranch(
+              routes: [auditRoutesList[4]],
             ),
           ],
         ),

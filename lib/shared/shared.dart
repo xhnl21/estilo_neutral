@@ -1,5 +1,4 @@
 export 'google_drive/google_drive_helper.dart';
-export 'google_sheets/apps_script_source.dart';
 export 'google_sheets/sheets_auth.dart';
 export 'google_sheets/sheets_client.dart';
 export 'google_sheets/sheets_config.dart';

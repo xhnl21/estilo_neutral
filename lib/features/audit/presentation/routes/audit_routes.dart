@@ -34,6 +34,11 @@ class AuditRoutes implements FeatureRouteDefinition {
         name: RouteNames.checklistIso,
         builder: (context, state) => ChecklistIsoPage(dataService: dataService),
       ),
+      GoRoute(
+        path: RoutePaths.seguridad,
+        name: RouteNames.seguridad,
+        builder: (context, state) => SeguridadPage(dataService: dataService),
+      ),
     ];
   }
 }

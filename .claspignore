@@ -1,0 +1,4 @@
+# Ignora todo el repo Flutter; clasp solo debe subir estos dos archivos.
+**/**
+!appsscript.json
+!google_apps_script.js

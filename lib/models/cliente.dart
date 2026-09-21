@@ -21,6 +21,9 @@ class Cliente {
   /// Columna F: Fecha de registro ISO 8601 (YYYY-MM-DD)
   final DateTime fechaRegistro;
 
+  /// Columna G: Identificador de la organización a la que pertenece el registro
+  final String organizacionId;
+
   const Cliente({
     required this.id,
     required this.nombre,
@@ -28,6 +31,7 @@ class Cliente {
     required this.email,
     required this.saldoDeudaUsd,
     required this.fechaRegistro,
+    this.organizacionId = '67774411-6aa1-4aa3-a4b2-d3fc6913b768',
   });
 
   factory Cliente.fromRow(List<dynamic> row) {
@@ -38,6 +42,9 @@ class Cliente {
       email: row.length > 3 ? row[3].toString() : '',
       saldoDeudaUsd: row.length > 4 ? parseSheetDouble(row[4]) : 0.0,
       fechaRegistro: row.length > 5 ? DateTime.tryParse(row[5].toString()) ?? DateTime.now() : DateTime.now(),
+      organizacionId: row.length > 6 && row[6].toString().trim().isNotEmpty
+          ? row[6].toString().trim()
+          : '67774411-6aa1-4aa3-a4b2-d3fc6913b768',
     );
   }
 
@@ -49,6 +56,7 @@ class Cliente {
       email,
       saldoDeudaUsd.toStringAsFixed(2),
       fechaRegistro.toIso8601String().split('T').first,
+      organizacionId,
     ];
   }
 
@@ -60,6 +68,7 @@ class Cliente {
       'email': email,
       'saldo_deuda_usd': saldoDeudaUsd,
       'fecha_registro': fechaRegistro.toIso8601String().split('T').first,
+      'organizacion_id': organizacionId,
     };
   }
 }

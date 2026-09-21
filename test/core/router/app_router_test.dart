@@ -22,6 +22,7 @@ void main() {
         authNotifier: authNotifier,
         salesController: ServiceLocator().salesController,
         dataService: ServiceLocator().sheetsDataService,
+        sheetsAuth: ServiceLocator().sheetsAuth,
         initialLocation: RoutePaths.ventas,
       );
 
@@ -43,6 +44,7 @@ void main() {
         authNotifier: authNotifier,
         salesController: ServiceLocator().salesController,
         dataService: ServiceLocator().sheetsDataService,
+        sheetsAuth: ServiceLocator().sheetsAuth,
         initialLocation: '/ruta-desconocida-xyz',
       );
 
@@ -64,6 +66,7 @@ void main() {
         authNotifier: authNotifier,
         salesController: ServiceLocator().salesController,
         dataService: ServiceLocator().sheetsDataService,
+        sheetsAuth: ServiceLocator().sheetsAuth,
         initialLocation: RoutePaths.buildSaleDetailPath('v00000001'),
       );
 
@@ -85,6 +88,7 @@ void main() {
         authNotifier: authNotifier,
         salesController: ServiceLocator().salesController,
         dataService: ServiceLocator().sheetsDataService,
+        sheetsAuth: ServiceLocator().sheetsAuth,
         initialLocation: '${RoutePaths.inventario}?q=Pantalon',
       );
 
@@ -105,6 +109,7 @@ void main() {
         authNotifier: authNotifier,
         salesController: ServiceLocator().salesController,
         dataService: ServiceLocator().sheetsDataService,
+        sheetsAuth: ServiceLocator().sheetsAuth,
         initialLocation: RoutePaths.ventas,
       );
 

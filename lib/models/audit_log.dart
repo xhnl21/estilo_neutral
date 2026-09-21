@@ -28,6 +28,9 @@ class AuditLog {
   /// Columna I: Observaciones forenses
   final String observaciones;
 
+  /// Columna J: Identificador de la organización a la que pertenece el registro
+  final String organizacionId;
+
   const AuditLog({
     required this.timestampIso8601,
     required this.usuario,
@@ -38,6 +41,7 @@ class AuditLog {
     required this.accion,
     required this.normaAplicada,
     required this.observaciones,
+    this.organizacionId = '67774411-6aa1-4aa3-a4b2-d3fc6913b768',
   });
 
   factory AuditLog.fromRow(List<dynamic> row) {
@@ -51,6 +55,9 @@ class AuditLog {
       accion: row.length > 6 ? row[6].toString() : '',
       normaAplicada: row.length > 7 ? row[7].toString() : '',
       observaciones: row.length > 8 ? row[8].toString() : '',
+      organizacionId: row.length > 9 && row[9].toString().trim().isNotEmpty
+          ? row[9].toString().trim()
+          : '67774411-6aa1-4aa3-a4b2-d3fc6913b768',
     );
   }
 
@@ -65,6 +72,7 @@ class AuditLog {
       'accion': accion,
       'norma_aplicada': normaAplicada,
       'observaciones': observaciones,
+      'organizacion_id': organizacionId,
     };
   }
 }

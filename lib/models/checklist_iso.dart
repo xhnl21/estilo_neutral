@@ -19,6 +19,9 @@ class ChecklistISO {
   /// Columna F: Timestamp ISO 8601 de verificación
   final DateTime timestamp;
 
+  /// Columna G: Identificador de la organización a la que pertenece el registro
+  final String organizacionId;
+
   const ChecklistISO({
     required this.nro,
     required this.control,
@@ -26,6 +29,7 @@ class ChecklistISO {
     required this.estado,
     required this.evidencia,
     required this.timestamp,
+    this.organizacionId = '67774411-6aa1-4aa3-a4b2-d3fc6913b768',
   });
 
   factory ChecklistISO.fromRow(List<dynamic> row) {
@@ -36,6 +40,9 @@ class ChecklistISO {
       estado: row.length > 3 ? row[3].toString() : '☐',
       evidencia: row.length > 4 ? row[4].toString() : '',
       timestamp: row.length > 5 ? DateTime.tryParse(row[5].toString()) ?? DateTime.now() : DateTime.now(),
+      organizacionId: row.length > 6 && row[6].toString().trim().isNotEmpty
+          ? row[6].toString().trim()
+          : '67774411-6aa1-4aa3-a4b2-d3fc6913b768',
     );
   }
 
@@ -47,6 +54,7 @@ class ChecklistISO {
       'estado': estado,
       'evidencia': evidencia,
       'timestamp': timestamp.toIso8601String(),
+      'organizacion_id': organizacionId,
     };
   }
 }

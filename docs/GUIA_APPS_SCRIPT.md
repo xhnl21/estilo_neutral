@@ -6,7 +6,7 @@ Esta guía te permite habilitar la **escritura remota bidireccional (CRUD comple
 
 ### Paso 1: Abrir el Editor de Apps Script en tu Hoja
 1. Abre tu hoja de cálculo en el navegador:  
-   👉 [Abrir Google Sheet: Estilo Neutral](https://docs.google.com/spreadsheets/d/1zJWnxXk3QSG-keyOHMEOrfY72cmtLUdv/edit)
+   👉 [Abrir Google Sheet: Estilo Neutral](https://docs.google.com/spreadsheets/d/1V8xBnRVtZUyz4liGW59BU6mkgCjjreEOEWzySjcZLvI/edit)
 2. En la barra superior de menús, haz clic en **Extensiones** > **Apps Script**.
 
 ---
