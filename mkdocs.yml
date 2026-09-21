@@ -1,0 +1,58 @@
+site_name: Estilo Neutral — Documentación
+site_description: Conector Flutter para Google Sheets con arquitectura ORM bajo demanda y cero polling.
+docs_dir: docs
+
+theme:
+  name: material
+  language: es
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: indigo
+      toggle:
+        icon: material/brightness-7
+        name: Modo oscuro
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: indigo
+      toggle:
+        icon: material/brightness-4
+        name: Modo claro
+  features:
+    - navigation.instant
+    - navigation.tracking
+    - navigation.top
+    - content.code.copy
+    - search.suggest
+
+markdown_extensions:
+  - admonition
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.highlight
+  - pymdownx.superfences
+
+nav:
+  - Inicio: index.md
+  - Manual de Usuario: manual-usuario.md
+  - Manual Técnico: manual-tecnico.md
+  - Casos de Uso: casos-de-uso.md
+  - Cumplimiento Normativo: cumplimiento-normativo.md
+  - Integraciones con Google:
+      - Resumen: google/index.md
+      - Google Sign-In: google/sign-in.md
+      - Google Apps Script: google/apps-script.md
+      - Multi-organización: google/multi-organizacion.md
+      - Automatización local: google/automatizacion.md
+      - Troubleshooting: google/troubleshooting.md
+      - "Guía Apps Script (histórico)": GUIA_APPS_SCRIPT.md
+  - Arquitectura y dominio:
+      - Arquitectura: architecture.md
+      - Mapa de Contextos: context_map.md
+      - Modelo de Dominio: domain_model.md
+      - Eventos de Dominio: events.md
+      - Lenguaje Ubicuo: ubiquitous_language.md
+      - Política de Cero Polling: no_polling_policy.md
+      - Sistema de Diseño: design_system.md
+      - Revisión Skeleton Loaders: skeleton_loaders_review.md

@@ -90,7 +90,7 @@ class _SeguridadToggleRow extends StatelessWidget {
       child: SwitchListTile(
         title: Text(label, style: AppTypography.bodyMedium.copyWith(fontWeight: FontWeight.w600)),
         value: value,
-        activeThumbColor: AppPalette.success,
+        activeThumbColor: AppPalette.primary,
         onChanged: onChanged,
         contentPadding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg, vertical: 4),
       ),

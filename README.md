@@ -2,6 +2,16 @@
 
 Arquitectura de cliente para Google Sheets refactorizada bajo las normas internacionales **ISO/IEC 25010**, **ISO 8000** (Calidad de Datos), **ISO 8601** (Fechas), **ISO/IEC 27001** (Seguridad), **GDPR Art. 5**, **COBIT 2019** y **OWASP MASVS**.
 
+## Documentación
+
+La documentación completa (arquitectura, dominio, integraciones con Google, automatización) vive en `docs/` y se navega con [MkDocs](https://www.mkdocs.org/):
+
+```bash
+pip3 install -r docs-requirements.txt   # una vez
+python3 -m mkdocs serve                  # sirve en http://127.0.0.1:8000 con recarga en vivo
+python3 -m mkdocs build                  # genera el sitio estático en site/ (gitignoreado)
+```
+
 ---
 
 ## 1. Declaración de Política: CERO POLLING (Pull Bajo Demanda)

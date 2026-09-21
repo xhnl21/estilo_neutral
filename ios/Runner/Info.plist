@@ -10,6 +10,8 @@
 		<string>Estilo Neutral</string>
 		<key>CFBundleExecutable</key>
 		<string>$(EXECUTABLE_NAME)</string>
+		<key>NSFaceIDUsageDescription</key>
+		<string>Estilo Neutral usa Face ID para verificar tu identidad al iniciar sesión, si activaste el desbloqueo biométrico en Seguridad.</string>
 		<key>CFBundleIdentifier</key>
 		<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
 		<key>CFBundleInfoDictionaryVersion</key>

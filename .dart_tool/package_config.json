@@ -164,6 +164,12 @@
       "languageVersion": "3.0"
     },
     {
+      "name": "flutter_plugin_android_lifecycle",
+      "rootUri": "file:///Users/programacion/.pub-cache/hosted/pub.dev/flutter_plugin_android_lifecycle-2.0.35",
+      "packageUri": "lib/",
+      "languageVersion": "3.10"
+    },
+    {
       "name": "flutter_secure_storage",
       "rootUri": "file:///Users/programacion/.pub-cache/hosted/pub.dev/flutter_secure_storage-9.2.4",
       "packageUri": "lib/",
@@ -296,6 +302,12 @@
       "languageVersion": "3.0"
     },
     {
+      "name": "intl",
+      "rootUri": "file:///Users/programacion/.pub-cache/hosted/pub.dev/intl-0.20.3",
+      "packageUri": "lib/",
+      "languageVersion": "3.9"
+    },
+    {
       "name": "jni",
       "rootUri": "file:///Users/programacion/.pub-cache/hosted/pub.dev/jni-1.0.3",
       "packageUri": "lib/",
@@ -348,6 +360,36 @@
       "rootUri": "file:///Users/programacion/.pub-cache/hosted/pub.dev/lints-3.0.0",
       "packageUri": "lib/",
       "languageVersion": "3.0"
+    },
+    {
+      "name": "local_auth",
+      "rootUri": "file:///Users/programacion/.pub-cache/hosted/pub.dev/local_auth-3.0.2",
+      "packageUri": "lib/",
+      "languageVersion": "3.10"
+    },
+    {
+      "name": "local_auth_android",
+      "rootUri": "file:///Users/programacion/.pub-cache/hosted/pub.dev/local_auth_android-2.2.0",
+      "packageUri": "lib/",
+      "languageVersion": "3.12"
+    },
+    {
+      "name": "local_auth_darwin",
+      "rootUri": "file:///Users/programacion/.pub-cache/hosted/pub.dev/local_auth_darwin-2.0.4",
+      "packageUri": "lib/",
+      "languageVersion": "3.10"
+    },
+    {
+      "name": "local_auth_platform_interface",
+      "rootUri": "file:///Users/programacion/.pub-cache/hosted/pub.dev/local_auth_platform_interface-1.1.0",
+      "packageUri": "lib/",
+      "languageVersion": "3.7"
+    },
+    {
+      "name": "local_auth_windows",
+      "rootUri": "file:///Users/programacion/.pub-cache/hosted/pub.dev/local_auth_windows-2.0.2",
+      "packageUri": "lib/",
+      "languageVersion": "3.10"
     },
     {
       "name": "logging",

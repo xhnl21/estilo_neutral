@@ -58,3 +58,6 @@ tools/sheets_sync/client_secret.json
 tools/sheets_sync/token.json
 tools/sheets_sync/__pycache__/
 
+# MkDocs — sitio generado, no se commitea
+/site/
+

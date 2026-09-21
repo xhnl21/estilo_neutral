@@ -19,6 +19,7 @@
         "google_sign_in",
         "googleapis",
         "http",
+        "local_auth",
         "url_launcher",
         "video_player"
       ],
@@ -70,6 +71,17 @@
         "stream_channel",
         "test_api",
         "vector_math"
+      ]
+    },
+    {
+      "name": "local_auth",
+      "version": "3.0.2",
+      "dependencies": [
+        "flutter",
+        "local_auth_android",
+        "local_auth_darwin",
+        "local_auth_platform_interface",
+        "local_auth_windows"
       ]
     },
     {
@@ -358,6 +370,44 @@
         "stream_channel",
         "string_scanner",
         "term_glyph"
+      ]
+    },
+    {
+      "name": "local_auth_windows",
+      "version": "2.0.2",
+      "dependencies": [
+        "flutter",
+        "local_auth_platform_interface",
+        "meta"
+      ]
+    },
+    {
+      "name": "local_auth_platform_interface",
+      "version": "1.1.0",
+      "dependencies": [
+        "flutter",
+        "plugin_platform_interface"
+      ]
+    },
+    {
+      "name": "local_auth_darwin",
+      "version": "2.0.4",
+      "dependencies": [
+        "flutter",
+        "intl",
+        "local_auth_platform_interface",
+        "meta"
+      ]
+    },
+    {
+      "name": "local_auth_android",
+      "version": "2.2.0",
+      "dependencies": [
+        "flutter",
+        "flutter_plugin_android_lifecycle",
+        "intl",
+        "local_auth_platform_interface",
+        "meta"
       ]
     },
     {
@@ -741,6 +791,29 @@
       ]
     },
     {
+      "name": "plugin_platform_interface",
+      "version": "2.1.8",
+      "dependencies": [
+        "meta"
+      ]
+    },
+    {
+      "name": "intl",
+      "version": "0.20.3",
+      "dependencies": [
+        "clock",
+        "meta",
+        "path"
+      ]
+    },
+    {
+      "name": "flutter_plugin_android_lifecycle",
+      "version": "2.0.35",
+      "dependencies": [
+        "flutter"
+      ]
+    },
+    {
       "name": "petitparser",
       "version": "7.0.2",
       "dependencies": [
@@ -760,13 +833,6 @@
       "version": "1.0.2",
       "dependencies": [
         "source_span"
-      ]
-    },
-    {
-      "name": "plugin_platform_interface",
-      "version": "2.1.8",
-      "dependencies": [
-        "meta"
       ]
     },
     {
