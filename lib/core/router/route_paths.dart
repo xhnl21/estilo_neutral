@@ -23,6 +23,11 @@ abstract class RoutePaths {
   static const String checklistIso = '/checklist-iso';
   static const String seguridad = '/seguridad';
 
+  // Administración (multi-organización y configuración)
+  static const String usuarios = '/usuarios';
+  static const String organizaciones = '/organizaciones';
+  static const String metodosPago = '/metodos-pago';
+
   /// Helper para construir path de detalle de venta con id
   static String buildSaleDetailPath(String id) => '/ventas/$id';
 }

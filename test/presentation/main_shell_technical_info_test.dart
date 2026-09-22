@@ -22,7 +22,6 @@ void main() {
         theme: AppTheme.light,
         home: MainShell(
           dataService: ServiceLocator().sheetsDataService,
-          salesController: ServiceLocator().salesController,
           authNotifier: ServiceLocator().authNotifier,
           sheetsAuth: ServiceLocator().sheetsAuth,
         ),
@@ -43,7 +42,6 @@ void main() {
         theme: AppTheme.light,
         home: MainShell(
           dataService: ServiceLocator().sheetsDataService,
-          salesController: ServiceLocator().salesController,
           authNotifier: ServiceLocator().authNotifier,
           sheetsAuth: ServiceLocator().sheetsAuth,
         ),

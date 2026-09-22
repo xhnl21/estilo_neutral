@@ -6,17 +6,15 @@ import '../../core/router/route_paths.dart';
 import '../../core/utils/logger.dart';
 import '../../features/auth/application/auth_notifier.dart';
 import '../../features/reporting/reporting.dart';
-import '../../features/sales/sales.dart';
 import '../../features/treasury/treasury.dart';
 import '../../shared/shared.dart';
 import '../pages/pages.dart';
 
 import 'package:go_router/go_router.dart';
 
-/// Shell principal con navegación para las 10 vistas correspondientes a cada hoja
+/// Shell principal con navegación para las 12 vistas correspondientes a cada hoja
 /// de la base de datos Google Sheets "Estilo Neutral".
 class MainShell extends StatefulWidget {
-  final SalesController salesController;
   final SheetsDataService dataService;
   final AuthNotifier authNotifier;
   final SheetsAuth sheetsAuth;
@@ -24,7 +22,6 @@ class MainShell extends StatefulWidget {
 
   const MainShell({
     super.key,
-    required this.salesController,
     required this.dataService,
     required this.authNotifier,
     required this.sheetsAuth,
@@ -54,6 +51,9 @@ class _MainShellState extends State<MainShell> {
     (title: 'Reporte Migración', sheet: 'reporte_migracion', icon: CupertinoIcons.doc_text, category: 'Gobierno y Calidad ISO'),
     (title: 'Checklist ISO', sheet: 'checklist_iso', icon: CupertinoIcons.checkmark_seal, category: 'Gobierno y Calidad ISO'),
     (title: 'Seguridad', sheet: 'seguridad', icon: CupertinoIcons.lock_shield, category: 'Gobierno y Calidad ISO'),
+    (title: 'Usuarios', sheet: 'usuarios', icon: CupertinoIcons.person_2_fill, category: 'Administración'),
+    (title: 'Organizaciones', sheet: 'organizaciones', icon: CupertinoIcons.building_2_fill, category: 'Administración'),
+    (title: 'Métodos de Pago', sheet: 'metodo pago', icon: CupertinoIcons.creditcard_fill, category: 'Administración'),
   ];
 
   @override
@@ -62,7 +62,7 @@ class _MainShellState extends State<MainShell> {
     _pages = [
       ClientesPage(dataService: widget.dataService),
       InventarioPage(dataService: widget.dataService),
-      SalesPage(controller: widget.salesController, dataService: widget.dataService),
+      VentasPage(dataService: widget.dataService),
       TreasuryPage(dataService: widget.dataService),
       ReportingPage(dataService: widget.dataService),
       CuarentenaPage(dataService: widget.dataService),
@@ -70,6 +70,9 @@ class _MainShellState extends State<MainShell> {
       ReporteMigracionPage(dataService: widget.dataService),
       ChecklistIsoPage(dataService: widget.dataService),
       SeguridadPage(dataService: widget.dataService),
+      UsuariosPage(dataService: widget.dataService),
+      OrganizacionesPage(dataService: widget.dataService),
+      MetodosPagoPage(dataService: widget.dataService),
     ];
   }
 
@@ -88,12 +91,26 @@ class _MainShellState extends State<MainShell> {
   }
 
   Future<void> _handleLogout(BuildContext context) async {
+    // Si la organización tiene un método de Seguridad activo (Biométrico,
+    // Desbloqueo facial o 2FA), ese método ya funciona como el "candado" real
+    // de la app: cerrar sesión no necesita forzar también un nuevo selector
+    // de cuenta de Google. Se mantiene la sesión de Google intacta para que,
+    // al volver a entrar, la app la restaure en silencio y salte directo al
+    // método de Seguridad configurado (ver UC-01b). Solo cuando no hay ningún
+    // método activo, cerrar sesión revoca también la sesión de Google, que
+    // pasa a ser la única barrera de acceso.
+    final metodoActivo = widget.dataService.seguridad.metodoActivo;
+    final cierraSesionGoogle = metodoActivo == null;
+
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('¿Cerrar sesión?'),
-        content: const Text(
-          'Vas a salir del sistema y necesitarás volver a iniciar sesión con Google.',
+        content: Text(
+          cierraSesionGoogle
+              ? 'Vas a salir del sistema y necesitarás volver a iniciar sesión con Google.'
+              : 'Vas a salir del sistema. La próxima vez vas a poder entrar directo con tu '
+                  'método de Seguridad, sin volver a elegir tu cuenta de Google.',
         ),
         actions: [
           TextButton(
@@ -111,19 +128,22 @@ class _MainShellState extends State<MainShell> {
 
     if (confirmed != true || !context.mounted) return;
 
-    try {
-      await widget.sheetsAuth.signOut();
-    } catch (error, stackTrace) {
-      Logger.log(
-        message: 'Error al cerrar sesión de Google',
-        type: LogType.error,
-        error: error,
-        stackTrace: stackTrace,
-      );
+    if (cierraSesionGoogle) {
+      try {
+        await widget.sheetsAuth.signOut();
+      } catch (error, stackTrace) {
+        Logger.log(
+          message: 'Error al cerrar sesión de Google',
+          type: LogType.error,
+          error: error,
+          stackTrace: stackTrace,
+        );
+      }
     }
 
     widget.authNotifier.logout();
     widget.dataService.setCurrentOrganizacion(null);
+    widget.dataService.setCurrentUsuario(null);
     if (context.mounted) {
       context.go(RoutePaths.login);
     }
@@ -146,7 +166,7 @@ class _MainShellState extends State<MainShell> {
         ),
         leading: IconButton(
           icon: const Icon(CupertinoIcons.bars, color: AppPalette.blue900),
-          tooltip: 'Menú de 10 Vistas',
+          tooltip: 'Menú de 12 Vistas',
           onPressed: () => _scaffoldKey.currentState?.openDrawer(),
         ),
         title: Column(
@@ -303,7 +323,7 @@ class _MainShellState extends State<MainShell> {
               ),
             ),
 
-            // Lista categorizada de las 10 vistas
+            // Lista categorizada de las 12 vistas
             Expanded(
               child: ListView(
                 padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
@@ -325,6 +345,12 @@ class _MainShellState extends State<MainShell> {
                   _buildDrawerItem(7, _vistasInfo[7]),
                   _buildDrawerItem(8, _vistasInfo[8]),
                   _buildDrawerItem(9, _vistasInfo[9]),
+
+                  const Divider(height: 24, thickness: 1, color: AppPalette.divider),
+                  _buildCategoryHeader('ADMINISTRACIÓN'),
+                  _buildDrawerItem(10, _vistasInfo[10]),
+                  _buildDrawerItem(11, _vistasInfo[11]),
+                  _buildDrawerItem(12, _vistasInfo[12]),
                 ],
               ),
             ),

@@ -37,6 +37,7 @@ class _ReporteMigracionPageState extends State<ReporteMigracionPage> {
             ),
           ],
           floatingActionButton: FloatingActionButton.extended(
+            heroTag: 'fab_reporte_migracion',
             backgroundColor: AppPalette.primary,
             foregroundColor: Colors.white,
             icon: const Icon(CupertinoIcons.doc_append, size: 20),

@@ -39,6 +39,7 @@ class _ReportingPageState extends State<ReportingPage> {
             ),
           ],
           floatingActionButton: FloatingActionButton.extended(
+            heroTag: 'fab_resumen_diario',
             backgroundColor: AppPalette.primary,
             foregroundColor: Colors.white,
             icon: const Icon(CupertinoIcons.calendar_badge_plus, size: 20),

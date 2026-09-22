@@ -12,8 +12,6 @@ import 'package:estilo_neutral/core/design_system/widgets/app_loading_state.dart
 import 'package:estilo_neutral/core/design_system/widgets/app_money_text.dart';
 import 'package:estilo_neutral/core/design_system/widgets/app_outlined_button.dart';
 import 'package:estilo_neutral/core/design_system/widgets/app_scaffold.dart';
-import 'package:estilo_neutral/features/sales/application/dtos/sale_dto.dart';
-import 'package:estilo_neutral/features/sales/presentation/widgets/sale_list_item.dart';
 
 void main() {
   group('Accessibility & Semantics Tests (WCAG 2.1 AA / TalkBack & VoiceOver)',
@@ -292,51 +290,6 @@ void main() {
           .getSemantics(find.text('Inventario General'))
           .getSemanticsData();
       expect(headingData.flagsCollection.isHeader, isTrue);
-
-      handle.dispose();
-    });
-
-    testWidgets(
-        'SaleListItem has unified cohesive semantics with status and amounts',
-        (tester) async {
-      final handle = tester.ensureSemantics();
-
-      const sale = SaleDto(
-        id: 'v00000001',
-        date: '2026-09-15',
-        customerId: 'c00000001',
-        firstItemId: 'p00000001',
-        totalQuantity: 2,
-        bcvRate: 40.0,
-        usdRate: 40.0,
-        paymentMethod: 'Efectivo USD',
-        mobilePaymentFeeBs: 0.0,
-        montoBs: 4800.00,
-        montoUsd: 120.00,
-        abonoUsd: 120.00,
-        deudaUsd: 0.0,
-        totalPagarUsd: 120.00,
-        validacion: 'OK',
-        estado: 'Pagada',
-      );
-
-      await tester.pumpWidget(
-        MaterialApp(
-          theme: AppTheme.light,
-          home: Scaffold(
-            body: SaleListItem(
-              sale: sale,
-              onTap: () {},
-            ),
-          ),
-        ),
-      );
-
-      expect(
-        find.bySemanticsLabel(
-            'Venta #v00000001, estado: Pagada, cliente: c00000001, total: 120.00 dólares'),
-        findsOneWidget,
-      );
 
       handle.dispose();
     });

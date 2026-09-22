@@ -6,13 +6,17 @@ import 'package:estilo_neutral/core/router/app_router.dart';
 import 'package:estilo_neutral/core/router/pages/not_found_page.dart';
 import 'package:estilo_neutral/core/router/route_paths.dart';
 import 'package:estilo_neutral/features/auth/application/auth_notifier.dart';
-import 'package:estilo_neutral/features/sales/presentation/pages/sale_detail_page.dart';
 import 'package:estilo_neutral/presentation/pages/clientes_page.dart';
+import 'package:estilo_neutral/presentation/pages/factura_detalle_page.dart';
 import 'package:estilo_neutral/presentation/pages/inventario_page.dart';
 
 void main() {
   setUp(() {
     ServiceLocator().init();
+    // Simula una sesión con organización activa (como ocurre siempre en la
+    // app real tras el login) para que los getters filtrados por
+    // organización (p.ej. `ventas`) expongan los datos semilla.
+    ServiceLocator().sheetsDataService.setCurrentOrganizacion('67774411-6aa1-4aa3-a4b2-d3fc6913b768');
   });
 
   group('AppRouter Widget Tests', () {
@@ -20,7 +24,6 @@ void main() {
       final authNotifier = AuthNotifier();
       final appRouter = AppRouter(
         authNotifier: authNotifier,
-        salesController: ServiceLocator().salesController,
         dataService: ServiceLocator().sheetsDataService,
         sheetsAuth: ServiceLocator().sheetsAuth,
         initialLocation: RoutePaths.ventas,
@@ -42,7 +45,6 @@ void main() {
       final authNotifier = AuthNotifier();
       final appRouter = AppRouter(
         authNotifier: authNotifier,
-        salesController: ServiceLocator().salesController,
         dataService: ServiceLocator().sheetsDataService,
         sheetsAuth: ServiceLocator().sheetsAuth,
         initialLocation: '/ruta-desconocida-xyz',
@@ -60,11 +62,10 @@ void main() {
       expect(find.text('Página No Encontrada (404)'), findsOneWidget);
     });
 
-    testWidgets('supports deep linking to /ventas/:id with SaleDetailPage', (tester) async {
+    testWidgets('supports deep linking to /ventas/:id with FacturaDetallePage', (tester) async {
       final authNotifier = AuthNotifier();
       final appRouter = AppRouter(
         authNotifier: authNotifier,
-        salesController: ServiceLocator().salesController,
         dataService: ServiceLocator().sheetsDataService,
         sheetsAuth: ServiceLocator().sheetsAuth,
         initialLocation: RoutePaths.buildSaleDetailPath('v00000001'),
@@ -78,15 +79,14 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(find.byType(SaleDetailPage), findsOneWidget);
-      expect(find.text('Detalle de Venta #v00000001'), findsOneWidget);
+      expect(find.byType(FacturaDetallePage), findsOneWidget);
+      expect(find.text('Factura #v00000001'), findsOneWidget);
     });
 
     testWidgets('supports deep linking with query parameters on /inventario?q=Pantalon', (tester) async {
       final authNotifier = AuthNotifier();
       final appRouter = AppRouter(
         authNotifier: authNotifier,
-        salesController: ServiceLocator().salesController,
         dataService: ServiceLocator().sheetsDataService,
         sheetsAuth: ServiceLocator().sheetsAuth,
         initialLocation: '${RoutePaths.inventario}?q=Pantalon',
@@ -107,7 +107,6 @@ void main() {
       final authNotifier = AuthNotifier();
       final appRouter = AppRouter(
         authNotifier: authNotifier,
-        salesController: ServiceLocator().salesController,
         dataService: ServiceLocator().sheetsDataService,
         sheetsAuth: ServiceLocator().sheetsAuth,
         initialLocation: RoutePaths.ventas,

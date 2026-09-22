@@ -39,6 +39,7 @@ class _TreasuryPageState extends State<TreasuryPage> {
             ),
           ],
           floatingActionButton: FloatingActionButton.extended(
+            heroTag: 'fab_compras_divisas',
             backgroundColor: AppPalette.primary,
             foregroundColor: Colors.white,
             icon: const Icon(CupertinoIcons.plus_circle, size: 20),

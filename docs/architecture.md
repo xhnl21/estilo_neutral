@@ -3,6 +3,9 @@
 **Proyecto:** Estilo Neutral (Flutter + Google Sheets ORM)  
 **Estándares:** Domain-Driven Design (DDD), Clean Architecture (Robert C. Martin), ISO/IEC 25010, ISO 8000  
 
+!!! warning "El contexto `sales/` descrito en este documento fue eliminado"
+    Esta guía usaba `lib/features/sales/` (Ventas/Clientes/Facturación) como ejemplo principal de Clean Architecture completa (dominio/aplicación/infraestructura/presentación). Ese módulo **nunca estuvo conectado** a los datos reales — `SalesPage` llamaba a `SheetsDataService` directamente, ignorando toda la capa de dominio — y se eliminó por completo al implementar el esquema de factura con múltiples ítems (ver `docs/manual-tecnico.md` y `docs/casos-de-uso.md` UC-30). Las referencias a `sales/` que quedan abajo son **históricas**: documentan un patrón que existía en el código pero que ya no debe replicarse. Para el patrón real y vigente de cualquier vista nueva (incluida la actual `VentasPage`), ver `docs/manual-tecnico.md` ("página simple + SheetsDataService").
+
 ---
 
 ## 1. Topología del Proyecto (Feature-First DDD)
@@ -25,7 +28,6 @@ lib/
 │   ├── utils/            # Logger estructurado
 │   └── value_objects/    # Value Objects transversales (MoneyUsd, MoneyBs, IsoDate, etc.)
 ├── features/             # Bounded Contexts (Dominio específico de negocio)
-│   ├── sales/            # Contexto: Ventas, Clientes y Facturación
 │   ├── treasury/         # Contexto: Compras de Divisas y Tesorería
 │   ├── reporting/        # Contexto: Cierre Diario, KPIs y Resumen Financiero
 │   └── audit/            # Contexto: Auditoría ISO, Cuarentena e Integridad de Datos
@@ -33,19 +35,20 @@ lib/
 │   └── models.dart       # Barril unificado de modelos
 ├── presentation/         # Vistas de navegación global y Shell
 │   ├── presentation.dart # Barril global de presentación
-│   ├── pages/pages.dart  # Barril de páginas principales
+│   ├── pages/pages.dart  # Barril de páginas principales (incluye Ventas/Facturas)
 │   └── shell/            # MainShell con navegación lateral y drawer
-├── repositories/         # Repositorio base ORM
 └── shared/               # Infraestructura de conectividad
     ├── shared.dart       # Barril para Google Sheets, Drive y Secure Token Storage
 ```
+
+> `lib/features/sales/` y `lib/repositories/` (repositorio base ORM legacy, también sin uso real) ya no existen — ver la advertencia arriba.
 
 ---
 
 ## 2. Política de Archivos de Barril (Barrel Files)
 
 ### 2.1. Regla de Encapsulamiento de Infraestructura
-- Cada feature expone un archivo barril raíz (ej. `lib/features/sales/sales.dart`).
+- Cada feature expone un archivo barril raíz (ej. `lib/features/treasury/treasury.dart`).
 - **PROHIBIDO:** El barril raíz de una feature NUNCA debe re-exportar `infrastructure/infrastructure.dart`.
 - Las implementaciones concretas (`*SheetsDataSource`, `*RepositoryImpl`, `*Model`) residen en su propio barril interno y **solo** pueden ser consumidas por el inyector de dependencias (`lib/app/di/injection.dart`).
 - La capa de presentación y los casos de uso deben interactuar exclusivamente con contratos del **Dominio** (`CustomerRepository`, `SaleRepository`) o DTOs de **Aplicación**.
@@ -59,8 +62,7 @@ lib/
 | **Core Value Objects** | `lib/core/value_objects/value_objects.dart` | `MoneyUsd`, `MoneyBs`, `ExchangeRate`, `IsoDate`, `EntityId`. |
 | **Core Integrador** | `lib/core/core.dart` | Todos los tipos core, value objects, errores, use_case, logger y event_bus. |
 | **Shared Services** | `lib/shared/shared.dart` | `SheetsDataService`, `SheetsAuth`, `SheetsClient`, `SecureTokenStorage`, `GoogleDriveHelper`. |
-| **Feature Sales (Pública)** | `lib/features/sales/sales.dart` | Dominio (entidades, repositorios, eventos), Aplicación (casos de uso, DTOs), Presentación (`SalesPage`, `SalesController`). |
-| **Sales Infrastructure (Privada)** | `lib/features/sales/infrastructure/infrastructure.dart` | `SalesSheetsDataSource`, `CustomerRepositoryImpl`, `SaleRepositoryImpl`, modelos de persistencia. |
+| ~~Feature Sales~~ | ~~`lib/features/sales/sales.dart`~~ | **Eliminado** — ver advertencia al inicio del documento. |
 | **Feature Treasury** | `lib/features/treasury/treasury.dart` | Dominio y Presentación de compra de divisas. |
 | **Feature Reporting** | `lib/features/reporting/reporting.dart` | Dominio y Presentación de reportes y resumen diario. |
 | **Feature Audit** | `lib/features/audit/audit.dart` | Dominio y Presentación de auditoría forense y trazabilidad ISO. |

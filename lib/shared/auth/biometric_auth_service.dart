@@ -28,6 +28,33 @@ class BiometricAuthService {
     }
   }
 
+  /// Indica si el dispositivo tiene reconocimiento facial (Face ID / face
+  /// unlock de clase fuerte) realmente disponible — no solo "algún método
+  /// biométrico". En Android, muchos equipos (ej. sensores de huella sin
+  /// cámara de profundidad) nunca reportan `BiometricType.face`, así que el
+  /// botón de "Desbloqueo facial" no debería prometer Face ID en esos casos.
+  Future<bool> hasFaceId() async {
+    try {
+      final tipos = await _auth.getAvailableBiometrics();
+      return tipos.contains(BiometricType.face);
+    } catch (error, stackTrace) {
+      Logger.log(
+        message: 'Error al consultar los tipos de biometría disponibles',
+        type: LogType.error,
+        error: error,
+        stackTrace: stackTrace,
+      );
+      return false;
+    }
+  }
+
+  /// Cancelaciones esperables del usuario o del sistema — no son errores
+  /// reales, solo "no completó la verificación esta vez".
+  static const Set<LocalAuthExceptionCode> _codigosCancelacionBenigna = {
+    LocalAuthExceptionCode.userCanceled,
+    LocalAuthExceptionCode.systemCanceled,
+  };
+
   /// Pide verificación biométrica al usuario. Devuelve `true` solo si se
   /// autenticó correctamente; `false` si canceló, falló o hubo un error.
   Future<bool> authenticate({
@@ -38,6 +65,19 @@ class BiometricAuthService {
         localizedReason: reason,
         biometricOnly: true,
       );
+    } on LocalAuthException catch (error, stackTrace) {
+      // Si el usuario (o el sistema) canceló el diálogo, no es un error real
+      // — se loguea como advertencia informativa, no como fallo.
+      final esCancelacionBenigna = _codigosCancelacionBenigna.contains(error.code);
+      Logger.log(
+        message: esCancelacionBenigna
+            ? 'Verificación biométrica cancelada (${error.code.name})'
+            : 'Error durante la autenticación biométrica (${error.code.name})',
+        type: esCancelacionBenigna ? LogType.warning : LogType.error,
+        error: esCancelacionBenigna ? null : error,
+        stackTrace: esCancelacionBenigna ? null : stackTrace,
+      );
+      return false;
     } catch (error, stackTrace) {
       Logger.log(
         message: 'Error durante la autenticación biométrica',

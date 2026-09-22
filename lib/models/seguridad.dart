@@ -1,6 +1,12 @@
 /// Modelo de entidad Seguridad mapeado desde la hoja "seguridad".
-/// Configuración de mecanismos de autenticación disponibles, ahora con una fila
-/// por organización (multi-organización) en lugar de un único registro global.
+/// Configuración de mecanismos de autenticación disponibles, con **una fila
+/// por usuario** (no por organización): así, si el equipo de un usuario no
+/// puede cumplir el método elegido, la corrección automática (ver
+/// `SeguridadPage`) solo afecta a ese usuario, no a toda la organización.
+/// Los tres métodos (`biometrico`, `desbloqueoFacial`, `dosFactores`) son
+/// **mutuamente excluyentes**: a lo sumo uno puede estar activo por usuario.
+/// Usar [metodoActivo] para leer cuál está activo, y
+/// `SheetsDataService.setMetodoSeguridad` para cambiarlo.
 class Seguridad {
   /// Columna A: Autenticación biométrica (huella dactilar) habilitada
   final bool biometrico;
@@ -11,14 +17,14 @@ class Seguridad {
   /// Columna C: Verificación en dos pasos (2FA) habilitada
   final bool dosFactores;
 
-  /// Columna D: Identificador de la organización a la que pertenece este registro
-  final String organizacionId;
+  /// Columna D: Correo del usuario al que pertenece este registro
+  final String usuarioEmail;
 
   const Seguridad({
-    this.biometrico = true,
-    this.desbloqueoFacial = true,
-    this.dosFactores = true,
-    this.organizacionId = '67774411-6aa1-4aa3-a4b2-d3fc6913b768',
+    this.biometrico = false,
+    this.desbloqueoFacial = false,
+    this.dosFactores = false,
+    this.usuarioEmail = '',
   });
 
   factory Seguridad.fromRow(List<dynamic> row) {
@@ -26,9 +32,7 @@ class Seguridad {
       biometrico: _parseBool(row.isNotEmpty ? row[0] : null),
       desbloqueoFacial: _parseBool(row.length > 1 ? row[1] : null),
       dosFactores: _parseBool(row.length > 2 ? row[2] : null),
-      organizacionId: row.length > 3 && row[3].toString().trim().isNotEmpty
-          ? row[3].toString().trim()
-          : '67774411-6aa1-4aa3-a4b2-d3fc6913b768',
+      usuarioEmail: row.length > 3 ? row[3].toString().trim().toLowerCase() : '',
     );
   }
 
@@ -42,18 +46,14 @@ class Seguridad {
         normalized == '☑';
   }
 
-  Seguridad copyWith({
-    bool? biometrico,
-    bool? desbloqueoFacial,
-    bool? dosFactores,
-    String? organizacionId,
-  }) {
-    return Seguridad(
-      biometrico: biometrico ?? this.biometrico,
-      desbloqueoFacial: desbloqueoFacial ?? this.desbloqueoFacial,
-      dosFactores: dosFactores ?? this.dosFactores,
-      organizacionId: organizacionId ?? this.organizacionId,
-    );
+  /// Identificador del único método activo ('biometrico', 'desbloqueo_facial',
+  /// 'dos_factores'), o `null` si no hay ninguno activo. Los tres campos son
+  /// mutuamente excluyentes: a lo sumo uno puede estar en `true`.
+  String? get metodoActivo {
+    if (biometrico) return 'biometrico';
+    if (desbloqueoFacial) return 'desbloqueo_facial';
+    if (dosFactores) return 'dos_factores';
+    return null;
   }
 
   Map<String, dynamic> toMap() {
@@ -61,7 +61,7 @@ class Seguridad {
       'biometrico': biometrico,
       'desbloqueo_facial': desbloqueoFacial,
       'dos_factores': dosFactores,
-      'organizacion_id': organizacionId,
+      'usuario_email': usuarioEmail,
     };
   }
 }

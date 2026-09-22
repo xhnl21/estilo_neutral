@@ -4,8 +4,6 @@ import '../../features/audit/presentation/routes/audit_routes.dart';
 import '../../features/auth/application/auth_notifier.dart';
 import '../../features/auth/presentation/routes/auth_routes.dart';
 import '../../features/reporting/presentation/routes/reporting_routes.dart';
-import '../../features/sales/presentation/controllers/sales_controller.dart';
-import '../../features/sales/presentation/routes/sales_routes.dart';
 import '../../features/treasury/presentation/routes/treasury_routes.dart';
 import '../../presentation/routes/operations_routes.dart';
 import '../../presentation/shell/main_shell.dart';
@@ -18,10 +16,9 @@ import 'route_paths.dart';
 
 
 /// Configuración centralizada de enrutamiento con go_router para Estilo Neutral.
-/// Implementa StatefulShellRoute.indexedStack para preservar el estado de las 9 vistas.
+/// Implementa StatefulShellRoute.indexedStack para preservar el estado de las 12 vistas.
 class AppRouter {
   final AuthNotifier authNotifier;
-  final SalesController salesController;
   final SheetsDataService dataService;
   final SheetsAuth sheetsAuth;
   final String initialLocation;
@@ -35,7 +32,6 @@ class AppRouter {
 
   AppRouter({
     required this.authNotifier,
-    required this.salesController,
     required this.dataService,
     required this.sheetsAuth,
     this.initialLocation = RoutePaths.splash,
@@ -44,7 +40,6 @@ class AppRouter {
     _onboardingGuard = OnboardingGuard(authNotifier: authNotifier);
 
     final authRoutes = AuthRoutes(authNotifier: authNotifier, sheetsAuth: sheetsAuth, dataService: dataService);
-    final salesRoutes = SalesRoutes(controller: salesController, dataService: dataService);
     final treasuryRoutes = TreasuryRoutes(dataService: dataService);
     final reportingRoutes = ReportingRoutes(dataService: dataService);
     final operationsRoutes = OperationsRoutes(dataService: dataService);
@@ -74,11 +69,10 @@ class AppRouter {
         // 1. Rutas independientes / de pantalla completa (Login y Onboarding)
         ...authRoutes.buildRoutes(),
 
-        // 2. Shell persistente con las 10 vistas del sistema
+        // 2. Shell persistente con las 12 vistas del sistema
         StatefulShellRoute.indexedStack(
           builder: (context, state, navigationShell) {
             return MainShell(
-              salesController: salesController,
               dataService: dataService,
               authNotifier: authNotifier,
               sheetsAuth: sheetsAuth,
@@ -96,9 +90,9 @@ class AppRouter {
               routes: [opRoutesList[1]],
             ),
 
-            // Rama 2: Ventas y Detalle de Venta (:id)
+            // Rama 2: Ventas (factura header+ítems) y Detalle de Factura (:id)
             StatefulShellBranch(
-              routes: salesRoutes.buildRoutes(),
+              routes: [opRoutesList[2]],
             ),
 
             // Rama 3: Compras Divisas
@@ -134,6 +128,21 @@ class AppRouter {
             // Rama 9: Seguridad
             StatefulShellBranch(
               routes: [auditRoutesList[4]],
+            ),
+
+            // Rama 10: Usuarios
+            StatefulShellBranch(
+              routes: [auditRoutesList[5]],
+            ),
+
+            // Rama 11: Organizaciones
+            StatefulShellBranch(
+              routes: [auditRoutesList[6]],
+            ),
+
+            // Rama 12: Métodos de Pago
+            StatefulShellBranch(
+              routes: [auditRoutesList[7]],
             ),
           ],
         ),

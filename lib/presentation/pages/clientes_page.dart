@@ -1,8 +1,10 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:go_router/go_router.dart';
 import '../../core/config/environment_config.dart';
 import '../../core/design_system/design_system.dart';
+import '../../core/router/route_paths.dart';
 import '../../core/utils/logger.dart';
 import '../../models/models.dart';
 import '../../shared/shared.dart';
@@ -62,6 +64,7 @@ class _ClientesView extends StatelessWidget {
             ),
           ],
           floatingActionButton: FloatingActionButton.extended(
+            heroTag: 'fab_clientes',
             backgroundColor: AppPalette.primary,
             foregroundColor: Colors.white,
             icon: const Icon(CupertinoIcons.person_badge_plus, size: 20),
@@ -248,6 +251,28 @@ class _ClientesView extends StatelessWidget {
                                   Row(
                                     mainAxisSize: MainAxisSize.min,
                                     children: [
+                                      Semantics(
+                                        button: true,
+                                        label: 'Ver compras de ${cliente.nombre}',
+                                        child: IconButton(
+                                          visualDensity: VisualDensity.compact,
+                                          padding: EdgeInsets.zero,
+                                          constraints: const BoxConstraints(
+                                            minWidth: 32,
+                                            minHeight: 32,
+                                          ),
+                                          icon: const Icon(
+                                            CupertinoIcons.cart,
+                                            size: 18,
+                                            color: AppPalette.blue700,
+                                          ),
+                                          tooltip: 'Ver Compras',
+                                          onPressed: () => context.go(
+                                            '${RoutePaths.ventas}?cliente=${cliente.id}',
+                                          ),
+                                        ),
+                                      ),
+                                      const SizedBox(width: 4),
                                       Semantics(
                                         button: true,
                                         label: 'Editar cliente ${cliente.nombre}',

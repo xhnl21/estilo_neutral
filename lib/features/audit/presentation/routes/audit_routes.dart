@@ -39,6 +39,21 @@ class AuditRoutes implements FeatureRouteDefinition {
         name: RouteNames.seguridad,
         builder: (context, state) => SeguridadPage(dataService: dataService),
       ),
+      GoRoute(
+        path: RoutePaths.usuarios,
+        name: RouteNames.usuarios,
+        builder: (context, state) => UsuariosPage(dataService: dataService),
+      ),
+      GoRoute(
+        path: RoutePaths.organizaciones,
+        name: RouteNames.organizaciones,
+        builder: (context, state) => OrganizacionesPage(dataService: dataService),
+      ),
+      GoRoute(
+        path: RoutePaths.metodosPago,
+        name: RouteNames.metodosPago,
+        builder: (context, state) => MetodosPagoPage(dataService: dataService),
+      ),
     ];
   }
 }

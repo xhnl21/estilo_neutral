@@ -7,7 +7,7 @@ Guía de referencia para desarrolladores que se suman al proyecto. Para arquitec
 | Capa | Tecnología |
 |---|---|
 | Framework | Flutter 3.47.x / Dart SDK `>=3.0.0 <4.0.0` |
-| Navegación | `go_router` (rutas + `StatefulShellRoute.indexedStack` para las 10 vistas) |
+| Navegación | `go_router` (rutas + `StatefulShellRoute.indexedStack` para las 12 vistas) |
 | Estado | En su mayoría `ChangeNotifier` (`SheetsDataService`) + `ListenableBuilder`; algunas features nuevas (`sales`, `search`) usan `flutter_bloc` |
 | Backend de datos | Google Sheets, sin servidor propio (ver más abajo) |
 | Autenticación | `google_sign_in` (OAuth Android nativo) |
@@ -18,8 +18,8 @@ Guía de referencia para desarrolladores que se suman al proyecto. Para arquitec
 
 No hay backend propio ni base de datos real — Google Sheets **es** la base de datos:
 
-- **Lectura:** `SheetsDataService` (`lib/shared/google_sheets/sheets_data_service.dart`) hace `fetchAllSheets()`, que dispara un `GET` por cada una de las 10 hojas contra el endpoint público de exportación CSV de Google Sheets (`.../gviz/tq?tqx=out:csv&sheet=<nombre>`). No requiere autenticación — la hoja debe estar compartida como "Cualquier persona con el enlace". Cada hoja tiene un parser dedicado (`_parseClientes`, `_parseProductos`, etc.) que mapea filas CSV a modelos Dart.
-- **Escritura:** las mutaciones (`addCliente`, `addProducto`, `toggleChecklistEstado`, `toggleBiometrico`, etc.) actualizan primero la lista en memoria (para que la UI reaccione al instante) y, para algunas, además hacen un `POST` a **Google Apps Script** (`_postToAppsScript`, ver [Apps Script](google/apps-script.md)), que es el único componente con permiso real de escritura sobre el Sheet.
+- **Lectura:** `SheetsDataService` (`lib/shared/google_sheets/sheets_data_service.dart`) hace `fetchAllSheets()`, que dispara un `GET` por cada una de las 14 hojas (las 9 de negocio + `venta_items`, `seguridad`, `usuarios`, `organizaciones` y `usuario_organizacion`) contra el endpoint público de exportación CSV de Google Sheets (`.../gviz/tq?tqx=out:csv&sheet=<nombre>`). No requiere autenticación — la hoja debe estar compartida como "Cualquier persona con el enlace". Cada hoja tiene un parser dedicado (`_parseClientes`, `_parseProductos`, etc.) que mapea filas CSV a modelos Dart.
+- **Escritura:** las mutaciones (`addCliente`, `addProducto`, `toggleChecklistEstado`, `setMetodoSeguridad`, etc.) actualizan primero la lista en memoria (para que la UI reaccione al instante) y, para algunas, además hacen un `POST` a **Google Apps Script** (`_postToAppsScript`, ver [Apps Script](google/apps-script.md)), que es el único componente con permiso real de escritura sobre el Sheet.
 - **Sin polling:** ninguna pantalla refresca sola — ver [Política de Cero Polling](no_polling_policy.md).
 - **Multi-organización:** todos los getters de listas filtran por la organización del usuario logueado — ver [Multi-organización](google/multi-organizacion.md).
 
@@ -36,20 +36,21 @@ lib/
 │   └── utils/             # Logger (con sanitización de PII)
 ├── features/
 │   ├── auth/              # AuthNotifier, AuthState, LoginPage, OnboardingPage
-│   ├── audit/              # Rutas de "Gobierno y Calidad ISO" (cuarentena, audit_log, reporte_migracion, checklist_iso, seguridad)
-│   ├── sales/              # Único módulo con Clean Architecture completa (domain/infra/presentation) — demo, no conectado a Sheets real
+│   ├── audit/              # Rutas de "Gobierno y Calidad ISO" + "Administración" (cuarentena, audit_log, reporte_migracion, checklist_iso, seguridad, usuarios, organizaciones)
 │   ├── treasury/, reporting/, search/
-├── models/                 # Los "DTOs": Cliente, Producto, Venta, ..., Seguridad, Usuario (fromRow/toMap)
+├── models/                 # Los "DTOs": Cliente, Producto, Venta, VentaItem, ..., Seguridad, Usuario, Organizacion, UsuarioOrganizacion (fromRow/toMap)
 ├── presentation/
-│   ├── pages/               # Las páginas simples de las 9+1 vistas (StatefulWidget + SheetsDataService)
+│   ├── pages/               # Las páginas simples de las 9+3 vistas (StatefulWidget + SheetsDataService), incluye Ventas y FacturaDetallePage
 │   ├── screens/splash/     # Video de introducción
-│   └── shell/                # MainShell: drawer + bottom nav + IndexedStack de las 10 vistas
+│   └── shell/                # MainShell: drawer + bottom nav + IndexedStack de las 12 vistas
 └── shared/
     └── google_sheets/       # SheetsDataService, SheetsAuth, SheetsClient, SheetsConfig
 ```
 
 !!! note "Por qué la mayoría de las vistas no tienen Cubit/Repository"
-    Las 9 vistas de negocio (Clientes, Inventario, Ventas, Compras Divisas, Resumen Diario, Cuarentena, Audit Log, Reporte Migración, Checklist ISO) y Seguridad son `StatefulWidget`/`StatelessWidget` planos que consumen `SheetsDataService` directamente vía `ListenableBuilder` — **no** usan Cubit ni Repository. El único módulo con Clean Architecture completa (`lib/features/sales`) es una demo interna con datos en memoria, no está conectado al Google Sheet real. Si vas a agregar una vista nueva, replicá el patrón "página simple + SheetsDataService", no el de `sales/`.
+    Las 9 vistas de negocio (Clientes, Inventario, Ventas, Compras Divisas, Resumen Diario, Cuarentena, Audit Log, Reporte Migración, Checklist ISO), Seguridad, Usuarios y Organizaciones son `StatefulWidget`/`StatelessWidget` planos que consumen `SheetsDataService` directamente vía `ListenableBuilder` — **no** usan Cubit ni Repository. Si vas a agregar una vista nueva, replicá este patrón "página simple + SheetsDataService".
+
+    **Nota histórica:** hasta hace poco existía `lib/features/sales/`, un módulo separado con Clean Architecture completa (domain/application/infrastructure) que modelaba `Sale`/`SaleItem`/`Customer`/`Product` como agregados propios — pero `SalesPage` nunca lo usaba (llamaba a `SheetsDataService` directamente), así que todo ese módulo estaba muerto en tiempo de ejecución. Se eliminó por completo al implementar el esquema de factura con múltiples ítems (ver UC-30), y `VentasPage`/`FacturaDetallePage` se construyeron desde cero con el patrón simple, sin resucitar esa capa.
 
 ## Variables de entorno (`.env*`)
 
@@ -88,10 +89,10 @@ flutter analyze lib/ test/
 flutter test
 ```
 
-151 tests a la fecha de este documento (widgets, cubits, routing, config). `test/test_live_fetch.dart` es un test de integración manual contra una hoja externa vieja — no forma parte del suite estándar (su nombre no termina en `_test.dart`, así que `flutter test` no lo descubre automáticamente) y hoy está roto; no es necesario arreglarlo para el CI normal.
+138 tests a la fecha de este documento (widgets, cubits, routing, config). `test/test_live_fetch.dart` es un test de integración manual contra una hoja externa vieja — no forma parte del suite estándar (su nombre no termina en `_test.dart`, así que `flutter test` no lo descubre automáticamente) y hoy está roto; no es necesario arreglarlo para el CI normal.
 
 ## Puntos de extensión comunes
 
 - **Agregar una hoja/vista nueva:** modelo en `lib/models/` (`fromRow`/`toMap`) → registrar el fetch/parser en `SheetsDataService` → página en `lib/presentation/pages/` → ruta en `route_paths.dart`/`route_names.dart`/una `*Routes` existente → rama nueva en `AppRouter` (`StatefulShellBranch`) → entrada en `MainShell` (`_vistasInfo`, `_pages`, drawer). Si la hoja es multi-organización, agregar la columna `organizacion_id` y filtrar el getter (ver [Multi-organización](google/multi-organizacion.md)).
 - **Agregar una acción de escritura real (Apps Script):** agregar el `case` correspondiente en `google_apps_script.js`, y desplegar con `tools/apps_script` (ver [Automatización](google/automatizacion.md)).
-- **Agregar un usuario autorizado:** editar `ALLOWED_EMAILS` en el `.env` correspondiente, y agregar la fila en la hoja `usuarios` del Sheet real (con su `organizacion_id`).
+- **Agregar un usuario autorizado:** editar `ALLOWED_EMAILS` en el `.env` correspondiente, y crearlo desde el módulo **Usuarios** de la app (crea a la vez la fila en `usuarios` y su membresía en `usuario_organizacion`) — ya no hace falta editar el Sheet a mano.

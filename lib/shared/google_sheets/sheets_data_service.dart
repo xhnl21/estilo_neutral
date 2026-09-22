@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import '../../core/utils/logger.dart';
@@ -44,6 +45,7 @@ class SheetsDataService extends ChangeNotifier {
   List<Cliente> _clientes = [];
   List<Producto> _productos = [];
   List<Venta> _ventas = [];
+  List<VentaItem> _ventaItems = [];
   List<CompraDivisa> _comprasDivisas = [];
   List<ResumenDiario> _resumenesDiarios = [];
   List<RegistroCuarentena> _cuarentenas = [];
@@ -52,10 +54,21 @@ class SheetsDataService extends ChangeNotifier {
   List<ChecklistISO> _checklistIsos = [];
   List<Seguridad> _seguridad = [];
   List<Usuario> _usuarios = [];
+  List<Organizacion> _organizaciones = [];
+  List<UsuarioOrganizacion> _usuarioOrganizaciones = [];
+  List<MetodoPago> _metodosPago = [
+    const MetodoPago(id: 'mp00000001', nombre: 'Efectivo', status: true),
+    const MetodoPago(id: 'mp00000002', nombre: 'Pago Movil', status: true),
+    const MetodoPago(id: 'mp00000003', nombre: 'Transferencia', status: true),
+    const MetodoPago(id: 'mp00000004', nombre: 'Zelle', status: true),
+    const MetodoPago(id: 'mp00000005', nombre: 'Binance', status: true),
+    const MetodoPago(id: 'mp00000006', nombre: 'Otro', status: true),
+  ];
 
   /// Organización actualmente activa en la sesión (resuelta tras el login mediante
-  /// la hoja "usuarios"). Todas las colecciones expuestas (excepto [usuarios]) se
-  /// filtran client-side por esta organización.
+  /// la hoja de relación "usuario_organizacion"). Las 9 hojas de negocio (todas
+  /// menos [usuarios], [organizaciones] y [seguridad]) se filtran client-side por
+  /// esta organización.
   String? _currentOrganizacionId;
   String? get currentOrganizacionId => _currentOrganizacionId;
 
@@ -63,6 +76,40 @@ class SheetsDataService extends ChangeNotifier {
   void setCurrentOrganizacion(String? organizacionId) {
     _currentOrganizacionId = organizacionId;
     notifyListeners();
+  }
+
+  /// Usuario actualmente autenticado (email normalizado). A diferencia de la
+  /// organización, [seguridad] se filtra por este email, no por
+  /// [_currentOrganizacionId] — el método de autenticación adicional es una
+  /// preferencia por usuario, no por organización (ver `Seguridad`).
+  String? _currentUsuarioEmail;
+  String? get currentUsuarioEmail => _currentUsuarioEmail;
+
+  /// Establece el usuario activo (o `null` para limpiar, p.ej. al cerrar sesión).
+  void setCurrentUsuario(String? email) {
+    _currentUsuarioEmail = email?.trim().toLowerCase();
+    notifyListeners();
+  }
+
+  /// `true` solo si la última sincronización pudo leer la hoja
+  /// "organizaciones" con su encabezado nuevo (`id`, `nombre`) — es decir, si
+  /// el Sheet real ya tiene la migración de esquema multi-organización (ver
+  /// docs/google/multi-organizacion.md). Mientras sea `false`, las vistas de
+  /// Usuarios/Organizaciones deben bloquear create/update/delete: de lo
+  /// contrario seguirían operando sobre los datos semilla en memoria (o,
+  /// peor, sobre columnas corridas del esquema viejo) en vez de la hoja real.
+  bool _schemaMultiOrgListo = false;
+  bool get schemaMultiOrgListo => _schemaMultiOrgListo;
+
+  /// Resuelve la organización a la que pertenece [email] a través de la hoja
+  /// de relación "usuario_organizacion" (relación 1:N organización→usuarios).
+  /// Devuelve `null` si el usuario no tiene ninguna membresía registrada.
+  String? organizacionIdForUsuario(String email) {
+    final normalized = email.trim().toLowerCase();
+    for (final rel in _usuarioOrganizaciones) {
+      if (rel.usuarioEmail == normalized) return rel.organizacionId;
+    }
+    return null;
   }
 
   bool _matchesCurrentOrg(String organizacionId) =>
@@ -74,6 +121,15 @@ class SheetsDataService extends ChangeNotifier {
       List.unmodifiable(_productos.where((p) => _matchesCurrentOrg(p.organizacionId)));
   List<Venta> get ventas =>
       List.unmodifiable(_ventas.where((v) => _matchesCurrentOrg(v.organizacionId)));
+
+  /// Ítems (renglones) de todas las ventas/facturas. No tienen su propia
+  /// `organizacion_id` — pertenecen a la organización de su venta — usar
+  /// [itemsDeVenta] para obtener los de una factura puntual ya filtrada.
+  List<VentaItem> get ventaItems => List.unmodifiable(_ventaItems);
+
+  /// Ítems de la factura [ventaId], en el orden en que se cargaron.
+  List<VentaItem> itemsDeVenta(String ventaId) =>
+      List.unmodifiable(_ventaItems.where((vi) => vi.ventaId == ventaId));
   List<CompraDivisa> get comprasDivisas =>
       List.unmodifiable(_comprasDivisas.where((c) => _matchesCurrentOrg(c.organizacionId)));
   List<ResumenDiario> get resumenesDiarios =>
@@ -87,16 +143,31 @@ class SheetsDataService extends ChangeNotifier {
   List<ChecklistISO> get checklistIsos =>
       List.unmodifiable(_checklistIsos.where((c) => _matchesCurrentOrg(c.organizacionId)));
 
-  /// Directorio de usuarios (email -> organización). No se filtra por organización:
-  /// es intrínsecamente transversal, es la propia lista de membresía.
+  /// Directorio de usuarios (entidad Usuario). No se filtra por organización:
+  /// la membresía a una organización vive en [usuarioOrganizaciones], no acá.
   List<Usuario> get usuarios => List.unmodifiable(_usuarios);
 
-  /// Configuración de seguridad de la organización actual. Si la organización activa
-  /// aún no tiene fila propia en la hoja "seguridad", se devuelven los valores por
-  /// defecto (sin mutar el estado en memoria).
+  /// Directorio de organizaciones (entidad Organización). Transversal, es la
+  /// fuente de verdad de qué organizaciones existen.
+  List<Organizacion> get organizaciones => List.unmodifiable(_organizaciones);
+
+  /// Relación usuario↔organización (1:N — una organización, muchos usuarios).
+  /// Transversal, es la propia lista de membresía.
+  List<UsuarioOrganizacion> get usuarioOrganizaciones => List.unmodifiable(_usuarioOrganizaciones);
+
+  /// Catálogo de métodos de pago gobernado por la hoja "metodo pago".
+  List<MetodoPago> get metodosPago => List.unmodifiable(_metodosPago);
+
+  /// Métodos de pago activos (status == true) disponibles para usar en transacciones.
+  List<MetodoPago> get metodosPagoActivos =>
+      List.unmodifiable(_metodosPago.where((m) => m.status));
+
+  /// Configuración de seguridad del usuario actual. Si el usuario activo aún
+  /// no tiene fila propia en la hoja "seguridad", se devuelven los valores
+  /// por defecto (sin mutar el estado en memoria).
   Seguridad get seguridad => _seguridad.firstWhere(
-        (s) => _matchesCurrentOrg(s.organizacionId),
-        orElse: () => Seguridad(organizacionId: _currentOrganizacionId ?? '67774411-6aa1-4aa3-a4b2-d3fc6913b768'),
+        (s) => _currentUsuarioEmail != null && s.usuarioEmail == _currentUsuarioEmail,
+        orElse: () => Seguridad(usuarioEmail: _currentUsuarioEmail ?? ''),
       );
 
   /// Carga inicial de datos
@@ -122,29 +193,70 @@ class SheetsDataService extends ChangeNotifier {
     int successCount = 0;
     final errors = <String>[];
 
-    Future<void> safeFetch(String name, void Function(List<List<String>>) parser) async {
+    Future<void> safeFetch(
+      String name,
+      void Function(List<List<String>>) parser, {
+      List<String>? expectedHeaders,
+      VoidCallback? onValidHeader,
+    }) async {
       try {
-        await _fetchSheet(name, parser);
+        await _fetchSheet(name, parser, expectedHeaders: expectedHeaders);
         successCount++;
+        onValidHeader?.call();
       } catch (e) {
         errors.add('$name: $e');
         debugPrint('Error fetching sheet $name: $e');
       }
     }
 
+    _schemaMultiOrgListo = false;
+
     try {
       await Future.wait([
         safeFetch('clientes', _parseClientes),
         safeFetch('inventario', _parseProductos),
-        safeFetch('ventas', _parseVentas),
+        // "ventas" es el header de la factura (esquema nuevo, ver
+        // docs/google/multi-organizacion.md) — se valida el encabezado por la
+        // misma razón que seguridad/usuarios/organizaciones.
+        safeFetch('ventas', _parseVentas, expectedHeaders: const [
+          'id', 'fecha', 'cliente_id', 'tasa_bcv', 'tasa_usd', 'tipo_pago',
+          'comision_pago_movil_bs', 'monto_bs', 'monto_usd', 'abono_usd',
+          'deuda_usd', 'total_pagar_usd', 'validacion', 'estado', 'organizacion_id',
+        ]),
+        safeFetch(
+          'venta_items',
+          _parseVentaItems,
+          expectedHeaders: const ['id', 'venta_id', 'item_id', 'cantidad', 'precio_usd', 'subtotal_usd'],
+        ),
         safeFetch('compras_divisas', _parseCompras),
         safeFetch('resumen_diario', _parseResumenes),
         safeFetch('cuarentena', _parseCuarentenas),
         safeFetch('audit_log', _parseAuditLogs),
         safeFetch('reporte_migracion', _parseReportes),
         safeFetch('checklist_iso', _parseChecklists),
-        safeFetch('seguridad', _parseSeguridad),
-        safeFetch('usuarios', _parseUsuarios),
+        // Estos 4 tienen esquema nuevo (ver docs/google/multi-organizacion.md):
+        // se valida el encabezado para no aceptar filas de otra hoja si el
+        // Sheet real todavía no fue migrado.
+        safeFetch('seguridad', _parseSeguridad, expectedHeaders: const [
+          'biometrico', 'desbloqueo_facial', 'dos_factores', 'usuario_email',
+        ]),
+        safeFetch('usuarios', _parseUsuarios, expectedHeaders: const ['id', 'email', 'nombre']),
+        safeFetch(
+          'organizaciones',
+          _parseOrganizaciones,
+          expectedHeaders: const ['id', 'nombre'],
+          onValidHeader: () => _schemaMultiOrgListo = true,
+        ),
+        safeFetch(
+          'usuario_organizacion',
+          _parseUsuarioOrganizaciones,
+          expectedHeaders: const ['usuario_email', 'organizacion_id'],
+        ),
+        safeFetch(
+          'metodo pago',
+          _parseMetodosPago,
+          expectedHeaders: const ['id', 'nombre', 'status'],
+        ),
       ]);
 
       if (successCount > 0) {
@@ -172,7 +284,11 @@ class SheetsDataService extends ChangeNotifier {
     }
   }
 
-  Future<void> _fetchSheet(String sheetName, void Function(List<List<String>>) parser) async {
+  Future<void> _fetchSheet(
+    String sheetName,
+    void Function(List<List<String>>) parser, {
+    List<String>? expectedHeaders,
+  }) async {
     final cleanId = SheetsConfig.extractSpreadsheetId(spreadsheetId);
     final url = Uri.parse(
       'https://docs.google.com/spreadsheets/d/$cleanId/gviz/tq?tqx=out:csv&sheet=$sheetName',
@@ -186,6 +302,28 @@ class SheetsDataService extends ChangeNotifier {
         throw Exception('HTTP 401: Documento Privado');
       }
       final rows = parseCsv(response.body);
+      if (rows.isEmpty) return;
+
+      // Si se pasan encabezados esperados, se valida la fila 1 antes de parsear.
+      // El endpoint GViz puede devolver silenciosamente los datos de OTRA hoja
+      // (por ejemplo, si `sheetName` todavía no existe en el Sheet real) — sin
+      // esto, esas filas ajenas se interpretarían como datos válidos de
+      // `sheetName`, mezclando columnas de una hoja con las de otra.
+      if (expectedHeaders != null) {
+        final header = rows.first.map((h) => h.trim().toLowerCase()).toList();
+        final matches = header.length >= expectedHeaders.length &&
+            List.generate(
+              expectedHeaders.length,
+              (i) => header[i] == expectedHeaders[i].toLowerCase(),
+            ).every((ok) => ok);
+        if (!matches) {
+          throw Exception(
+            'La hoja "$sheetName" no tiene el encabezado esperado ${expectedHeaders.join("/")} '
+            '(encontrado: ${header.join("/")}) — ¿falta migrar el esquema del Sheet?',
+          );
+        }
+      }
+
       if (rows.length > 1) {
         parser(rows.sublist(1));
       }
@@ -217,6 +355,13 @@ class SheetsDataService extends ChangeNotifier {
     final cloud = rows.map((r) => Venta.fromRow(r)).toList();
     final localPending = _ventas.where((local) => !cloud.any((v) => v.id == local.id)).toList();
     _ventas = [...cloud, ...localPending];
+  }
+
+  void _parseVentaItems(List<List<String>> rows) {
+    if (rows.isEmpty) return;
+    final cloud = rows.map((r) => VentaItem.fromRow(r)).toList();
+    final localPending = _ventaItems.where((local) => !cloud.any((vi) => vi.id == local.id)).toList();
+    _ventaItems = [...cloud, ...localPending];
   }
 
   void _parseCompras(List<List<String>> rows) {
@@ -262,11 +407,35 @@ class SheetsDataService extends ChangeNotifier {
     _seguridad = rows.map((r) => Seguridad.fromRow(r)).toList();
   }
 
+  void _parseOrganizaciones(List<List<String>> rows) {
+    if (rows.isEmpty) return;
+    _organizaciones = rows
+        .where((r) => r.isNotEmpty && r.first.trim().isNotEmpty)
+        .map((r) => Organizacion.fromRow(r))
+        .toList();
+  }
+
+  void _parseUsuarioOrganizaciones(List<List<String>> rows) {
+    if (rows.isEmpty) return;
+    _usuarioOrganizaciones = rows
+        .where((r) => r.isNotEmpty && r.first.trim().isNotEmpty)
+        .map((r) => UsuarioOrganizacion.fromRow(r))
+        .toList();
+  }
+
   void _parseUsuarios(List<List<String>> rows) {
     if (rows.isEmpty) return;
     _usuarios = rows
         .where((r) => r.isNotEmpty && r.first.trim().isNotEmpty)
         .map((r) => Usuario.fromRow(r))
+        .toList();
+  }
+
+  void _parseMetodosPago(List<List<String>> rows) {
+    if (rows.isEmpty) return;
+    _metodosPago = rows
+        .where((r) => r.isNotEmpty && r.first.trim().isNotEmpty)
+        .map((r) => MetodoPago.fromRow(r))
         .toList();
   }
 
@@ -637,34 +806,77 @@ class SheetsDataService extends ChangeNotifier {
     return 'v${(maxId + 1).toString().padLeft(8, '0')}';
   }
 
-  void addVenta(Venta venta) {
-    final stamped = Venta(
-      id: venta.id,
-      fecha: venta.fecha,
-      clienteId: venta.clienteId,
-      itemId: venta.itemId,
-      cantidad: venta.cantidad,
-      tasaBcv: venta.tasaBcv,
-      tasaUsd: venta.tasaUsd,
-      tipoPago: venta.tipoPago,
-      comisionPagoMovilBs: venta.comisionPagoMovilBs,
-      montoBs: venta.montoBs,
-      montoUsd: venta.montoUsd,
-      abonoUsd: venta.abonoUsd,
-      deudaUsd: venta.deudaUsd,
-      totalPagarUsd: venta.totalPagarUsd,
-      validacion: venta.validacion,
-      estado: venta.estado,
+  String get nextVentaItemId {
+    final maxId = _ventaItems.fold<int>(0, (prev, vi) {
+      final numStr = vi.id.replaceAll(RegExp(r'[^0-9]'), '');
+      final n = int.tryParse(numStr) ?? 0;
+      return n > prev ? n : prev;
+    });
+    return 'vi${(maxId + 1).toString().padLeft(8, '0')}';
+  }
+
+  /// Registra una factura completa: una venta (header) con uno o más ítems.
+  /// [items] es la lista de productos del carrito, cada uno con la cantidad
+  /// y el precio unitario a cobrar (capturado en el momento de la venta).
+  Future<bool> addVenta({
+    required String clienteId,
+    required List<({String productoId, int cantidad, double precioUsd})> items,
+    required double tasaBcv,
+    required double tasaUsd,
+    TipoPago? tipoPago,
+    String? metodoPago,
+    double comisionPagoMovilBs = 0.0,
+    required double abonoUsd,
+  }) async {
+    assert(items.isNotEmpty, 'Una factura necesita al menos un ítem');
+
+    final resolvedMetodo = (metodoPago != null && metodoPago.trim().isNotEmpty)
+        ? metodoPago.trim()
+        : (tipoPago?.label ?? 'Efectivo');
+
+    final ventaId = nextVentaId;
+    final montoUsd = items.fold<double>(0.0, (sum, it) => sum + it.cantidad * it.precioUsd);
+    final montoBs = montoUsd * tasaBcv;
+    final deudaUsd = (montoUsd - abonoUsd).clamp(0.0, double.infinity);
+    final estado = deudaUsd <= 0 ? EstadoVenta.pagada : EstadoVenta.pendiente;
+
+    final venta = Venta(
+      id: ventaId,
+      fecha: DateTime.now(),
+      clienteId: clienteId,
+      tasaBcv: tasaBcv,
+      tasaUsd: tasaUsd,
+      metodoPago: resolvedMetodo,
+      comisionPagoMovilBs: comisionPagoMovilBs,
+      montoBs: montoBs,
+      montoUsd: montoUsd,
+      abonoUsd: abonoUsd,
+      deudaUsd: deudaUsd,
+      totalPagarUsd: montoUsd,
+      validacion: 'OK',
+      estado: estado,
       organizacionId: _currentOrganizacionId ?? '67774411-6aa1-4aa3-a4b2-d3fc6913b768',
     );
-    _ventas.insert(0, stamped);
+    _ventas.insert(0, venta);
 
-    // Decrementar existencias en inventario
-    adjustStock(stamped.itemId, -stamped.cantidad);
+    final nuevosItems = <VentaItem>[];
+    for (final it in items) {
+      final ventaItem = VentaItem(
+        id: nextVentaItemId,
+        ventaId: ventaId,
+        itemId: it.productoId,
+        cantidad: it.cantidad,
+        precioUsd: it.precioUsd,
+        subtotalUsd: it.cantidad * it.precioUsd,
+      );
+      _ventaItems.insert(0, ventaItem);
+      nuevosItems.add(ventaItem);
+      adjustStock(it.productoId, -it.cantidad);
+    }
 
     // Ajustar saldo de deuda del cliente si queda saldo pendiente
-    if (stamped.deudaUsd > 0) {
-      final cIdx = _clientes.indexWhere((c) => c.id == stamped.clienteId);
+    if (venta.deudaUsd > 0) {
+      final cIdx = _clientes.indexWhere((c) => c.id == clienteId);
       if (cIdx != -1) {
         final c = _clientes[cIdx];
         _clientes[cIdx] = Cliente(
@@ -672,7 +884,7 @@ class SheetsDataService extends ChangeNotifier {
           nombre: c.nombre,
           telefono: c.telefono,
           email: c.email,
-          saldoDeudaUsd: c.saldoDeudaUsd + stamped.deudaUsd,
+          saldoDeudaUsd: c.saldoDeudaUsd + venta.deudaUsd,
           fechaRegistro: c.fechaRegistro,
           organizacionId: c.organizacionId,
         );
@@ -683,46 +895,31 @@ class SheetsDataService extends ChangeNotifier {
       hoja: 'ventas',
       celda: 'A${_ventas.length + 1}',
       valorAnterior: 'null',
-      valorNuevo: '${stamped.id} por USD ${stamped.totalPagarUsd.toStringAsFixed(2)}',
+      valorNuevo: '${venta.id} por USD ${venta.totalPagarUsd.toStringAsFixed(2)} (${items.length} ítems)',
       accion: 'creacion_venta',
       norma: 'ISO 8000 §5.3',
-      observaciones: 'Venta registrada a cliente ${stamped.clienteId}, ítem ${stamped.itemId}',
+      observaciones: 'Factura registrada a cliente $clienteId',
     );
-    _postToAppsScript({
-      'action': 'create',
-      'sheet': 'ventas',
-      'data': stamped.toMap(),
-    });
+
+    // Header + ítems se sincronizan en paralelo (no secuencialmente): con
+    // varios ítems, esperar cada POST uno tras otro sumaría varios segundos
+    // de latencia real innecesarios.
+    final resultados = await Future.wait([
+      _postToAppsScript({'action': 'create', 'sheet': 'ventas', 'data': venta.toMap()}),
+      for (final vi in nuevosItems)
+        _postToAppsScript({'action': 'create', 'sheet': 'venta_items', 'data': vi.toMap()}),
+    ]);
     notifyListeners();
+    return resultados.every((ok) => ok);
   }
 
-  void updateVenta(Venta venta) {
-    final index = _ventas.indexWhere((v) => v.id == venta.id);
-    if (index != -1) {
-      _ventas[index] = venta;
-      _logAudit(
-        hoja: 'ventas',
-        celda: 'A${index + 2}',
-        valorAnterior: 'Venta ${venta.id}',
-        valorNuevo: 'Estado: ${venta.estado.name}',
-        accion: 'actualizacion_venta',
-        norma: 'ISO 8000 §5.3',
-        observaciones: 'Actualización en venta ${venta.id}',
-      );
-      _postToAppsScript({
-        'action': 'update',
-        'sheet': 'ventas',
-        'id': venta.id,
-        'data': venta.toMap(),
-      });
-      notifyListeners();
-    }
-  }
-
-  void registrarAbono(String ventaId, double montoAbono) {
+  void registrarAbono(String ventaId, double montoAbono, {String? metodoPago}) {
     final index = _ventas.indexWhere((v) => v.id == ventaId);
     if (index != -1) {
       final old = _ventas[index];
+      final metodo = (metodoPago != null && metodoPago.trim().isNotEmpty)
+          ? metodoPago.trim()
+          : old.metodoPago;
       final nuevoAbono = old.abonoUsd + montoAbono;
       final nuevaDeuda = (old.totalPagarUsd - nuevoAbono).clamp(0.0, double.infinity);
       final nuevoEstado = nuevaDeuda == 0 ? EstadoVenta.pagada : EstadoVenta.pendiente;
@@ -731,11 +928,9 @@ class SheetsDataService extends ChangeNotifier {
         id: old.id,
         fecha: old.fecha,
         clienteId: old.clienteId,
-        itemId: old.itemId,
-        cantidad: old.cantidad,
         tasaBcv: old.tasaBcv,
         tasaUsd: old.tasaUsd,
-        tipoPago: old.tipoPago,
+        metodoPago: old.metodoPago,
         comisionPagoMovilBs: old.comisionPagoMovilBs,
         montoBs: old.montoBs,
         montoUsd: old.montoUsd,
@@ -764,12 +959,12 @@ class SheetsDataService extends ChangeNotifier {
 
       _logAudit(
         hoja: 'ventas',
-        celda: 'L${index + 2}',
+        celda: 'J${index + 2}',
         valorAnterior: 'Deuda: ${old.deudaUsd}',
-        valorNuevo: 'Abono +$montoAbono -> Deuda: $nuevaDeuda',
+        valorNuevo: 'Abono +$montoAbono ($metodo) -> Deuda: $nuevaDeuda',
         accion: 'registro_abono',
         norma: 'ISO 8000 §5.3',
-        observaciones: 'Abono a venta $ventaId. Estado: ${nuevoEstado.name}',
+        observaciones: 'Abono de USD $montoAbono vía $metodo a venta $ventaId. Estado: ${nuevoEstado.name}',
       );
       _postToAppsScript({
         'action': 'update',
@@ -781,26 +976,35 @@ class SheetsDataService extends ChangeNotifier {
     }
   }
 
-  void deleteVenta(String id) {
+  /// Anula una factura completa: elimina la venta (header), todos sus ítems,
+  /// y repone el stock que esos ítems habían descontado (espejo de [addVenta]).
+  Future<void> deleteVenta(String id) async {
     final index = _ventas.indexWhere((v) => v.id == id);
-    if (index != -1) {
-      final old = _ventas.removeAt(index);
-      _logAudit(
-        hoja: 'ventas',
-        celda: 'A${index + 2}',
-        valorAnterior: 'Venta ${old.id}',
-        valorNuevo: 'ANULADA/ELIMINADA',
-        accion: 'anulacion_venta',
-        norma: 'ISO 8000',
-        observaciones: 'Venta $id anulada',
-      );
-      _postToAppsScript({
-        'action': 'delete',
-        'sheet': 'ventas',
-        'id': id,
-      });
-      notifyListeners();
+    if (index == -1) return;
+
+    final old = _ventas.removeAt(index);
+    final items = _ventaItems.where((vi) => vi.ventaId == id).toList();
+    _ventaItems.removeWhere((vi) => vi.ventaId == id);
+
+    for (final vi in items) {
+      adjustStock(vi.itemId, vi.cantidad);
     }
+
+    _logAudit(
+      hoja: 'ventas',
+      celda: 'A${index + 2}',
+      valorAnterior: 'Venta ${old.id}',
+      valorNuevo: 'ANULADA/ELIMINADA',
+      accion: 'anulacion_venta',
+      norma: 'ISO 8000',
+      observaciones: 'Venta $id anulada (${items.length} ítems repuestos a inventario)',
+    );
+
+    await Future.wait([
+      _postToAppsScript({'action': 'delete', 'sheet': 'ventas', 'id': id}),
+      for (final vi in items) _postToAppsScript({'action': 'delete', 'sheet': 'venta_items', 'id': vi.id}),
+    ]);
+    notifyListeners();
   }
 
   // ===========================================================================
@@ -1259,8 +1463,6 @@ class SheetsDataService extends ChangeNotifier {
         id: 'v00000001',
         fecha: DateTime(2026, 4, 3),
         clienteId: 'c00000001',
-        itemId: 'p00000001',
-        cantidad: 1,
         tasaBcv: 474.0,
         tasaUsd: 30.0,
         tipoPago: TipoPago.efectivo,
@@ -1273,6 +1475,17 @@ class SheetsDataService extends ChangeNotifier {
         validacion: 'OK',
         estado: EstadoVenta.pagada,
         organizacionId: '67774411-6aa1-4aa3-a4b2-d3fc6913b768',
+      ),
+    ];
+
+    _ventaItems = [
+      const VentaItem(
+        id: 'vi00000001',
+        ventaId: 'v00000001',
+        itemId: 'p00000001',
+        cantidad: 1,
+        precioUsd: 20.0,
+        subtotalUsd: 20.0,
       ),
     ];
 
@@ -1425,15 +1638,39 @@ class SheetsDataService extends ChangeNotifier {
     _seguridad = [
       const Seguridad(
         biometrico: true,
-        desbloqueoFacial: true,
-        dosFactores: true,
-        organizacionId: '67774411-6aa1-4aa3-a4b2-d3fc6913b768',
+        desbloqueoFacial: false,
+        dosFactores: false,
+        usuarioEmail: 'neidapulgar1989@gmail.com',
       ),
     ];
 
     _usuarios = [
-      const Usuario(email: 'neidapulgar1989@gmail.com', organizacionId: '67774411-6aa1-4aa3-a4b2-d3fc6913b768', nombre: 'Neida'),
-      const Usuario(email: 'xhnl21@gmail.com', organizacionId: '67774411-6aa1-4aa3-a4b2-d3fc6913b768', nombre: ''),
+      const Usuario(id: 'u00000001', email: 'neidapulgar1989@gmail.com', nombre: 'Neida'),
+      const Usuario(id: 'u00000002', email: 'xhnl21@gmail.com', nombre: ''),
+    ];
+
+    _organizaciones = [
+      const Organizacion(id: '67774411-6aa1-4aa3-a4b2-d3fc6913b768', nombre: 'Estilo Neutral'),
+    ];
+
+    _usuarioOrganizaciones = [
+      const UsuarioOrganizacion(
+        usuarioEmail: 'neidapulgar1989@gmail.com',
+        organizacionId: '67774411-6aa1-4aa3-a4b2-d3fc6913b768',
+      ),
+      const UsuarioOrganizacion(
+        usuarioEmail: 'xhnl21@gmail.com',
+        organizacionId: '67774411-6aa1-4aa3-a4b2-d3fc6913b768',
+      ),
+    ];
+
+    _metodosPago = [
+      const MetodoPago(id: 'mp00000001', nombre: 'Efectivo', status: true),
+      const MetodoPago(id: 'mp00000002', nombre: 'Pago Movil', status: true),
+      const MetodoPago(id: 'mp00000003', nombre: 'Transferencia', status: true),
+      const MetodoPago(id: 'mp00000004', nombre: 'Zelle', status: true),
+      const MetodoPago(id: 'mp00000005', nombre: 'Binance', status: true),
+      const MetodoPago(id: 'mp00000006', nombre: 'Otro', status: true),
     ];
   }
 
@@ -1441,10 +1678,12 @@ class SheetsDataService extends ChangeNotifier {
   // CRUD 10: SEGURIDAD (hoja seguridad)
   // ===========================================================================
 
-  /// Reemplaza (o inserta si no existía aún) la fila de seguridad de la organización
-  /// activa dentro de la lista [_seguridad], que ahora contiene una fila por organización.
-  void _replaceSeguridadForCurrentOrg(Seguridad nuevo) {
-    final index = _seguridad.indexWhere((s) => _matchesCurrentOrg(s.organizacionId));
+  /// Reemplaza (o inserta si no existía aún) la fila de seguridad del usuario
+  /// activo dentro de la lista [_seguridad], que contiene una fila por usuario.
+  void _replaceSeguridadForCurrentUsuario(Seguridad nuevo) {
+    final index = _seguridad.indexWhere(
+      (s) => _currentUsuarioEmail != null && s.usuarioEmail == _currentUsuarioEmail,
+    );
     if (index != -1) {
       _seguridad[index] = nuevo;
     } else {
@@ -1452,76 +1691,410 @@ class SheetsDataService extends ChangeNotifier {
     }
   }
 
-  void toggleBiometrico() {
+  static const Map<String, String> _etiquetasMetodoSeguridad = {
+    'biometrico': 'Biométrico',
+    'desbloqueo_facial': 'Desbloqueo facial',
+    'dos_factores': '2FA',
+  };
+
+  /// Selecciona el único método de seguridad activo para el usuario actual.
+  /// Los tres métodos son mutuamente excluyentes: activar uno desactiva
+  /// automáticamente los otros dos. Pasar `null` desactiva todos (login solo
+  /// con Google, sin paso adicional). Es una preferencia por usuario, no por
+  /// organización: así, un dispositivo incompatible de un usuario no afecta
+  /// el método configurado por otros usuarios de la misma organización.
+  void setMetodoSeguridad(String? metodo) {
+    assert(
+      metodo == null || _etiquetasMetodoSeguridad.containsKey(metodo),
+      'Método de seguridad inválido: $metodo',
+    );
+
     final old = seguridad;
-    final nuevoValor = !old.biometrico;
-    final nuevo = old.copyWith(biometrico: nuevoValor);
-    _replaceSeguridadForCurrentOrg(nuevo);
+    final nuevo = Seguridad(
+      usuarioEmail: _currentUsuarioEmail ?? old.usuarioEmail,
+      biometrico: metodo == 'biometrico',
+      desbloqueoFacial: metodo == 'desbloqueo_facial',
+      dosFactores: metodo == 'dos_factores',
+    );
+    _replaceSeguridadForCurrentUsuario(nuevo);
+
+    final anterior = _etiquetasMetodoSeguridad[old.metodoActivo] ?? 'Ninguno';
+    final actual = _etiquetasMetodoSeguridad[metodo] ?? 'Ninguno';
     _logAudit(
       hoja: 'seguridad',
-      celda: 'A2',
-      valorAnterior: old.biometrico.toString(),
-      valorNuevo: nuevoValor.toString(),
-      accion: 'cambio_config_seguridad',
+      celda: 'A2:C2',
+      valorAnterior: anterior,
+      valorNuevo: actual,
+      accion: 'cambio_metodo_seguridad',
       norma: 'ISO/IEC 27001 §9.4',
-      observaciones: 'Autenticación biométrica ${nuevoValor ? "activada" : "desactivada"}',
+      observaciones: 'Método de seguridad activo cambiado de "$anterior" a "$actual"',
     );
     _postToAppsScript({
-      'action': 'toggle_seguridad',
+      'action': 'set_metodo_seguridad',
       'sheet': 'seguridad',
-      'campo': 'biometrico',
-      'valor': nuevoValor,
-      'organizacion_id': _currentOrganizacionId ?? '67774411-6aa1-4aa3-a4b2-d3fc6913b768',
+      'biometrico': nuevo.biometrico,
+      'desbloqueo_facial': nuevo.desbloqueoFacial,
+      'dos_factores': nuevo.dosFactores,
+      'usuario_email': nuevo.usuarioEmail,
     });
     notifyListeners();
   }
 
-  void toggleDesbloqueoFacial() {
-    final old = seguridad;
-    final nuevoValor = !old.desbloqueoFacial;
-    final nuevo = old.copyWith(desbloqueoFacial: nuevoValor);
-    _replaceSeguridadForCurrentOrg(nuevo);
-    _logAudit(
-      hoja: 'seguridad',
-      celda: 'B2',
-      valorAnterior: old.desbloqueoFacial.toString(),
-      valorNuevo: nuevoValor.toString(),
-      accion: 'cambio_config_seguridad',
-      norma: 'ISO/IEC 27001 §9.4',
-      observaciones: 'Desbloqueo facial ${nuevoValor ? "activado" : "desactivado"}',
-    );
-    _postToAppsScript({
-      'action': 'toggle_seguridad',
-      'sheet': 'seguridad',
-      'campo': 'desbloqueo_facial',
-      'valor': nuevoValor,
-      'organizacion_id': _currentOrganizacionId ?? '67774411-6aa1-4aa3-a4b2-d3fc6913b768',
+  // ===========================================================================
+  // CRUD 11: USUARIOS (hoja usuarios) + membresía (hoja usuario_organizacion)
+  // ===========================================================================
+
+  String get nextUsuarioId {
+    final maxId = _usuarios.fold<int>(0, (prev, u) {
+      final numStr = u.id.replaceAll(RegExp(r'[^0-9]'), '');
+      final n = int.tryParse(numStr) ?? 0;
+      return n > prev ? n : prev;
     });
+    return 'u${(maxId + 1).toString().padLeft(8, '0')}';
+  }
+
+  UsuarioOrganizacion? _membresiaDe(String email) {
+    final normalized = email.trim().toLowerCase();
+    for (final rel in _usuarioOrganizaciones) {
+      if (rel.usuarioEmail == normalized) return rel;
+    }
+    return null;
+  }
+
+  /// Registra un nuevo usuario autorizado y su membresía a [organizacionId].
+  Future<bool> addUsuario(Usuario usuario, {required String organizacionId}) async {
+    _usuarios.add(usuario);
+    final membresia = UsuarioOrganizacion(usuarioEmail: usuario.email, organizacionId: organizacionId);
+    _usuarioOrganizaciones.add(membresia);
+    _logAudit(
+      hoja: 'usuarios',
+      celda: 'A${_usuarios.length + 1}',
+      valorAnterior: 'null',
+      valorNuevo: '${usuario.id} (${usuario.email})',
+      accion: 'alta_usuario',
+      norma: 'ISO/IEC 27001 §9.2',
+      observaciones: 'Alta de usuario autorizado, organización $organizacionId',
+    );
+    notifyListeners();
+
+    final resultados = await Future.wait([
+      _postToAppsScript({'action': 'create', 'sheet': 'usuarios', 'data': usuario.toMap()}),
+      _postToAppsScript({'action': 'create', 'sheet': 'usuario_organizacion', 'data': membresia.toMap()}),
+    ]);
+    return resultados.every((ok) => ok);
+  }
+
+  /// Actualiza nombre y organización de un usuario existente. El email es
+  /// inmutable una vez creado (es la clave usada por `seguridad` y por el
+  /// login) para evitar dejar huérfanas otras filas que lo referencian.
+  Future<bool> updateUsuario(Usuario usuario, {required String organizacionId}) async {
+    final index = _usuarios.indexWhere((u) => u.id == usuario.id);
+    if (index == -1) return false;
+    _usuarios[index] = usuario;
+
+    final membresiaExistente = _membresiaDe(usuario.email);
+    final membresia = UsuarioOrganizacion(usuarioEmail: usuario.email, organizacionId: organizacionId);
+    final relIndex = _usuarioOrganizaciones.indexWhere((r) => r.usuarioEmail == usuario.email);
+    if (relIndex != -1) {
+      _usuarioOrganizaciones[relIndex] = membresia;
+    } else {
+      _usuarioOrganizaciones.add(membresia);
+    }
+
+    _logAudit(
+      hoja: 'usuarios',
+      celda: 'A${index + 2}',
+      valorAnterior: usuario.id,
+      valorNuevo: '${usuario.nombre} → org $organizacionId',
+      accion: 'actualizacion_usuario',
+      norma: 'ISO/IEC 27001 §9.2',
+      observaciones: 'Edición de usuario vía App Móvil',
+    );
+    notifyListeners();
+
+    final resultados = await Future.wait([
+      _postToAppsScript({
+        'action': 'update',
+        'sheet': 'usuarios',
+        'id': usuario.id,
+        'data': usuario.toMap(),
+      }),
+      _postToAppsScript({
+        'action': membresiaExistente != null ? 'update' : 'create',
+        'sheet': 'usuario_organizacion',
+        'id': usuario.email,
+        'data': membresia.toMap(),
+      }),
+    ]);
+    return resultados.every((ok) => ok);
+  }
+
+  /// Elimina un usuario y su membresía a organización. No elimina su fila de
+  /// `seguridad` (queda huérfana pero inofensiva: nadie puede volver a
+  /// loguearse con ese email para usarla).
+  Future<bool> deleteUsuario(Usuario usuario) async {
+    _usuarios.removeWhere((u) => u.id == usuario.id);
+    final teniaMembresia = _usuarioOrganizaciones.any((r) => r.usuarioEmail == usuario.email);
+    _usuarioOrganizaciones.removeWhere((r) => r.usuarioEmail == usuario.email);
+
+    _logAudit(
+      hoja: 'usuarios',
+      celda: 'A-',
+      valorAnterior: '${usuario.id} (${usuario.email})',
+      valorNuevo: 'ELIMINADO',
+      accion: 'eliminacion_usuario',
+      norma: 'GDPR Art. 17 / ISO 27001',
+      observaciones: 'Baja de acceso de usuario vía App Móvil',
+    );
+    notifyListeners();
+
+    final resultados = await Future.wait([
+      _postToAppsScript({'action': 'delete', 'sheet': 'usuarios', 'id': usuario.id}),
+      if (teniaMembresia)
+        _postToAppsScript({'action': 'delete', 'sheet': 'usuario_organizacion', 'id': usuario.email}),
+    ]);
+    return resultados.every((ok) => ok);
+  }
+
+  // ===========================================================================
+  // CRUD 12: ORGANIZACIONES (hoja organizaciones)
+  // ===========================================================================
+
+  String _generarOrganizacionId() {
+    final random = Random.secure();
+    List<int> bytes = List<int>.generate(16, (_) => random.nextInt(256));
+    bytes[6] = (bytes[6] & 0x0F) | 0x40; // versión 4
+    bytes[8] = (bytes[8] & 0x3F) | 0x80; // variante RFC 4122
+    String hex(int start, int end) =>
+        bytes.sublist(start, end).map((b) => b.toRadixString(16).padLeft(2, '0')).join();
+    return '${hex(0, 4)}-${hex(4, 6)}-${hex(6, 8)}-${hex(8, 10)}-${hex(10, 16)}';
+  }
+
+  /// Cantidad de usuarios que pertenecen a [organizacionId] (usado para
+  /// bloquear el borrado de organizaciones con usuarios activos).
+  int usuariosEnOrganizacion(String organizacionId) =>
+      _usuarioOrganizaciones.where((r) => r.organizacionId == organizacionId).length;
+
+  Future<bool> addOrganizacion(String nombre) async {
+    final nuevo = Organizacion(id: _generarOrganizacionId(), nombre: nombre);
+    _organizaciones.add(nuevo);
+    _logAudit(
+      hoja: 'organizaciones',
+      celda: 'A${_organizaciones.length + 1}',
+      valorAnterior: 'null',
+      valorNuevo: '${nuevo.id} (${nuevo.nombre})',
+      accion: 'alta_organizacion',
+      norma: 'ISO/IEC 27001 §9.2',
+      observaciones: 'Alta de organización vía App Móvil',
+    );
+    notifyListeners();
+    return _postToAppsScript({
+      'action': 'create',
+      'sheet': 'organizaciones',
+      'data': nuevo.toMap(),
+    });
+  }
+
+  Future<bool> updateOrganizacion(Organizacion organizacion) async {
+    final index = _organizaciones.indexWhere((o) => o.id == organizacion.id);
+    if (index == -1) return false;
+    _organizaciones[index] = organizacion;
+    _logAudit(
+      hoja: 'organizaciones',
+      celda: 'A${index + 2}',
+      valorAnterior: organizacion.id,
+      valorNuevo: organizacion.nombre,
+      accion: 'actualizacion_organizacion',
+      norma: 'ISO/IEC 27001 §9.2',
+      observaciones: 'Edición de organización vía App Móvil',
+    );
+    notifyListeners();
+    return _postToAppsScript({
+      'action': 'update',
+      'sheet': 'organizaciones',
+      'id': organizacion.id,
+      'data': organizacion.toMap(),
+    });
+  }
+
+  /// Elimina una organización. Se rechaza si todavía tiene usuarios
+  /// asociados (ver [usuariosEnOrganizacion]), para no dejar membresías
+  /// huérfanas apuntando a una organización inexistente.
+  Future<bool> deleteOrganizacion(String organizacionId) async {
+    if (usuariosEnOrganizacion(organizacionId) > 0) {
+      Logger.warning(
+        'SheetsDataService: Se intentó eliminar la organización $organizacionId con usuarios activos; operación rechazada.',
+      );
+      return false;
+    }
+    final removed = _organizaciones.where((o) => o.id == organizacionId).toList();
+    _organizaciones.removeWhere((o) => o.id == organizacionId);
+    _logAudit(
+      hoja: 'organizaciones',
+      celda: 'A-',
+      valorAnterior: removed.isNotEmpty ? '${removed.first.id} (${removed.first.nombre})' : organizacionId,
+      valorNuevo: 'ELIMINADO',
+      accion: 'eliminacion_organizacion',
+      norma: 'GDPR Art. 17 / ISO 27001',
+      observaciones: 'Baja de organización vía App Móvil',
+    );
+    notifyListeners();
+    return _postToAppsScript({
+      'action': 'delete',
+      'sheet': 'organizaciones',
+      'id': organizacionId,
+    });
+  }
+
+  // ===========================================================================
+  // CRUD 12: MÉTODOS DE PAGO (hoja metodo pago)
+  // ===========================================================================
+
+  /// Comprueba si un método de pago (por ID o por nombre) está siendo utilizado
+  /// en alguna venta o registro de abono.
+  bool isMetodoPagoEnUso(String idONombre) {
+    final query = idONombre.trim().toLowerCase();
+    final metodo = _metodosPago.firstWhere(
+      (m) => m.id.toLowerCase() == query || m.nombre.toLowerCase() == query,
+      orElse: () => MetodoPago(id: '', nombre: idONombre, status: false),
+    );
+    final nombreMetodo = (metodo.nombre.isNotEmpty ? metodo.nombre : idONombre).trim().toLowerCase();
+
+    // 1. Verificar en ventas
+    for (final v in _ventas) {
+      if (v.metodoPago.trim().toLowerCase() == nombreMetodo ||
+          v.tipoPago.label.trim().toLowerCase() == nombreMetodo ||
+          v.tipoPago.name.trim().toLowerCase() == nombreMetodo) {
+        return true;
+      }
+    }
+
+    // 2. Verificar en auditoría de abonos
+    for (final log in _auditLogs) {
+      if (log.hoja == 'ventas' && log.accion == 'registro_abono') {
+        if (log.valorNuevo.toLowerCase().contains(nombreMetodo) ||
+            log.observaciones.toLowerCase().contains(nombreMetodo)) {
+          return true;
+        }
+      }
+    }
+
+    return false;
+  }
+
+  /// Agrega un nuevo método de pago a la hoja "metodo pago".
+  Future<void> addMetodoPago({required String nombre}) async {
+    final trimmed = nombre.trim();
+    if (trimmed.isEmpty) {
+      throw ArgumentError('El nombre del método de pago no puede estar vacío');
+    }
+
+    if (_metodosPago.any((m) => m.nombre.toLowerCase() == trimmed.toLowerCase())) {
+      throw ArgumentError('Ya existe un método de pago con el nombre "$trimmed"');
+    }
+
+    int maxIdNum = 0;
+    for (final m in _metodosPago) {
+      final digits = RegExp(r'\d+').firstMatch(m.id)?.group(0);
+      if (digits != null) {
+        final val = int.tryParse(digits) ?? 0;
+        if (val > maxIdNum) maxIdNum = val;
+      }
+    }
+    final nextId = 'mp${(maxIdNum + 1).toString().padLeft(8, '0')}';
+
+    final nuevo = MetodoPago(id: nextId, nombre: trimmed, status: true);
+    _metodosPago.add(nuevo);
+
+    _logAudit(
+      hoja: 'metodo pago',
+      celda: 'A${_metodosPago.length + 1}',
+      valorAnterior: 'null',
+      valorNuevo: '$nextId: $trimmed',
+      accion: 'creacion_metodo_pago',
+      norma: 'ISO 8000 §4.2',
+      observaciones: 'Creación de método de pago "$trimmed"',
+    );
+
+    _postToAppsScript({
+      'action': 'create',
+      'sheet': 'metodo pago',
+      'data': nuevo.toMap(),
+    });
+
     notifyListeners();
   }
 
-  void toggleDosFactores() {
-    final old = seguridad;
-    final nuevoValor = !old.dosFactores;
-    final nuevo = old.copyWith(dosFactores: nuevoValor);
-    _replaceSeguridadForCurrentOrg(nuevo);
+  /// Alterna el status de un método de pago (activo/inactivo).
+  /// Si se intenta desactivar un método en uso, se bloquea arrojando un error.
+  Future<bool> toggleMetodoPagoStatus(String id) async {
+    final idx = _metodosPago.indexWhere((m) => m.id == id);
+    if (idx == -1) return false;
+
+    final actual = _metodosPago[idx];
+    final nuevoStatus = !actual.status;
+
+    if (!nuevoStatus && isMetodoPagoEnUso(actual.id)) {
+      throw StateError(
+        'No se puede deshabilitar el método de pago "${actual.nombre}" porque ya fue utilizado en transacciones registradas.',
+      );
+    }
+
+    _metodosPago[idx] = actual.copyWith(status: nuevoStatus);
+
     _logAudit(
-      hoja: 'seguridad',
-      celda: 'C2',
-      valorAnterior: old.dosFactores.toString(),
-      valorNuevo: nuevoValor.toString(),
-      accion: 'cambio_config_seguridad',
-      norma: 'ISO/IEC 27001 §9.4',
-      observaciones: 'Verificación en dos pasos (2FA) ${nuevoValor ? "activada" : "desactivada"}',
+      hoja: 'metodo pago',
+      celda: 'C${idx + 2}',
+      valorAnterior: actual.status.toString(),
+      valorNuevo: nuevoStatus.toString(),
+      accion: 'cambio_status_metodo_pago',
+      norma: 'ISO 8000 §5.3',
+      observaciones: 'Método "${actual.nombre}" ${nuevoStatus ? "activado" : "deshabilitado"}',
     );
+
     _postToAppsScript({
-      'action': 'toggle_seguridad',
-      'sheet': 'seguridad',
-      'campo': 'dos_factores',
-      'valor': nuevoValor,
-      'organizacion_id': _currentOrganizacionId ?? '67774411-6aa1-4aa3-a4b2-d3fc6913b768',
+      'action': 'update',
+      'sheet': 'metodo pago',
+      'id': id,
+      'data': {'status': nuevoStatus},
     });
+
     notifyListeners();
+    return true;
+  }
+
+  /// Elimina un método de pago si no está en uso.
+  Future<bool> deleteMetodoPago(String id) async {
+    final idx = _metodosPago.indexWhere((m) => m.id == id);
+    if (idx == -1) return false;
+
+    final actual = _metodosPago[idx];
+    if (isMetodoPagoEnUso(actual.id)) {
+      throw StateError(
+        'No se puede eliminar el método de pago "${actual.nombre}" porque ya fue utilizado en transacciones registradas.',
+      );
+    }
+
+    _metodosPago.removeAt(idx);
+
+    _logAudit(
+      hoja: 'metodo pago',
+      celda: 'A${idx + 2}',
+      valorAnterior: actual.nombre,
+      valorNuevo: 'ELIMINADO',
+      accion: 'eliminacion_metodo_pago',
+      norma: 'GDPR Art. 17 / ISO 27001',
+      observaciones: 'Eliminación del método de pago "${actual.nombre}"',
+    );
+
+    _postToAppsScript({
+      'action': 'delete',
+      'sheet': 'metodo pago',
+      'id': id,
+    });
+
+    notifyListeners();
+    return true;
   }
 }
 

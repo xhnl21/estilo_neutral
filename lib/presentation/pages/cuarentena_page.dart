@@ -37,6 +37,7 @@ class _CuarentenaPageState extends State<CuarentenaPage> {
             ),
           ],
           floatingActionButton: FloatingActionButton.extended(
+            heroTag: 'fab_cuarentena',
             backgroundColor: AppPalette.primary,
             foregroundColor: Colors.white,
             icon: const Icon(CupertinoIcons.shield_slash, size: 20),

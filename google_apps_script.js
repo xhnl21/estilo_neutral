@@ -49,7 +49,7 @@ function doPost(e) {
     }
 
     const payload = JSON.parse(e.postData.contents);
-    const action = payload.action; // "create", "update", "delete", "toggle_checklist", "upload_image"
+    const action = payload.action; // "create", "update", "delete", "toggle_checklist", "set_metodo_seguridad", "upload_image"
     const sheetName = payload.sheet;
     const data = payload.data || {};
     const id = payload.id || (data ? data.id : null);
@@ -121,8 +121,15 @@ function doPost(e) {
         result = _handleToggleChecklist(ss, sheet, payload.nro, payload.estado);
         break;
 
-      case "toggle_seguridad":
-        result = _handleToggleSeguridad(ss, sheet, payload.campo, payload.valor, payload.organizacion_id);
+      case "set_metodo_seguridad":
+        result = _handleSetMetodoSeguridad(
+          ss,
+          sheet,
+          !!payload.biometrico,
+          !!payload.desbloqueo_facial,
+          !!payload.dos_factores,
+          payload.usuario_email
+        );
         break;
 
       default:
@@ -172,25 +179,36 @@ function _handleCreate(ss, sheet, sheetName, data) {
       data.organizacion_id || "67774411-6aa1-4aa3-a4b2-d3fc6913b768"
     ];
   } else if (sheetName === "ventas") {
+    // "ventas" es el header de la factura (esquema nuevo): ya no lleva
+    // item_id/cantidad — eso vive en "venta_items", una fila por producto.
+    // monto_bs/monto_usd se calculan sumando los subtotales de esa hoja.
     const r = nextRow;
     rowValues = [
       data.id,
       data.fecha || Utilities.formatDate(new Date(), "GMT-4", "yyyy-MM-dd"),
       data.cliente_id || "",
-      data.item_id || "",
-      data.cantidad || 1,
       data.tasa_bcv || 0.0,
       data.tasa_usd || 0.0,
       data.tipo_pago || "Efectivo",
       data.comision_pago_movil_bs || 0.0,
-      '=IFERROR(E' + r + '*INDEX(inventario!G:G, MATCH(D' + r + ', inventario!A:A, 0))*F' + r + ', "ERROR")',
-      '=IFERROR(E' + r + '*INDEX(inventario!G:G, MATCH(D' + r + ', inventario!A:A, 0)), "ERROR")',
+      '=I' + r + '*D' + r,
+      '=SUMIF(venta_items!B:B, A' + r + ', venta_items!F:F)',
       data.abono_usd || 0.0,
-      '=N' + r + '-L' + r,
-      '=K' + r,
-      '=IF(AND(ABS(J' + r + '-E' + r + '*INDEX(inventario!G:G,MATCH(D' + r + ',inventario!A:A,0))*F' + r + ')<0.01, ABS(K' + r + '-E' + r + '*INDEX(inventario!G:G,MATCH(D' + r + ',inventario!A:A,0)))<0.01, ABS(M' + r + '-(N' + r + '-L' + r + '))<0.01),"OK","ERROR")',
+      '=L' + r + '-J' + r,
+      '=I' + r,
+      data.validacion || "OK",
       data.estado || "Pendiente",
       data.organizacion_id || "67774411-6aa1-4aa3-a4b2-d3fc6913b768"
+    ];
+  } else if (sheetName === "venta_items") {
+    const r = nextRow;
+    rowValues = [
+      data.id,
+      data.venta_id || "",
+      data.item_id || "",
+      data.cantidad || 1,
+      data.precio_usd || 0.0,
+      '=D' + r + '*E' + r
     ];
   } else if (sheetName === "compras_divisas") {
     rowValues = [
@@ -207,6 +225,28 @@ function _handleCreate(ss, sheet, sheetName, data) {
       data.validacion || "OK",
       data.organizacion_id || "67774411-6aa1-4aa3-a4b2-d3fc6913b768"
     ];
+  } else if (sheetName === "usuarios") {
+    rowValues = [
+      data.id,
+      (data.email || "").toString().trim().toLowerCase(),
+      data.nombre || ""
+    ];
+  } else if (sheetName === "organizaciones") {
+    rowValues = [
+      data.id,
+      data.nombre || ""
+    ];
+  } else if (sheetName === "usuario_organizacion") {
+    rowValues = [
+      (data.usuario_email || "").toString().trim().toLowerCase(),
+      data.organizacion_id || ""
+    ];
+  } else if (sheetName === "metodo pago") {
+    rowValues = [
+      data.id,
+      data.nombre || "",
+      data.status !== undefined ? data.status : true
+    ];
   } else {
     // Genérico
     rowValues = Object.values(data);
@@ -218,13 +258,13 @@ function _handleCreate(ss, sheet, sheetName, data) {
     hoja: sheetName,
     celda: "A" + nextRow,
     valorAnterior: "null",
-    valorNuevo: data.id || "nuevo_registro",
+    valorNuevo: data.id || data.usuario_email || "nuevo_registro",
     accion: "creacion_" + sheetName,
     norma: "ISO 8000 §4.2",
     observaciones: "Registro insertado vía App Móvil"
   });
 
-  return { status: "success", message: "Registro creado exitosamente", row: nextRow, id: data.id };
+  return { status: "success", message: "Registro creado exitosamente", row: nextRow, id: data.id || data.usuario_email };
 }
 
 function _handleUpdate(ss, sheet, sheetName, id, data) {
@@ -250,13 +290,18 @@ function _handleUpdate(ss, sheet, sheetName, id, data) {
       sheet.getRange(rowIndex, 9).setFormula('=IF(H' + rowIndex + '="","",IMAGE(H' + rowIndex + '))');
     }
   } else if (sheetName === "ventas") {
-    if (data.cantidad !== undefined) sheet.getRange(rowIndex, 5).setValue(data.cantidad);
-    if (data.tasa_bcv !== undefined) sheet.getRange(rowIndex, 6).setValue(data.tasa_bcv);
-    if (data.tasa_usd !== undefined) sheet.getRange(rowIndex, 7).setValue(data.tasa_usd);
-    if (data.tipo_pago !== undefined) sheet.getRange(rowIndex, 8).setValue(data.tipo_pago);
-    if (data.comision_pago_movil_bs !== undefined) sheet.getRange(rowIndex, 9).setValue(data.comision_pago_movil_bs);
-    if (data.abono_usd !== undefined) sheet.getRange(rowIndex, 12).setValue(data.abono_usd);
-    if (data.estado !== undefined) sheet.getRange(rowIndex, 16).setValue(data.estado);
+    // Solo los campos editables del header (nunca las columnas fórmula:
+    // monto_bs=H, monto_usd=I, deuda_usd=K, total_pagar_usd=L — se
+    // recalculan solas a partir de "venta_items" y de estos valores).
+    if (data.tasa_bcv !== undefined) sheet.getRange(rowIndex, 4).setValue(data.tasa_bcv);
+    if (data.tasa_usd !== undefined) sheet.getRange(rowIndex, 5).setValue(data.tasa_usd);
+    if (data.tipo_pago !== undefined) sheet.getRange(rowIndex, 6).setValue(data.tipo_pago);
+    if (data.comision_pago_movil_bs !== undefined) sheet.getRange(rowIndex, 7).setValue(data.comision_pago_movil_bs);
+    if (data.abono_usd !== undefined) sheet.getRange(rowIndex, 10).setValue(data.abono_usd);
+    if (data.estado !== undefined) sheet.getRange(rowIndex, 14).setValue(data.estado);
+  } else if (sheetName === "venta_items") {
+    if (data.cantidad !== undefined) sheet.getRange(rowIndex, 4).setValue(data.cantidad);
+    if (data.precio_usd !== undefined) sheet.getRange(rowIndex, 5).setValue(data.precio_usd);
   } else if (sheetName === "compras_divisas") {
     if (data.fecha_entrega !== undefined) sheet.getRange(rowIndex, 3).setValue(data.fecha_entrega);
     if (data.capital_usd !== undefined) sheet.getRange(rowIndex, 4).setValue(data.capital_usd);
@@ -266,6 +311,16 @@ function _handleUpdate(ss, sheet, sheetName, id, data) {
     if (data.vendedor !== undefined) sheet.getRange(rowIndex, 8).setValue(data.vendedor);
     if (data.tasa_bcv !== undefined) sheet.getRange(rowIndex, 9).setValue(data.tasa_bcv);
     if (data.tasa_usd !== undefined) sheet.getRange(rowIndex, 10).setValue(data.tasa_usd);
+  } else if (sheetName === "usuarios") {
+    if (data.email !== undefined) sheet.getRange(rowIndex, 2).setValue(data.email.toString().trim().toLowerCase());
+    if (data.nombre !== undefined) sheet.getRange(rowIndex, 3).setValue(data.nombre);
+  } else if (sheetName === "organizaciones") {
+    if (data.nombre !== undefined) sheet.getRange(rowIndex, 2).setValue(data.nombre);
+  } else if (sheetName === "usuario_organizacion") {
+    if (data.organizacion_id !== undefined) sheet.getRange(rowIndex, 2).setValue(data.organizacion_id);
+  } else if (sheetName === "metodo pago") {
+    if (data.nombre !== undefined) sheet.getRange(rowIndex, 2).setValue(data.nombre);
+    if (data.status !== undefined) sheet.getRange(rowIndex, 3).setValue(data.status);
   }
 
   _appendAuditLog(ss, {
@@ -325,40 +380,53 @@ function _handleToggleChecklist(ss, sheet, nro, nuevoEstado) {
   return { status: "error", message: "Control #" + nro + " no encontrado" };
 }
 
-function _handleToggleSeguridad(ss, sheet, campo, valor, organizacionId) {
-  const columnMap = { biometrico: 1, desbloqueo_facial: 2, dos_factores: 3 };
-  const col = columnMap[campo];
-  if (!col) {
-    return { status: "error", message: "Campo de seguridad inválido: " + campo };
-  }
+function _handleSetMetodoSeguridad(ss, sheet, biometrico, desbloqueoFacial, dosFactores, usuarioEmail) {
+  const email = (usuarioEmail || "").toString().trim().toLowerCase();
+  const rowIndex = _findRowByColumnValue(sheet, 4, email);
+  // IMPORTANTE: Range.setValues() en Apps Script auto-convierte las cadenas
+  // "TRUE"/"FALSE" a boolean nativo de Sheets igual que si se pasara un
+  // boolean de JS directamente — no hay forma de forzar texto plano acá. Por
+  // eso se pasan booleans tal cual: lo que sí importa es que TODAS las filas
+  // de esta columna sean del mismo tipo (boolean nativo). Si una fila queda
+  // como boolean nativo y otra como texto "FALSE" (por ejemplo, si se
+  // insertó a mano o vía la API de Sheets con valueInputOption=RAW), el
+  // endpoint GViz que usa la app para leer (out:csv) rompe la detección de
+  // encabezado y devuelve un CSV corrupto (encabezado fusionado con la
+  // primera fila de datos). Ver docs/google/troubleshooting.md.
+  const rowValues = [biometrico, desbloqueoFacial, dosFactores, email];
 
-  const orgId = organizacionId || "67774411-6aa1-4aa3-a4b2-d3fc6913b768";
-  const nuevoValor = !!valor;
-  const rowIndex = _findRowByOrgId(sheet, orgId);
-
-  let valorAnterior = "desconocido";
+  let anterior = "desconocido";
   if (rowIndex !== -1) {
-    valorAnterior = sheet.getRange(rowIndex, col).getValue();
-    sheet.getRange(rowIndex, col).setValue(nuevoValor);
+    const prev = sheet.getRange(rowIndex, 1, 1, 3).getValues()[0];
+    anterior = JSON.stringify(prev);
+    sheet.getRange(rowIndex, 1, 1, 4).setValues([rowValues]);
   } else {
-    // No existe fila para esta organización todavía: se crea una nueva
-    // con valores por defecto (true), sobreescribiendo solo el campo alternado.
-    const row = [true, true, true, orgId];
-    row[col - 1] = nuevoValor;
-    sheet.appendRow(row);
+    sheet.appendRow(rowValues);
   }
+
+  const etiquetas = { biometrico: "Biométrico", desbloqueo_facial: "Desbloqueo facial", dos_factores: "2FA" };
+  let metodoActivo = "Ninguno";
+  if (biometrico) metodoActivo = etiquetas.biometrico;
+  else if (desbloqueoFacial) metodoActivo = etiquetas.desbloqueo_facial;
+  else if (dosFactores) metodoActivo = etiquetas.dos_factores;
 
   _appendAuditLog(ss, {
     hoja: "seguridad",
-    celda: String.fromCharCode(64 + col) + (rowIndex !== -1 ? rowIndex : sheet.getLastRow()),
-    valorAnterior: valorAnterior,
-    valorNuevo: nuevoValor,
-    accion: "cambio_config_seguridad",
+    celda: "A" + (rowIndex !== -1 ? rowIndex : sheet.getLastRow()) + ":C" + (rowIndex !== -1 ? rowIndex : sheet.getLastRow()),
+    valorAnterior: anterior,
+    valorNuevo: JSON.stringify(rowValues),
+    accion: "cambio_metodo_seguridad",
     norma: "ISO/IEC 27001 §9.4",
-    observaciones: "Campo '" + campo + "' de la organización '" + orgId + "' actualizado a " + nuevoValor
+    observaciones: "Método de seguridad del usuario '" + email + "' cambiado a '" + metodoActivo + "'"
   });
 
-  return { status: "success", campo: campo, valor: nuevoValor, organizacion_id: orgId };
+  return {
+    status: "success",
+    biometrico: biometrico,
+    desbloqueo_facial: desbloqueoFacial,
+    dos_factores: dosFactores,
+    usuario_email: email
+  };
 }
 
 // =============================================================================
@@ -376,13 +444,13 @@ function _findRowById(sheet, id) {
   return -1;
 }
 
-function _findRowByOrgId(sheet, organizacionId) {
-  if (!organizacionId) return -1;
+function _findRowByColumnValue(sheet, columnIndex, value) {
+  if (!value) return -1;
   const lastRow = sheet.getLastRow();
   if (lastRow < 2) return -1;
-  const values = sheet.getRange(1, 4, lastRow, 1).getValues();
+  const values = sheet.getRange(1, columnIndex, lastRow, 1).getValues();
   for (let i = 1; i < values.length; i++) {
-    if (values[i][0] && values[i][0].toString().trim().toLowerCase() === organizacionId.toString().trim().toLowerCase()) {
+    if (values[i][0] && values[i][0].toString().trim().toLowerCase() === value.toString().trim().toLowerCase()) {
       return i + 1;
     }
   }

@@ -10,7 +10,7 @@ Recibe peticiones HTTP (`doGet` / `doPost`) de la app Flutter y opera directamen
 - `doPost` con `action`:
   - `create` / `update` / `delete` — CRUD sobre `clientes`, `inventario`, `ventas`, `compras_divisas` (y genérico para el resto).
   - `toggle_checklist` — cambia el estado de un ítem de `checklist_iso`.
-  - `toggle_seguridad` — cambia un campo de la hoja `seguridad`, **por organización** (ver [Multi-organización](multi-organizacion.md)).
+  - `set_metodo_seguridad` — reemplaza el método de seguridad activo de la hoja `seguridad`, **por organización** (los 3 métodos son mutuamente excluyentes) (ver [Multi-organización](multi-organizacion.md)).
   - `upload_image` — sube una imagen a la carpeta de Google Drive configurada (`DRIVE_FOLDER_ID`) y devuelve la URL pública.
 
 Todas las mutaciones quedan además registradas en la hoja `audit_log` vía `_appendAuditLog(...)`.

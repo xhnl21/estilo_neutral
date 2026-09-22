@@ -9,10 +9,14 @@ void main() {
   group('SheetsDataService Unit & CRUD Tests', () {
     late SheetsDataService service;
 
-    setUp(() {
+    setUp(() async {
       service = SheetsDataService();
-      // Inicializar con datos de respaldo
-      service.initialize();
+      // Inicializar con datos de respaldo. Se espera a que termine (incluye
+      // un fetch real de red) para que no siga corriendo en paralelo con el
+      // cuerpo del test — si no, puede pisar cambios locales del test a
+      // mitad de camino (ej. el stock ajustado por una venta) con lo que
+      // haya en el Sheet real en ese momento, dando falsos negativos.
+      await service.initialize();
       // Activar la organización de respaldo para que los getters filtrados por
       // organización expongan los datos sembrados en las pruebas.
       service.setCurrentOrganizacion('67774411-6aa1-4aa3-a4b2-d3fc6913b768');
@@ -56,7 +60,8 @@ void main() {
         fechaRegistro: newCliente.fechaRegistro,
       );
       service.updateCliente(updated);
-      expect(service.clientes.firstWhere((c) => c.id == newCliente.id).nombre, equals('Carlos Actualizado'));
+      expect(service.clientes.firstWhere((c) => c.id == newCliente.id).nombre,
+          equals('Carlos Actualizado'));
 
       // Delete
       service.deleteCliente(newCliente.id);
@@ -81,48 +86,66 @@ void main() {
 
       // Adjust stock
       service.adjustStock(newProd.id, 3);
-      expect(service.productos.firstWhere((p) => p.id == newProd.id).cantidad, equals(8));
+      expect(service.productos.firstWhere((p) => p.id == newProd.id).cantidad,
+          equals(8));
 
       // Delete
       service.deleteProducto(newProd.id);
       expect(service.productos.length, equals(initialCount));
     });
 
-    test('CRUD Ventas y Abonos: registrar venta, amortizar y anular', () {
-      final initialCount = service.ventas.length;
-      final newVenta = Venta(
-        id: service.nextVentaId,
-        fecha: DateTime.now(),
-        clienteId: 'c00000001',
-        itemId: 'p00000001',
-        cantidad: 1,
-        tasaBcv: 474.0,
-        tasaUsd: 30.0,
-        tipoPago: TipoPago.efectivo,
-        comisionPagoMovilBs: 0.0,
-        montoBs: 9480.0,
-        montoUsd: 20.0,
-        abonoUsd: 5.0,
-        deudaUsd: 15.0,
-        totalPagarUsd: 20.0,
-        validacion: 'OK',
-        estado: EstadoVenta.pendiente,
-      );
+    test(
+      'CRUD Ventas y Abonos: registrar factura multi-ítem, amortizar y anular',
+      () async {
+        final initialCount = service.ventas.length;
+        final initialItemsCount = service.ventaItems.length;
+        final initialStock =
+            service.productos.firstWhere((p) => p.id == 'p00000001').cantidad;
+        final ventaId = service
+            .nextVentaId; // id que addVenta debería asignarle (nadie más crea ventas en el medio)
 
-      // Create
-      service.addVenta(newVenta);
-      expect(service.ventas.length, equals(initialCount + 1));
+        // Create (factura con 1 ítem, con deuda pendiente)
+        await service.addVenta(
+          clienteId: 'c00000001',
+          items: const [
+            (productoId: 'p00000001', cantidad: 1, precioUsd: 20.0)
+          ],
+          tasaBcv: 474.0,
+          tasaUsd: 30.0,
+          tipoPago: TipoPago.efectivo,
+          abonoUsd: 5.0,
+        );
+        expect(service.ventas.length, equals(initialCount + 1));
+        expect(service.ventaItems.length, equals(initialItemsCount + 1));
+        expect(
+          service.productos.firstWhere((p) => p.id == 'p00000001').cantidad,
+          equals(initialStock - 1),
+        );
 
-      // Abono
-      service.registrarAbono(newVenta.id, 15.0);
-      final ventaActualizada = service.ventas.firstWhere((v) => v.id == newVenta.id);
-      expect(ventaActualizada.deudaUsd, equals(0.0));
-      expect(ventaActualizada.estado, equals(EstadoVenta.pagada));
+        final creada = service.ventas.firstWhere((v) => v.id == ventaId);
 
-      // Delete
-      service.deleteVenta(newVenta.id);
-      expect(service.ventas.length, equals(initialCount));
-    });
+        // Abono
+        service.registrarAbono(creada.id, 15.0);
+        final ventaActualizada =
+            service.ventas.firstWhere((v) => v.id == creada.id);
+        expect(ventaActualizada.deudaUsd, equals(0.0));
+        expect(ventaActualizada.estado, equals(EstadoVenta.pagada));
+
+        // Delete (repone stock)
+        await service.deleteVenta(creada.id);
+        expect(service.ventas.length, equals(initialCount));
+        expect(service.ventaItems.length, equals(initialItemsCount));
+        expect(
+          service.productos.firstWhere((p) => p.id == 'p00000001').cantidad,
+          equals(initialStock),
+        );
+      },
+      // Esta prueba hace varias llamadas de red reales (create/update/delete
+      // sobre "ventas" y "venta_items" contra el Apps Script real) — el
+      // timeout por defecto de 30s puede no alcanzar si hay contención del
+      // LockService del script con otras pruebas concurrentes.
+      timeout: const Timeout(Duration(seconds: 60)),
+    );
 
     test('CRUD Checklist ISO: alternar conformidad y persistir auditoría', () {
       expect(service.checklistIsos.isNotEmpty, isTrue);
@@ -131,12 +154,14 @@ void main() {
 
       // Toggle
       service.toggleChecklistEstado(primerItem.nro);
-      final alternado = service.checklistIsos.firstWhere((c) => c.nro == primerItem.nro);
+      final alternado =
+          service.checklistIsos.firstWhere((c) => c.nro == primerItem.nro);
       expect(alternado.estado, isNot(equals(estadoInicial)));
 
       // Re-toggle para restaurar
       service.toggleChecklistEstado(primerItem.nro);
-      final restaurado = service.checklistIsos.firstWhere((c) => c.nro == primerItem.nro);
+      final restaurado =
+          service.checklistIsos.firstWhere((c) => c.nro == primerItem.nro);
       expect(restaurado.estado, equals(estadoInicial));
     });
 
@@ -151,7 +176,9 @@ void main() {
       expect(parsed[2][1], equals('Item "entrecomillado"'));
     });
 
-    test('Apps Script dispatch envía acciones remotas cuando appsScriptUrl está configurada', () async {
+    test(
+        'Apps Script dispatch envía acciones remotas cuando appsScriptUrl está configurada',
+        () async {
       final dispatched = <Map<String, dynamic>>[];
       final mockClient = MockClient((request) async {
         if (request.url.toString().contains('script.google.com')) {

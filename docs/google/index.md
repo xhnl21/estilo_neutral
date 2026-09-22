@@ -5,7 +5,7 @@ Estilo Neutral usa Google en cuatro capas independientes. Esta sección document
 | Capa | Para qué sirve | Guía |
 |---|---|---|
 | **Google Sign-In** | Login de usuarios en la app (OAuth 2.0 en Android) | [Google Sign-In](sign-in.md) |
-| **Lectura de datos** | La app lee las 10 hojas vía el endpoint público GViz CSV (sin auth) | [Multi-organización](multi-organizacion.md) |
+| **Lectura de datos** | La app lee las 14 hojas vía el endpoint público GViz CSV (sin auth) | [Multi-organización](multi-organizacion.md) |
 | **Google Apps Script** | Backend que recibe las escrituras (crear/editar/borrar/togglear) desde la app y las aplica al Google Sheet | [Apps Script](apps-script.md) |
 | **Automatización local** | Scripts para no tener que copiar/pegar código ni re-subir el `.xlsx` a mano | [Automatización](automatizacion.md) |
 

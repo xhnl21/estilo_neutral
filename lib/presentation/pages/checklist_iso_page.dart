@@ -39,6 +39,7 @@ class _ChecklistIsoPageState extends State<ChecklistIsoPage> {
             ),
           ],
           floatingActionButton: FloatingActionButton.extended(
+            heroTag: 'fab_checklist_iso',
             backgroundColor: AppPalette.primary,
             foregroundColor: Colors.white,
             icon: const Icon(CupertinoIcons.checkmark_shield_fill, size: 20),

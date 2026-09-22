@@ -1,34 +1,37 @@
 /// Modelo de entidad Usuario mapeado desde la hoja "usuarios".
-/// Fuente de verdad para la asociación email -> organización (multi-organización).
-/// Mantenida manualmente por el dueño del negocio en Google Sheets.
+/// La organización a la que pertenece cada usuario ya no se embebe acá:
+/// vive en la hoja de relación "usuario_organizacion" (ver [UsuarioOrganizacion]),
+/// para mantener separada la entidad Usuario de su membresía a una organización.
+/// Mantenida manualmente por el dueño del negocio en Google Sheets (o desde el
+/// módulo "Usuarios" de la app).
 class Usuario {
-  /// Columna A: Correo electrónico del usuario (normalizado a minúsculas)
-  final String email;
+  /// Columna A: ID único (formato u00000001)
+  final String id;
 
-  /// Columna B: Identificador de la organización a la que pertenece el usuario
-  final String organizacionId;
+  /// Columna B: Correo electrónico del usuario (normalizado a minúsculas)
+  final String email;
 
   /// Columna C: Nombre del usuario (opcional)
   final String nombre;
 
   const Usuario({
+    required this.id,
     required this.email,
-    required this.organizacionId,
     this.nombre = '',
   });
 
   factory Usuario.fromRow(List<dynamic> row) {
     return Usuario(
-      email: row.isNotEmpty ? row[0].toString().trim().toLowerCase() : '',
-      organizacionId: row.length > 1 ? row[1].toString().trim() : '',
+      id: row.isNotEmpty ? row[0].toString().trim() : '',
+      email: row.length > 1 ? row[1].toString().trim().toLowerCase() : '',
       nombre: row.length > 2 ? row[2].toString().trim() : '',
     );
   }
 
   Map<String, dynamic> toMap() {
     return {
+      'id': id,
       'email': email,
-      'organizacion_id': organizacionId,
       'nombre': nombre,
     };
   }

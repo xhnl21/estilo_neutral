@@ -57,8 +57,30 @@ Si tu cuenta tiene varios proyectos, es fácil terminar creando una credencial e
 
 Si los switches cambian en la app pero no se ven reflejados en la hoja `seguridad`:
 
-1. Confirmá que el Apps Script desplegado tenga la acción `toggle_seguridad` (ver [Apps Script](apps-script.md)) — si el script vigente es una versión vieja (sin este handler), la llamada cae en el `default` y no hace nada.
+1. Confirmá que el Apps Script desplegado tenga la acción `set_metodo_seguridad` (ver [Apps Script](apps-script.md)) — si el script vigente es una versión vieja (sin este handler), la llamada cae en el `default` y no hace nada.
 2. Confirmá que `APPS_SCRIPT_URL` en tu `.env` apunte a la implementación correcta (comparar el Deployment ID).
+
+## GViz devuelve un CSV corrupto para una hoja con columnas booleanas (encabezado "fusionado" con datos)
+
+Síntoma real: `SheetsDataService` tira `Exception: La hoja "seguridad" no tiene el encabezado esperado ...` aunque la hoja SÍ tiene el encabezado correcto si la mirás en Google Sheets. Al inspeccionar la respuesta cruda de `.../gviz/tq?tqx=out:csv&sheet=seguridad`, la fila 1 aparece como algo como:
+
+```
+"biometrico FALSE","desbloqueo_facial FALSE","dos_factores FALSE","usuario_email neidapulgar1989@gmail.com"
+"TRUE","FALSE","FALSE","xhnl21@gmail.com"
+```
+
+— el encabezado real ("biometrico", "desbloqueo_facial", ...) aparece pegado con el valor de la primera fila de datos, y falta una fila.
+
+**Causa real (no es un bug de la app, es una hoja con tipos de celda mezclados):** el endpoint GViz interpreta cada hoja como una tabla tipada (`DataTable`) para poder graficarla, e infiere el tipo de cada columna a partir de sus celdas. Si una columna booleana (`biometrico`, `desbloqueo_facial`, `dos_factores`) tiene **algunas filas como boolean nativo de Sheets y otras como texto literal `"TRUE"`/`"FALSE"`**, la heurística de detección de encabezado de GViz se rompe y serializa el CSV de forma incorrecta — sin ningún error visible del lado de Google.
+
+Esto pasa fácil porque `Range.setValues()` de Apps Script **siempre** convierte las cadenas `"TRUE"`/`"FALSE"` a boolean nativo (no hay forma de forzar texto plano desde Apps Script), mientras que escribir esas mismas cadenas vía la API de Sheets con `valueInputOption=RAW` (como hacían los scripts de migración en `tools/sheets_sync/`) las deja como texto. Si una fila se creó por un camino y otra fila por el otro, quedan tipos mezclados en la misma columna.
+
+**Diagnóstico:** comparar el tipo real de las celdas con la API de Sheets (`spreadsheets.get` con `includeGridData=true` y `fields=sheets.data.rowData.values.effectiveValue`) — vas a ver `{"boolValue": true}` en unas filas y `{"stringValue": "FALSE"}` en otras de la misma columna.
+
+**Arreglo:**
+1. Igualar el tipo de **todas** las filas de esa columna (todas boolean nativo, o todas texto — no mezclado). Se puede reescribir la columna entera vía `spreadsheets.values.update` con `valueInputOption=USER_ENTERED` pasando booleans nativos de Python/JS (no las cadenas `"TRUE"`/`"FALSE"`).
+2. Si el problema reaparece, revisar que todo lo que escribe en esa hoja (Apps Script y cualquier script de migración) escriba el mismo tipo — ver el comentario en `_handleSetMetodoSeguridad` de `google_apps_script.js`.
+3. `SheetsDataService._fetchSheet` valida el encabezado esperado antes de parsear cualquier hoja con esquema nuevo (`usuarios`, `seguridad`, `organizaciones`, `usuario_organizacion`, `ventas`, `venta_items`) — por eso este bug se manifiesta como una excepción clara en los logs en vez de datos silenciosamente corruptos.
 
 ## El `.xlsx` local "desaparece" o cambia de tamaño drásticamente
 

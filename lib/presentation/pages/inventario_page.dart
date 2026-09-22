@@ -51,6 +51,7 @@ class _InventarioPageState extends State<InventarioPage> {
             ),
           ],
           floatingActionButton: FloatingActionButton.extended(
+            heroTag: 'fab_inventario',
             backgroundColor: AppPalette.primary,
             foregroundColor: Colors.white,
             icon: const Icon(CupertinoIcons.plus_app, size: 20),

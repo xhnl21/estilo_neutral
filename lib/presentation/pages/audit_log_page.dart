@@ -44,6 +44,7 @@ class _AuditLogPageState extends State<AuditLogPage> {
             ),
           ],
           floatingActionButton: FloatingActionButton.extended(
+            heroTag: 'fab_audit_log',
             backgroundColor: AppPalette.primary,
             foregroundColor: Colors.white,
             icon: const Icon(CupertinoIcons.shield_fill, size: 20),
