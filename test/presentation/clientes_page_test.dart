@@ -4,6 +4,7 @@ import 'package:estilo_neutral/core/design_system/theme/app_theme.dart';
 import 'package:estilo_neutral/models/cliente.dart';
 import 'package:estilo_neutral/presentation/pages/clientes_page.dart';
 import 'package:estilo_neutral/shared/google_sheets/sheets_data_service.dart';
+import '../test_sheets_config.dart';
 
 void main() {
   testWidgets('ClientesPage renders on narrow screen with large debt without RenderFlex overflow', (tester) async {
@@ -15,8 +16,12 @@ void main() {
       tester.view.resetDevicePixelRatio();
     });
 
-    final service = SheetsDataService();
-    service.initialize();
+    // No se llama a service.initialize(): este test solo verifica el layout
+    // con datos locales y no necesita (ni debe) tocar la hoja real — dentro
+    // de un testWidgets, el HttpClient queda interceptado por
+    // TestWidgetsFlutterBinding y la llamada de red cuelga hasta el timeout
+    // de 10 minutos en vez de fallar rápido.
+    final service = SheetsDataService(spreadsheetId: testSpreadsheetId, appsScriptUrl: testAppsScriptUrl);
     service.setCurrentOrganizacion('67774411-6aa1-4aa3-a4b2-d3fc6913b768');
 
     // Add a customer with large debt that previously caused the 29px RenderFlex overflow

@@ -12,7 +12,7 @@ import '../pages/pages.dart';
 
 import 'package:go_router/go_router.dart';
 
-/// Shell principal con navegación para las 12 vistas correspondientes a cada hoja
+/// Shell principal con navegación para las 14 vistas correspondientes a cada hoja
 /// de la base de datos Google Sheets "Estilo Neutral".
 class MainShell extends StatefulWidget {
   final SheetsDataService dataService;
@@ -54,6 +54,7 @@ class _MainShellState extends State<MainShell> {
     (title: 'Usuarios', sheet: 'usuarios', icon: CupertinoIcons.person_2_fill, category: 'Administración'),
     (title: 'Organizaciones', sheet: 'organizaciones', icon: CupertinoIcons.building_2_fill, category: 'Administración'),
     (title: 'Métodos de Pago', sheet: 'metodo pago', icon: CupertinoIcons.creditcard_fill, category: 'Administración'),
+    (title: 'Tasas', sheet: 'tasas', icon: CupertinoIcons.money_dollar, category: 'Administración'),
   ];
 
   @override
@@ -73,6 +74,7 @@ class _MainShellState extends State<MainShell> {
       UsuariosPage(dataService: widget.dataService),
       OrganizacionesPage(dataService: widget.dataService),
       MetodosPagoPage(dataService: widget.dataService),
+      TasasPage(dataService: widget.dataService),
     ];
   }
 
@@ -323,7 +325,7 @@ class _MainShellState extends State<MainShell> {
               ),
             ),
 
-            // Lista categorizada de las 12 vistas
+            // Lista categorizada de las 14 vistas
             Expanded(
               child: ListView(
                 padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
@@ -351,6 +353,7 @@ class _MainShellState extends State<MainShell> {
                   _buildDrawerItem(10, _vistasInfo[10]),
                   _buildDrawerItem(11, _vistasInfo[11]),
                   _buildDrawerItem(12, _vistasInfo[12]),
+                  _buildDrawerItem(13, _vistasInfo[13]),
                 ],
               ),
             ),

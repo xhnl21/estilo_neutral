@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:estilo_neutral/models/models.dart';
 import 'package:estilo_neutral/shared/google_sheets/sheets_data_service.dart';
+import '../test_sheets_config.dart';
 
 void main() {
   group('MetodoPago Model Tests', () {
@@ -34,7 +35,7 @@ void main() {
     late SheetsDataService ds;
 
     setUp(() {
-      ds = SheetsDataService();
+      ds = SheetsDataService(spreadsheetId: testSpreadsheetId, appsScriptUrl: testAppsScriptUrl);
       ds.setCurrentOrganizacion('67774411-6aa1-4aa3-a4b2-d3fc6913b768');
     });
 
@@ -80,9 +81,7 @@ void main() {
       await ds.addVenta(
         clienteId: 'c00000001',
         items: [(productoId: 'p00000001', cantidad: 1, precioUsd: 20.0)],
-        tasaBcv: 474.0,
-        tasaUsd: 30.0,
-        metodoPago: 'Efectivo',
+        metodoPagoId: ds.metodosPago.firstWhere((m) => m.nombre == 'Efectivo').id,
         abonoUsd: 10.0,
       );
 
@@ -118,9 +117,7 @@ void main() {
       await ds.addVenta(
         clienteId: 'c00000001',
         items: [(productoId: 'p00000001', cantidad: 1, precioUsd: 50.0)],
-        tasaBcv: 474.0,
-        tasaUsd: 30.0,
-        metodoPago: 'Transferencia',
+        metodoPagoId: ds.metodosPago.firstWhere((m) => m.nombre == 'Transferencia').id,
         abonoUsd: 10.0,
       );
 
@@ -128,7 +125,7 @@ void main() {
       expect(venta.deudaUsd, 40.0);
 
       // Aplicar abono de 20 USD con Zelle
-      ds.registrarAbono(venta.id, 20.0, metodoPago: 'Zelle');
+      ds.registrarAbono(venta.id, 20.0, metodoPagoId: ds.metodosPago.firstWhere((m) => m.nombre == 'Zelle').id);
 
       final ventaActualizada = ds.ventas.firstWhere((v) => v.id == venta.id);
       expect(ventaActualizada.abonoUsd, 30.0);

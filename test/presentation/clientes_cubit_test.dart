@@ -2,14 +2,15 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:estilo_neutral/models/cliente.dart';
 import 'package:estilo_neutral/presentation/cubits/clientes/clientes_cubit.dart';
 import 'package:estilo_neutral/shared/google_sheets/sheets_data_service.dart';
+import '../test_sheets_config.dart';
 
 void main() {
   late SheetsDataService dataService;
   late ClientesCubit cubit;
 
-  setUp(() {
-    dataService = SheetsDataService();
-    dataService.initialize();
+  setUp(() async {
+    dataService = SheetsDataService(spreadsheetId: testSpreadsheetId, appsScriptUrl: testAppsScriptUrl);
+    await dataService.initialize();
     dataService.setCurrentOrganizacion('67774411-6aa1-4aa3-a4b2-d3fc6913b768');
     cubit = ClientesCubit(dataService: dataService);
   });

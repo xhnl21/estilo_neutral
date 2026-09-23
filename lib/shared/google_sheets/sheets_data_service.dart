@@ -46,6 +46,7 @@ class SheetsDataService extends ChangeNotifier {
   List<Producto> _productos = [];
   List<Venta> _ventas = [];
   List<VentaItem> _ventaItems = [];
+  List<Abono> _abonos = [];
   List<CompraDivisa> _comprasDivisas = [];
   List<ResumenDiario> _resumenesDiarios = [];
   List<RegistroCuarentena> _cuarentenas = [];
@@ -64,6 +65,8 @@ class SheetsDataService extends ChangeNotifier {
     const MetodoPago(id: 'mp00000005', nombre: 'Binance', status: true),
     const MetodoPago(id: 'mp00000006', nombre: 'Otro', status: true),
   ];
+  List<TasaRegistro> _tasas = [];
+  List<MonedaOrganizacion> _monedasOrganizacion = [];
 
   /// Organización actualmente activa en la sesión (resuelta tras el login mediante
   /// la hoja de relación "usuario_organizacion"). Las 9 hojas de negocio (todas
@@ -130,6 +133,16 @@ class SheetsDataService extends ChangeNotifier {
   /// Ítems de la factura [ventaId], en el orden en que se cargaron.
   List<VentaItem> itemsDeVenta(String ventaId) =>
       List.unmodifiable(_ventaItems.where((vi) => vi.ventaId == ventaId));
+
+  /// Historial completo de abonos de todas las facturas. Igual que
+  /// [ventaItems], no tiene su propia `organizacion_id` — usar [abonosDeVenta]
+  /// para los de una factura puntual.
+  List<Abono> get abonos => List.unmodifiable(_abonos);
+
+  /// Abonos de la factura [ventaId], ordenados por fecha de registro.
+  List<Abono> abonosDeVenta(String ventaId) =>
+      List.unmodifiable(_abonos.where((a) => a.ventaId == ventaId));
+
   List<CompraDivisa> get comprasDivisas =>
       List.unmodifiable(_comprasDivisas.where((c) => _matchesCurrentOrg(c.organizacionId)));
   List<ResumenDiario> get resumenesDiarios =>
@@ -161,6 +174,74 @@ class SheetsDataService extends ChangeNotifier {
   /// Métodos de pago activos (status == true) disponibles para usar en transacciones.
   List<MetodoPago> get metodosPagoActivos =>
       List.unmodifiable(_metodosPago.where((m) => m.status));
+
+  /// Historial de tasas (hoja "tasas") — una fila por moneda/fecha/fuente,
+  /// alimentada por el módulo Tasas (fuente='bcv') o por las organizaciones
+  /// que fijan su propia tasa (fuente='manual').
+  List<TasaRegistro> get tasas => List.unmodifiable(_tasas);
+
+  /// Resuelve una tasa por su ID — el JOIN lógico que usa la UI para
+  /// mostrar el valor/origen real de un `ventas.tasa_id`/`abonos.tasa_id`
+  /// sin que esas hojas dupliquen el dato.
+  TasaRegistro? tasaPorId(String tasaId) => _tasas.where((t) => t.id == tasaId).firstOrNull;
+
+  /// La tasa BCV automática más reciente para [moneda] ('USD'/'EUR'), o
+  /// null si el módulo Tasas todavía no tiene datos para esa moneda.
+  TasaRegistro? tasaBcvVigente(String moneda) {
+    final candidatas = _tasas.where((t) => t.fuente == 'bcv' && t.moneda == moneda && t.organizacionId.isEmpty);
+    if (candidatas.isEmpty) return null;
+    return candidatas.reduce((a, b) => a.fecha.isAfter(b.fecha) ? a : b);
+  }
+
+  /// La tasa manual fijada por la organización [organizacionId], o null si
+  /// no configuró ninguna.
+  TasaRegistro? tasaManualOrganizacion(String organizacionId) =>
+      _tasas.where((t) => t.fuente == 'manual' && t.organizacionId == organizacionId).firstOrNull;
+
+  /// La organización actualmente activa (según [_currentOrganizacionId]),
+  /// o null si todavía no se resolvió ninguna.
+  Organizacion? get organizacionActual =>
+      _organizaciones.where((o) => o.id == _currentOrganizacionId).firstOrNull;
+
+  /// Historial de selección de moneda base por organización (hoja
+  /// "moneda_organizacion").
+  List<MonedaOrganizacion> get monedasOrganizacion => List.unmodifiable(_monedasOrganizacion);
+
+  /// La moneda base seleccionada por [organizacionId] ('USD'/'EUR') — 'USD'
+  /// por defecto si esa organización todavía no eligió ninguna.
+  String monedaOrganizacion(String organizacionId) =>
+      _monedasOrganizacion.where((m) => m.organizacionId == organizacionId).firstOrNull?.moneda ?? 'USD';
+
+  /// La tasa BCV automática vigente en la moneda base configurada por la
+  /// organización actual — null si el módulo Tasas todavía no tiene datos.
+  TasaRegistro? get tasaVigenteEnMonedaBase => tasaBcvVigente(monedaOrganizacion(_currentOrganizacionId ?? ''));
+
+  /// % de cambio de [tasa] contra el registro anterior de la misma
+  /// moneda+fuente+organización. Se calcula al vuelo — no se almacena, para
+  /// no guardar un dato derivado que podría desincronizarse del histórico
+  /// real si se corrige una tasa pasada.
+  double cambioPctTasa(TasaRegistro tasa) {
+    final anteriores = _tasas.where((t) =>
+        t.moneda == tasa.moneda &&
+        t.fuente == tasa.fuente &&
+        t.organizacionId == tasa.organizacionId &&
+        t.fecha.isBefore(tasa.fecha)).toList()
+      ..sort((a, b) => b.fecha.compareTo(a.fecha));
+    if (anteriores.isEmpty || anteriores.first.valor == 0) return 0.0;
+    return ((tasa.valor - anteriores.first.valor) / anteriores.first.valor) * 100;
+  }
+
+  /// Resuelve qué tasa aplicar a un abono según lo que eligió el usuario: la
+  /// manual de la organización actual (si la pidió y existe una) o la BCV
+  /// automática vigente en la moneda base. Devuelve el `tasa_id` (FK) a
+  /// guardar — nunca un valor numérico ni el origen sueltos.
+  String _resolverTasaAplicada(bool usarTasaManual) {
+    if (usarTasaManual) {
+      final manual = tasaManualOrganizacion(_currentOrganizacionId ?? '');
+      if (manual != null) return manual.id;
+    }
+    return tasaVigenteEnMonedaBase?.id ?? '';
+  }
 
   /// Configuración de seguridad del usuario actual. Si el usuario activo aún
   /// no tiene fila propia en la hoja "seguridad", se devuelven los valores
@@ -228,6 +309,13 @@ class SheetsDataService extends ChangeNotifier {
           _parseVentaItems,
           expectedHeaders: const ['id', 'venta_id', 'item_id', 'cantidad', 'precio_usd', 'subtotal_usd'],
         ),
+        // Historial de abonos (una fila por pago parcial, con su propio
+        // método de pago) — relación 1:N venta→abonos, igual que venta_items.
+        safeFetch(
+          'abonos',
+          _parseAbonos,
+          expectedHeaders: const ['id', 'venta_id', 'fecha', 'monto', 'metodo_pago', 'tasa_bcv', 'tasa_fuente'],
+        ),
         safeFetch('compras_divisas', _parseCompras),
         safeFetch('resumen_diario', _parseResumenes),
         safeFetch('cuarentena', _parseCuarentenas),
@@ -256,6 +344,23 @@ class SheetsDataService extends ChangeNotifier {
           'metodo pago',
           _parseMetodosPago,
           expectedHeaders: const ['id', 'nombre', 'status'],
+        ),
+        // Una fila por moneda/fecha/fuente (3FN — ver TasaRegistro). Las
+        // filas fuente='bcv' las alimenta el módulo Tasas en Apps Script
+        // (trigger diario); las fuente='manual' las crea/actualiza esta
+        // misma app cuando una organización fija su propia tasa.
+        safeFetch(
+          'tasas',
+          _parseTasas,
+          expectedHeaders: const ['id', 'fecha', 'moneda', 'valor', 'fuente', 'organizacion_id'],
+        ),
+        // Moneda base seleccionada por organización — separada en su
+        // propia hoja (no una columna en "organizaciones") para no
+        // duplicar la misma fuente de verdad en dos lugares.
+        safeFetch(
+          'moneda_organizacion',
+          _parseMonedasOrganizacion,
+          expectedHeaders: const ['id', 'organizacion_id', 'moneda', 'actualizado_en'],
         ),
       ]);
 
@@ -364,6 +469,13 @@ class SheetsDataService extends ChangeNotifier {
     _ventaItems = [...cloud, ...localPending];
   }
 
+  void _parseAbonos(List<List<String>> rows) {
+    if (rows.isEmpty) return;
+    final cloud = rows.map((r) => Abono.fromRow(r)).toList();
+    final localPending = _abonos.where((local) => !cloud.any((a) => a.id == local.id)).toList();
+    _abonos = [...cloud, ...localPending];
+  }
+
   void _parseCompras(List<List<String>> rows) {
     if (rows.isEmpty) return;
     final cloud = rows
@@ -437,6 +549,26 @@ class SheetsDataService extends ChangeNotifier {
         .where((r) => r.isNotEmpty && r.first.trim().isNotEmpty)
         .map((r) => MetodoPago.fromRow(r))
         .toList();
+  }
+
+  void _parseTasas(List<List<String>> rows) {
+    if (rows.isEmpty) return;
+    final cloud = rows
+        .where((r) => r.isNotEmpty && r.first.trim().isNotEmpty)
+        .map((r) => TasaRegistro.fromRow(r))
+        .toList();
+    final localPending = _tasas.where((local) => !cloud.any((t) => t.id == local.id)).toList();
+    _tasas = [...cloud, ...localPending];
+  }
+
+  void _parseMonedasOrganizacion(List<List<String>> rows) {
+    if (rows.isEmpty) return;
+    final cloud = rows
+        .where((r) => r.isNotEmpty && r.first.trim().isNotEmpty)
+        .map((r) => MonedaOrganizacion.fromRow(r))
+        .toList();
+    final localPending = _monedasOrganizacion.where((local) => !cloud.any((m) => m.id == local.id)).toList();
+    _monedasOrganizacion = [...cloud, ...localPending];
   }
 
   // ===========================================================================
@@ -815,24 +947,33 @@ class SheetsDataService extends ChangeNotifier {
     return 'vi${(maxId + 1).toString().padLeft(8, '0')}';
   }
 
+  String get nextAbonoId {
+    final maxId = _abonos.fold<int>(0, (prev, a) {
+      final numStr = a.id.replaceAll(RegExp(r'[^0-9]'), '');
+      final n = int.tryParse(numStr) ?? 0;
+      return n > prev ? n : prev;
+    });
+    return 'ab${(maxId + 1).toString().padLeft(8, '0')}';
+  }
+
   /// Registra una factura completa: una venta (header) con uno o más ítems.
   /// [items] es la lista de productos del carrito, cada uno con la cantidad
   /// y el precio unitario a cobrar (capturado en el momento de la venta).
   Future<bool> addVenta({
     required String clienteId,
     required List<({String productoId, int cantidad, double precioUsd})> items,
-    required double tasaBcv,
-    required double tasaUsd,
-    TipoPago? tipoPago,
-    String? metodoPago,
+    required String metodoPagoId,
     double comisionPagoMovilBs = 0.0,
     required double abonoUsd,
+    bool usarTasaManual = false,
   }) async {
     assert(items.isNotEmpty, 'Una factura necesita al menos un ítem');
 
-    final resolvedMetodo = (metodoPago != null && metodoPago.trim().isNotEmpty)
-        ? metodoPago.trim()
-        : (tipoPago?.label ?? 'Efectivo');
+    // La tasa Bs./USD de la factura ya no se tipea a mano: es la misma que
+    // se resuelve para el abono (BCV automática del día, o la manual de la
+    // organización si el usuario la eligió) — una sola fuente de verdad
+    // para toda la transacción, no dos números sueltos por venta.
+    final tasaBcv = tasaPorId(_resolverTasaAplicada(usarTasaManual))?.valor ?? 0.0;
 
     final ventaId = nextVentaId;
     final montoUsd = items.fold<double>(0.0, (sum, it) => sum + it.cantidad * it.precioUsd);
@@ -845,8 +986,8 @@ class SheetsDataService extends ChangeNotifier {
       fecha: DateTime.now(),
       clienteId: clienteId,
       tasaBcv: tasaBcv,
-      tasaUsd: tasaUsd,
-      metodoPago: resolvedMetodo,
+      tasaUsd: tasaBcv,
+      metodoPagoId: metodoPagoId,
       comisionPagoMovilBs: comisionPagoMovilBs,
       montoBs: montoBs,
       montoUsd: montoUsd,
@@ -901,79 +1042,120 @@ class SheetsDataService extends ChangeNotifier {
       observaciones: 'Factura registrada a cliente $clienteId',
     );
 
-    // Header + ítems se sincronizan en paralelo (no secuencialmente): con
-    // varios ítems, esperar cada POST uno tras otro sumaría varios segundos
-    // de latencia real innecesarios.
+    // El abono inicial (si lo hay) es, en sí mismo, el primer pago de la
+    // factura — se registra como el primer renglón del historial de abonos,
+    // no solo como un número acumulado en el header.
+    Abono? abonoInicial;
+    if (abonoUsd > 0) {
+      abonoInicial = Abono(
+        id: nextAbonoId,
+        ventaId: ventaId,
+        fecha: venta.fecha,
+        monto: abonoUsd,
+        metodoPagoId: metodoPagoId,
+        tasaId: _resolverTasaAplicada(usarTasaManual),
+      );
+      _abonos.insert(0, abonoInicial);
+    }
+
+    // Header + ítems + abono inicial se sincronizan en paralelo (no
+    // secuencialmente): con varios ítems, esperar cada POST uno tras otro
+    // sumaría varios segundos de latencia real innecesarios.
     final resultados = await Future.wait([
       _postToAppsScript({'action': 'create', 'sheet': 'ventas', 'data': venta.toMap()}),
       for (final vi in nuevosItems)
         _postToAppsScript({'action': 'create', 'sheet': 'venta_items', 'data': vi.toMap()}),
+      if (abonoInicial != null)
+        _postToAppsScript({'action': 'create', 'sheet': 'abonos', 'data': abonoInicial.toMap()}),
     ]);
     notifyListeners();
     return resultados.every((ok) => ok);
   }
 
-  void registrarAbono(String ventaId, double montoAbono, {String? metodoPago}) {
+  /// Registra un abono (pago parcial) a una factura: crea una fila propia en
+  /// el historial de abonos con su método de pago, y actualiza el total
+  /// abonado/deuda/estado del header. El `metodoPago` de la factura (el de
+  /// la venta original) no se toca — el método de cada pago individual vive
+  /// en su propia fila de [abonos], no se pisa el de la venta.
+  Future<bool> registrarAbono(
+    String ventaId,
+    double montoAbono, {
+    required String metodoPagoId,
+    bool usarTasaManual = false,
+  }) async {
     final index = _ventas.indexWhere((v) => v.id == ventaId);
-    if (index != -1) {
-      final old = _ventas[index];
-      final metodo = (metodoPago != null && metodoPago.trim().isNotEmpty)
-          ? metodoPago.trim()
-          : old.metodoPago;
-      final nuevoAbono = old.abonoUsd + montoAbono;
-      final nuevaDeuda = (old.totalPagarUsd - nuevoAbono).clamp(0.0, double.infinity);
-      final nuevoEstado = nuevaDeuda == 0 ? EstadoVenta.pagada : EstadoVenta.pendiente;
+    if (index == -1) return false;
 
-      _ventas[index] = Venta(
-        id: old.id,
-        fecha: old.fecha,
-        clienteId: old.clienteId,
-        tasaBcv: old.tasaBcv,
-        tasaUsd: old.tasaUsd,
-        metodoPago: old.metodoPago,
-        comisionPagoMovilBs: old.comisionPagoMovilBs,
-        montoBs: old.montoBs,
-        montoUsd: old.montoUsd,
-        abonoUsd: nuevoAbono,
-        deudaUsd: nuevaDeuda,
-        totalPagarUsd: old.totalPagarUsd,
-        validacion: 'OK',
-        estado: nuevoEstado,
-        organizacionId: old.organizacionId,
+    final old = _ventas[index];
+    final nuevoAbono = old.abonoUsd + montoAbono;
+    final nuevaDeuda = (old.totalPagarUsd - nuevoAbono).clamp(0.0, double.infinity);
+    final nuevoEstado = nuevaDeuda == 0 ? EstadoVenta.pagada : EstadoVenta.pendiente;
+
+    _ventas[index] = Venta(
+      id: old.id,
+      fecha: old.fecha,
+      clienteId: old.clienteId,
+      tasaBcv: old.tasaBcv,
+      tasaUsd: old.tasaUsd,
+      metodoPagoId: old.metodoPagoId,
+      comisionPagoMovilBs: old.comisionPagoMovilBs,
+      montoBs: old.montoBs,
+      montoUsd: old.montoUsd,
+      abonoUsd: nuevoAbono,
+      deudaUsd: nuevaDeuda,
+      totalPagarUsd: old.totalPagarUsd,
+      validacion: 'OK',
+      estado: nuevoEstado,
+      organizacionId: old.organizacionId,
+    );
+
+    final abono = Abono(
+      id: nextAbonoId,
+      ventaId: ventaId,
+      fecha: DateTime.now(),
+      monto: montoAbono,
+      metodoPagoId: metodoPagoId,
+      tasaId: _resolverTasaAplicada(usarTasaManual),
+    );
+    _abonos.insert(0, abono);
+
+    // Reducir saldo de deuda del cliente
+    final cIdx = _clientes.indexWhere((c) => c.id == old.clienteId);
+    if (cIdx != -1) {
+      final c = _clientes[cIdx];
+      _clientes[cIdx] = Cliente(
+        id: c.id,
+        nombre: c.nombre,
+        telefono: c.telefono,
+        email: c.email,
+        saldoDeudaUsd: (c.saldoDeudaUsd - montoAbono).clamp(0.0, double.infinity),
+        fechaRegistro: c.fechaRegistro,
+        organizacionId: c.organizacionId,
       );
+    }
 
-      // Reducir saldo de deuda del cliente
-      final cIdx = _clientes.indexWhere((c) => c.id == old.clienteId);
-      if (cIdx != -1) {
-        final c = _clientes[cIdx];
-        _clientes[cIdx] = Cliente(
-          id: c.id,
-          nombre: c.nombre,
-          telefono: c.telefono,
-          email: c.email,
-          saldoDeudaUsd: (c.saldoDeudaUsd - montoAbono).clamp(0.0, double.infinity),
-          fechaRegistro: c.fechaRegistro,
-          organizacionId: c.organizacionId,
-        );
-      }
+    final nombreMetodo = metodoPagoNombre(metodoPagoId);
+    _logAudit(
+      hoja: 'ventas',
+      celda: 'J${index + 2}',
+      valorAnterior: 'Deuda: ${old.deudaUsd}',
+      valorNuevo: 'Abono +$montoAbono ($nombreMetodo) -> Deuda: $nuevaDeuda',
+      accion: 'registro_abono',
+      norma: 'ISO 8000 §5.3',
+      observaciones: 'Abono de USD $montoAbono vía $nombreMetodo a venta $ventaId. Estado: ${nuevoEstado.name}',
+    );
 
-      _logAudit(
-        hoja: 'ventas',
-        celda: 'J${index + 2}',
-        valorAnterior: 'Deuda: ${old.deudaUsd}',
-        valorNuevo: 'Abono +$montoAbono ($metodo) -> Deuda: $nuevaDeuda',
-        accion: 'registro_abono',
-        norma: 'ISO 8000 §5.3',
-        observaciones: 'Abono de USD $montoAbono vía $metodo a venta $ventaId. Estado: ${nuevoEstado.name}',
-      );
+    final resultados = await Future.wait([
       _postToAppsScript({
         'action': 'update',
         'sheet': 'ventas',
         'id': ventaId,
         'data': _ventas[index].toMap(),
-      });
-      notifyListeners();
-    }
+      }),
+      _postToAppsScript({'action': 'create', 'sheet': 'abonos', 'data': abono.toMap()}),
+    ]);
+    notifyListeners();
+    return resultados.every((ok) => ok);
   }
 
   /// Anula una factura completa: elimina la venta (header), todos sus ítems,
@@ -985,6 +1167,8 @@ class SheetsDataService extends ChangeNotifier {
     final old = _ventas.removeAt(index);
     final items = _ventaItems.where((vi) => vi.ventaId == id).toList();
     _ventaItems.removeWhere((vi) => vi.ventaId == id);
+    final abonosVenta = _abonos.where((a) => a.ventaId == id).toList();
+    _abonos.removeWhere((a) => a.ventaId == id);
 
     for (final vi in items) {
       adjustStock(vi.itemId, vi.cantidad);
@@ -997,12 +1181,13 @@ class SheetsDataService extends ChangeNotifier {
       valorNuevo: 'ANULADA/ELIMINADA',
       accion: 'anulacion_venta',
       norma: 'ISO 8000',
-      observaciones: 'Venta $id anulada (${items.length} ítems repuestos a inventario)',
+      observaciones: 'Venta $id anulada (${items.length} ítems repuestos a inventario, ${abonosVenta.length} abonos eliminados)',
     );
 
     await Future.wait([
       _postToAppsScript({'action': 'delete', 'sheet': 'ventas', 'id': id}),
       for (final vi in items) _postToAppsScript({'action': 'delete', 'sheet': 'venta_items', 'id': vi.id}),
+      for (final a in abonosVenta) _postToAppsScript({'action': 'delete', 'sheet': 'abonos', 'id': a.id}),
     ]);
     notifyListeners();
   }
@@ -1465,7 +1650,7 @@ class SheetsDataService extends ChangeNotifier {
         clienteId: 'c00000001',
         tasaBcv: 474.0,
         tasaUsd: 30.0,
-        tipoPago: TipoPago.efectivo,
+        metodoPagoId: 'mp00000001',
         comisionPagoMovilBs: 0.0,
         montoBs: 9480.0,
         montoUsd: 20.0,
@@ -1486,6 +1671,34 @@ class SheetsDataService extends ChangeNotifier {
         cantidad: 1,
         precioUsd: 20.0,
         subtotalUsd: 20.0,
+      ),
+    ];
+
+    _abonos = [
+      Abono(
+        id: 'ab00000001',
+        ventaId: 'v00000001',
+        fecha: DateTime(2026, 4, 3),
+        monto: 20.0,
+        metodoPagoId: 'mp00000001',
+        tasaId: 't00000001',
+      ),
+    ];
+
+    _tasas = [
+      TasaRegistro(
+        id: 't00000001',
+        fecha: DateTime(2026, 4, 3),
+        moneda: 'USD',
+        valor: 474.0,
+        fuente: 'bcv',
+      ),
+      TasaRegistro(
+        id: 't00000002',
+        fecha: DateTime(2026, 4, 2),
+        moneda: 'USD',
+        valor: 473.5,
+        fuente: 'bcv',
       ),
     ];
 
@@ -1651,6 +1864,15 @@ class SheetsDataService extends ChangeNotifier {
 
     _organizaciones = [
       const Organizacion(id: '67774411-6aa1-4aa3-a4b2-d3fc6913b768', nombre: 'Estilo Neutral'),
+    ];
+
+    _monedasOrganizacion = [
+      MonedaOrganizacion(
+        id: 'mo00000001',
+        organizacionId: '67774411-6aa1-4aa3-a4b2-d3fc6913b768',
+        moneda: 'USD',
+        actualizadoEn: DateTime(2026, 4, 3),
+      ),
     ];
 
     _usuarioOrganizaciones = [
@@ -1950,36 +2172,22 @@ class SheetsDataService extends ChangeNotifier {
   // CRUD 12: MÉTODOS DE PAGO (hoja metodo pago)
   // ===========================================================================
 
-  /// Comprueba si un método de pago (por ID o por nombre) está siendo utilizado
-  /// en alguna venta o registro de abono.
-  bool isMetodoPagoEnUso(String idONombre) {
-    final query = idONombre.trim().toLowerCase();
-    final metodo = _metodosPago.firstWhere(
-      (m) => m.id.toLowerCase() == query || m.nombre.toLowerCase() == query,
-      orElse: () => MetodoPago(id: '', nombre: idONombre, status: false),
-    );
-    final nombreMetodo = (metodo.nombre.isNotEmpty ? metodo.nombre : idONombre).trim().toLowerCase();
+  /// Resuelve el nombre a mostrar de un método de pago a partir de su ID
+  /// (clave foránea guardada en `ventas.tipo_pago` / `abonos.metodo_pago`).
+  /// Si el ID no existe (dato huérfano o pre-migración), se devuelve tal cual
+  /// para no ocultar el valor original.
+  String metodoPagoNombre(String metodoPagoId) {
+    final metodo = _metodosPago.where((m) => m.id == metodoPagoId).firstOrNull;
+    return metodo?.nombre ?? metodoPagoId;
+  }
 
-    // 1. Verificar en ventas
-    for (final v in _ventas) {
-      if (v.metodoPago.trim().toLowerCase() == nombreMetodo ||
-          v.tipoPago.label.trim().toLowerCase() == nombreMetodo ||
-          v.tipoPago.name.trim().toLowerCase() == nombreMetodo) {
-        return true;
-      }
-    }
-
-    // 2. Verificar en auditoría de abonos
-    for (final log in _auditLogs) {
-      if (log.hoja == 'ventas' && log.accion == 'registro_abono') {
-        if (log.valorNuevo.toLowerCase().contains(nombreMetodo) ||
-            log.observaciones.toLowerCase().contains(nombreMetodo)) {
-          return true;
-        }
-      }
-    }
-
-    return false;
+  /// Comprueba si un método de pago (por su ID) está siendo utilizado en
+  /// alguna venta o registro de abono — la relación se verifica por clave
+  /// foránea, no por nombre, para que un método renombrado siga detectándose
+  /// correctamente como "en uso".
+  bool isMetodoPagoEnUso(String metodoPagoId) {
+    return _ventas.any((v) => v.metodoPagoId == metodoPagoId) ||
+        _abonos.any((a) => a.metodoPagoId == metodoPagoId);
   }
 
   /// Agrega un nuevo método de pago a la hoja "metodo pago".
@@ -2095,6 +2303,167 @@ class SheetsDataService extends ChangeNotifier {
 
     notifyListeners();
     return true;
+  }
+
+  // ===========================================================================
+  // CRUD 13: TASAS (hoja tasas)
+  // ===========================================================================
+
+  /// Le pide al Apps Script que corra `obtenerTasaBCV()` ahora mismo (en vez
+  /// de esperar al trigger diario) y refresca la hoja "tasas" local con el
+  /// resultado. Devuelve `false` si no se pudo contactar el servidor o si
+  /// `obtenerTasaBCV()` reportó un error (ej. dolarvzla.com no respondió).
+  Future<bool> refrescarTasaHoy() async {
+    final url = appsScriptUrl;
+    if (url == null || url.trim().isEmpty) return false;
+
+    try {
+      var response = await _httpClient.post(
+        Uri.parse(url),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({'action': 'refrescar_tasas', 'sheet': 'tasas'}),
+      ).timeout(const Duration(seconds: 20));
+
+      if ((response.statusCode == 302 || response.statusCode == 303 || response.statusCode == 307) &&
+          response.headers.containsKey('location')) {
+        final redirectUrl = response.headers['location']!;
+        try {
+          response = await _httpClient.get(Uri.parse(redirectUrl)).timeout(const Duration(seconds: 20));
+        } catch (_) {}
+      }
+
+      if (response.statusCode != 200) return false;
+
+      final body = jsonDecode(response.body);
+      if (body['status'] != 'success') {
+        Logger.error('SheetsDataService: refrescarTasaHoy falló: ${body['message']}');
+        return false;
+      }
+
+      await _fetchSheet(
+        'tasas',
+        _parseTasas,
+        expectedHeaders: const ['id', 'fecha', 'moneda', 'valor', 'fuente', 'organizacion_id'],
+      );
+      _lastSync = DateTime.now();
+      notifyListeners();
+      return true;
+    } catch (e) {
+      Logger.error('SheetsDataService: excepción en refrescarTasaHoy', e);
+      return false;
+    }
+  }
+
+  String get nextTasaId {
+    final maxId = _tasas.fold<int>(0, (prev, t) {
+      final n = int.tryParse(t.id.replaceAll(RegExp(r'[^0-9]'), '')) ?? 0;
+      return n > prev ? n : prev;
+    });
+    return 't${(maxId + 1).toString().padLeft(8, '0')}';
+  }
+
+  /// Fija (o reemplaza) la tasa manual de [organizacionId]: si ya tenía una,
+  /// se actualiza esa misma fila (misma FK, no se duplica); si no, se crea
+  /// una nueva fila en "tasas" con fuente='manual'.
+  Future<bool> setTasaManualOrganizacion(String organizacionId, String moneda, double valor) async {
+    final existente = tasaManualOrganizacion(organizacionId);
+    if (existente != null) {
+      final index = _tasas.indexWhere((t) => t.id == existente.id);
+      final actualizada = TasaRegistro(
+        id: existente.id,
+        fecha: DateTime.now(),
+        moneda: moneda,
+        valor: valor,
+        fuente: 'manual',
+        organizacionId: organizacionId,
+      );
+      _tasas[index] = actualizada;
+      notifyListeners();
+      return _postToAppsScript({
+        'action': 'update',
+        'sheet': 'tasas',
+        'id': actualizada.id,
+        'data': actualizada.toMap(),
+      });
+    }
+
+    final nueva = TasaRegistro(
+      id: nextTasaId,
+      fecha: DateTime.now(),
+      moneda: moneda,
+      valor: valor,
+      fuente: 'manual',
+      organizacionId: organizacionId,
+    );
+    _tasas.insert(0, nueva);
+    notifyListeners();
+    return _postToAppsScript({
+      'action': 'create',
+      'sheet': 'tasas',
+      'data': nueva.toMap(),
+    });
+  }
+
+  /// Quita la tasa manual de [organizacionId] (si tenía una configurada).
+  Future<bool> quitarTasaManualOrganizacion(String organizacionId) async {
+    final existente = tasaManualOrganizacion(organizacionId);
+    if (existente == null) return true;
+    _tasas.removeWhere((t) => t.id == existente.id);
+    notifyListeners();
+    return _postToAppsScript({
+      'action': 'delete',
+      'sheet': 'tasas',
+      'id': existente.id,
+    });
+  }
+
+  // ===========================================================================
+  // CRUD 14: MONEDA POR ORGANIZACIÓN (hoja moneda_organizacion)
+  // ===========================================================================
+
+  String get _nextMonedaOrganizacionId {
+    final maxId = _monedasOrganizacion.fold<int>(0, (prev, m) {
+      final n = int.tryParse(m.id.replaceAll(RegExp(r'[^0-9]'), '')) ?? 0;
+      return n > prev ? n : prev;
+    });
+    return 'mo${(maxId + 1).toString().padLeft(8, '0')}';
+  }
+
+  /// Fija (o reemplaza) la moneda base de [organizacionId]: si ya tenía una
+  /// seleccionada, se actualiza esa misma fila (misma FK, no se duplica).
+  Future<bool> setMonedaOrganizacion(String organizacionId, String moneda) async {
+    final existenteIdx = _monedasOrganizacion.indexWhere((m) => m.organizacionId == organizacionId);
+
+    if (existenteIdx != -1) {
+      final actualizada = MonedaOrganizacion(
+        id: _monedasOrganizacion[existenteIdx].id,
+        organizacionId: organizacionId,
+        moneda: moneda,
+        actualizadoEn: DateTime.now(),
+      );
+      _monedasOrganizacion[existenteIdx] = actualizada;
+      notifyListeners();
+      return _postToAppsScript({
+        'action': 'update',
+        'sheet': 'moneda_organizacion',
+        'id': actualizada.id,
+        'data': actualizada.toMap(),
+      });
+    }
+
+    final nueva = MonedaOrganizacion(
+      id: _nextMonedaOrganizacionId,
+      organizacionId: organizacionId,
+      moneda: moneda,
+      actualizadoEn: DateTime.now(),
+    );
+    _monedasOrganizacion.insert(0, nueva);
+    notifyListeners();
+    return _postToAppsScript({
+      'action': 'create',
+      'sheet': 'moneda_organizacion',
+      'data': nueva.toMap(),
+    });
   }
 }
 

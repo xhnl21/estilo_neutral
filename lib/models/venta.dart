@@ -24,11 +24,12 @@ class Venta {
   /// Columna E: Tasa paralela/Binance en USD
   final double tasaUsd;
 
-  /// Columna F: Método de pago utilizado (nombre dinámico o enum)
-  final String metodoPago;
-
-  /// Compatibilidad retroactiva con enum TipoPago
-  TipoPago get tipoPago => TipoPago.fromString(metodoPago);
+  /// Columna F: Clave foránea al método de pago (metodo pago.id) utilizado
+  /// en la venta original. El nombre a mostrar se resuelve contra la hoja
+  /// "metodo pago" (ver [SheetsDataService.metodoPagoNombre]) — esta columna
+  /// nunca guarda el nombre en texto, para no perder la relación si el
+  /// método se renombra más adelante.
+  final String metodoPagoId;
 
   /// Columna G: Comisión bancaria de pago móvil en Bs
   final double comisionPagoMovilBs;
@@ -57,14 +58,13 @@ class Venta {
   /// Columna O: Identificador de la organización a la que pertenece el registro
   final String organizacionId;
 
-  Venta({
+  const Venta({
     required this.id,
     required this.fecha,
     required this.clienteId,
     required this.tasaBcv,
     required this.tasaUsd,
-    String? metodoPago,
-    TipoPago? tipoPago,
+    required this.metodoPagoId,
     required this.comisionPagoMovilBs,
     required this.montoBs,
     required this.montoUsd,
@@ -74,7 +74,7 @@ class Venta {
     required this.validacion,
     required this.estado,
     this.organizacionId = '67774411-6aa1-4aa3-a4b2-d3fc6913b768',
-  }) : metodoPago = metodoPago ?? (tipoPago != null ? tipoPago.label : 'Efectivo');
+  });
 
   factory Venta.fromRow(List<dynamic> row) {
     return Venta(
@@ -83,7 +83,7 @@ class Venta {
       clienteId: row.length > 2 ? row[2].toString() : '',
       tasaBcv: row.length > 3 ? parseSheetDouble(row[3]) : 0.0,
       tasaUsd: row.length > 4 ? parseSheetDouble(row[4]) : 0.0,
-      metodoPago: row.length > 5 ? row[5].toString() : 'Efectivo',
+      metodoPagoId: row.length > 5 ? row[5].toString() : '',
       comisionPagoMovilBs: row.length > 6 ? parseSheetDouble(row[6]) : 0.0,
       montoBs: row.length > 7 ? parseSheetDouble(row[7]) : 0.0,
       montoUsd: row.length > 8 ? parseSheetDouble(row[8]) : 0.0,
@@ -105,7 +105,7 @@ class Venta {
       'cliente_id': clienteId,
       'tasa_bcv': tasaBcv,
       'tasa_usd': tasaUsd,
-      'tipo_pago': metodoPago,
+      'tipo_pago': metodoPagoId,
       'comision_pago_movil_bs': comisionPagoMovilBs,
       'monto_bs': montoBs,
       'monto_usd': montoUsd,

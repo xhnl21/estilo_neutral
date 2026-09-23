@@ -54,6 +54,8 @@ app.*.map.json
 # Herramientas de despliegue (tools/) - credenciales y dependencias locales
 tools/apps_script/node_modules/
 tools/apps_script/.clasprc.json
+tools/apps_script_test/node_modules
+tools/apps_script_test/.clasprc.json
 tools/sheets_sync/client_secret.json
 tools/sheets_sync/token.json
 tools/sheets_sync/__pycache__/

@@ -27,6 +27,7 @@ abstract class RoutePaths {
   static const String usuarios = '/usuarios';
   static const String organizaciones = '/organizaciones';
   static const String metodosPago = '/metodos-pago';
+  static const String tasas = '/tasas';
 
   /// Helper para construir path de detalle de venta con id
   static String buildSaleDetailPath(String id) => '/ventas/$id';

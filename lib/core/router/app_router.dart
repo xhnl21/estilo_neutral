@@ -16,7 +16,7 @@ import 'route_paths.dart';
 
 
 /// Configuración centralizada de enrutamiento con go_router para Estilo Neutral.
-/// Implementa StatefulShellRoute.indexedStack para preservar el estado de las 12 vistas.
+/// Implementa StatefulShellRoute.indexedStack para preservar el estado de las 14 vistas.
 class AppRouter {
   final AuthNotifier authNotifier;
   final SheetsDataService dataService;
@@ -69,7 +69,7 @@ class AppRouter {
         // 1. Rutas independientes / de pantalla completa (Login y Onboarding)
         ...authRoutes.buildRoutes(),
 
-        // 2. Shell persistente con las 12 vistas del sistema
+        // 2. Shell persistente con las 14 vistas del sistema
         StatefulShellRoute.indexedStack(
           builder: (context, state, navigationShell) {
             return MainShell(
@@ -143,6 +143,11 @@ class AppRouter {
             // Rama 12: Métodos de Pago
             StatefulShellBranch(
               routes: [auditRoutesList[7]],
+            ),
+
+            // Rama 13: Tasas
+            StatefulShellBranch(
+              routes: [auditRoutesList[8]],
             ),
           ],
         ),

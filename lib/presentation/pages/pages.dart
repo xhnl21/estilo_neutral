@@ -10,3 +10,4 @@ export 'seguridad_page.dart';
 export 'usuarios_page.dart';
 export 'ventas_page.dart';
 export 'metodos_pago_page.dart';
+export 'tasas_page.dart';

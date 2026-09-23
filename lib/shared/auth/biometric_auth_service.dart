@@ -66,6 +66,37 @@ class BiometricAuthService {
         biometricOnly: true,
       );
     } on LocalAuthException catch (error, stackTrace) {
+      // "authInProgress": el plugin de Android puede quedar con una sesión
+      // de BiometricPrompt colgada (ej. si un intento previo se interrumpió
+      // por un cambio de foco, giro de pantalla, etc.) — desde ese momento
+      // TODA llamada a authenticate() falla de inmediato con este mismo
+      // código, sin volver a mostrar el prompt, así que reintentar sin más
+      // no sirve (el usuario queda atrapado tocando "reintentar" para
+      // siempre). stopAuthentication() fuerza a cancelar esa sesión colgada
+      // desde el lado nativo; una vez limpia, se reintenta una sola vez.
+      if (error.code == LocalAuthExceptionCode.authInProgress) {
+        Logger.warning('Sesión de biometría colgada (authInProgress); forzando cancelación y reintentando.');
+        try {
+          await _auth.stopAuthentication();
+          // stopAuthentication() le pide a Android que cierre el
+          // BiometricPrompt/Fragment anterior, pero esa destrucción no es
+          // instantánea del lado nativo — reintentar en el mismo tick, sin
+          // esperar, hace que el plugin todavía no tenga la Activity
+          // "libre" para adjuntar un prompt nuevo (falla como "Client
+          // activity was null", visto en los logs). Este pequeño respiro
+          // le da tiempo a la Fragment anterior de desprenderse antes de
+          // pedir una nueva.
+          await Future.delayed(const Duration(milliseconds: 400));
+          return await _auth.authenticate(
+            localizedReason: reason,
+            biometricOnly: true,
+          );
+        } catch (_) {
+          // Si el reintento también falla, cae al mismo manejo de error de
+          // abajo en vez de propagar una excepción distinta.
+        }
+      }
+
       // Si el usuario (o el sistema) canceló el diálogo, no es un error real
       // — se loguea como advertencia informativa, no como fallo.
       final esCancelacionBenigna = _codigosCancelacionBenigna.contains(error.code);

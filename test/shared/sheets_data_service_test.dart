@@ -4,13 +4,14 @@ import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:estilo_neutral/shared/google_sheets/sheets_data_service.dart';
 import 'package:estilo_neutral/models/models.dart';
+import '../test_sheets_config.dart';
 
 void main() {
   group('SheetsDataService Unit & CRUD Tests', () {
     late SheetsDataService service;
 
     setUp(() async {
-      service = SheetsDataService();
+      service = SheetsDataService(spreadsheetId: testSpreadsheetId, appsScriptUrl: testAppsScriptUrl);
       // Inicializar con datos de respaldo. Se espera a que termine (incluye
       // un fetch real de red) para que no siga corriendo en paralelo con el
       // cuerpo del test — si no, puede pisar cambios locales del test a
@@ -110,9 +111,7 @@ void main() {
           items: const [
             (productoId: 'p00000001', cantidad: 1, precioUsd: 20.0)
           ],
-          tasaBcv: 474.0,
-          tasaUsd: 30.0,
-          tipoPago: TipoPago.efectivo,
+          metodoPagoId: 'mp00000001',
           abonoUsd: 5.0,
         );
         expect(service.ventas.length, equals(initialCount + 1));
@@ -125,7 +124,7 @@ void main() {
         final creada = service.ventas.firstWhere((v) => v.id == ventaId);
 
         // Abono
-        service.registrarAbono(creada.id, 15.0);
+        service.registrarAbono(creada.id, 15.0, metodoPagoId: 'mp00000001');
         final ventaActualizada =
             service.ventas.firstWhere((v) => v.id == creada.id);
         expect(ventaActualizada.deudaUsd, equals(0.0));

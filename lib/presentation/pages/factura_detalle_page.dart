@@ -29,6 +29,8 @@ class FacturaDetallePage extends StatelessWidget {
 
         final cliente = dataService.clientes.where((c) => c.id == venta.clienteId).firstOrNull;
         final items = dataService.itemsDeVenta(venta.id);
+        final abonos = dataService.abonosDeVenta(venta.id).toList()
+          ..sort((a, b) => a.fecha.compareTo(b.fecha));
         final isPaid = venta.estado == EstadoVenta.pagada;
 
         return Scaffold(
@@ -59,11 +61,11 @@ class FacturaDetallePage extends StatelessWidget {
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      'Fecha: ${venta.fecha.toIso8601String().split('T').first} • Pago: ${venta.tipoPago.label}',
+                      'Fecha: ${venta.fecha.toIso8601String().split('T').first} • Pago: ${dataService.metodoPagoNombre(venta.metodoPagoId)}',
                       style: AppTypography.bodyMedium.copyWith(color: AppPalette.textSecondary),
                     ),
                     Text(
-                      'Tasa BCV: ${venta.tasaBcv.toStringAsFixed(2)} • Tasa USD: ${venta.tasaUsd.toStringAsFixed(2)}',
+                      'Tasa BCV: ${venta.tasaBcv.toStringAsFixed(2)} Bs.',
                       style: AppTypography.labelSmall.copyWith(color: AppPalette.textSecondary),
                     ),
                   ],
@@ -157,6 +159,58 @@ class FacturaDetallePage extends StatelessWidget {
                   ],
                 ),
               ),
+              if (abonos.isNotEmpty) ...[
+                const SizedBox(height: AppSpacing.md),
+                Semantics(
+                  header: true,
+                  headingLevel: 2,
+                  child: Text('Historial de Abonos', style: AppTypography.titleLarge.copyWith(fontSize: 16)),
+                ),
+                const SizedBox(height: AppSpacing.sm),
+                ...abonos.map((abono) => Padding(
+                      padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+                      child: AppCard(
+                        padding: AppSpacing.pMd,
+                        child: Row(
+                          children: [
+                            const ExcludeSemantics(
+                              child: Icon(CupertinoIcons.money_dollar_circle, color: AppPalette.blue700, size: 22),
+                            ),
+                            const SizedBox(width: AppSpacing.md),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    dataService.metodoPagoNombre(abono.metodoPagoId),
+                                    style: AppTypography.bodyMedium.copyWith(fontWeight: FontWeight.w600),
+                                  ),
+                                  Builder(builder: (context) {
+                                    final tasa = dataService.tasaPorId(abono.tasaId);
+                                    final tasaTexto = tasa != null
+                                        ? 'Tasa ${tasa.fuente == 'manual' ? 'manual' : 'BCV'}: ${tasa.valor.toStringAsFixed(2)}'
+                                        : 'Tasa no disponible';
+                                    return Text(
+                                      '${abono.fecha.toIso8601String().split('T').first} '
+                                      '${abono.fecha.hour.toString().padLeft(2, '0')}:'
+                                      '${abono.fecha.minute.toString().padLeft(2, '0')}'
+                                      ' • $tasaTexto',
+                                      style: AppTypography.labelSmall.copyWith(color: AppPalette.textSecondary),
+                                    );
+                                  }),
+                                ],
+                              ),
+                            ),
+                            AppMoneyText(
+                              amount: abono.monto,
+                              currency: MoneyCurrency.usd,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ],
+                        ),
+                      ),
+                    )),
+              ],
             ],
           ),
         );

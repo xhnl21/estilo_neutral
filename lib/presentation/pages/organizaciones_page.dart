@@ -358,69 +358,109 @@ class OrganizacionesPage extends StatelessWidget {
   void _showOrganizacionDialog(BuildContext context, {Organizacion? organizacion}) {
     final isEditing = organizacion != null;
     final nombreController = TextEditingController(text: organizacion?.nombre ?? '');
+    final tasaManualExistente = organizacion != null ? dataService.tasaManualOrganizacion(organizacion.id) : null;
+    final tasaManualController = TextEditingController(
+      text: tasaManualExistente != null ? tasaManualExistente.valor.toStringAsFixed(2) : '',
+    );
+    var monedaBase = organizacion != null ? dataService.monedaOrganizacion(organizacion.id) : 'USD';
 
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
-      builder: (ctx) => Padding(
-        padding: EdgeInsets.only(
-          bottom: MediaQuery.of(ctx).viewInsets.bottom + AppSpacing.lg,
-          left: AppSpacing.lg,
-          right: AppSpacing.lg,
-          top: AppSpacing.lg,
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setModalState) => Padding(
+          padding: EdgeInsets.only(
+            bottom: MediaQuery.of(ctx).viewInsets.bottom + AppSpacing.lg,
+            left: AppSpacing.lg,
+            right: AppSpacing.lg,
+            top: AppSpacing.lg,
+          ),
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  isEditing ? 'Editar Organización' : 'Nueva Organización',
-                  style: AppTypography.titleLarge.copyWith(fontSize: 17),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      isEditing ? 'Editar Organización' : 'Nueva Organización',
+                      style: AppTypography.titleLarge.copyWith(fontSize: 17),
+                    ),
+                    IconButton(
+                      icon: const Icon(CupertinoIcons.xmark_circle_fill, color: AppPalette.textSecondary),
+                      onPressed: () => Navigator.pop(ctx),
+                    ),
+                  ],
                 ),
-                IconButton(
-                  icon: const Icon(CupertinoIcons.xmark_circle_fill, color: AppPalette.textSecondary),
-                  onPressed: () => Navigator.pop(ctx),
+                const SizedBox(height: AppSpacing.md),
+                AppTextField(
+                  label: 'Nombre',
+                  controller: nombreController,
+                  hint: 'Ej: Estilo Neutral',
                 ),
-              ],
-            ),
-            const SizedBox(height: AppSpacing.md),
-            AppTextField(
-              label: 'Nombre',
-              controller: nombreController,
-              hint: 'Ej: Estilo Neutral',
-            ),
-            const SizedBox(height: AppSpacing.lg),
-            Row(
-              children: [
-                Expanded(child: AppOutlinedButton(label: 'Cancelar', onPressed: () => Navigator.pop(ctx))),
-                const SizedBox(width: AppSpacing.md),
-                Expanded(
-                  child: AppButton(
-                    label: isEditing ? 'Guardar Cambios' : 'Crear',
-                    icon: isEditing ? CupertinoIcons.check_mark : CupertinoIcons.add,
-                    onPressed: () async {
-                      final nombre = nombreController.text.trim();
-                      if (nombre.isEmpty) return;
-
-                      Navigator.pop(ctx);
-
-                      if (isEditing) {
-                        await dataService.updateOrganizacion(
-                          Organizacion(id: organizacion.id, nombre: nombre),
-                        );
-                      } else {
-                        await dataService.addOrganizacion(nombre);
-                      }
-                    },
+                if (isEditing) ...[
+                  const SizedBox(height: AppSpacing.lg),
+                  MonedaSelector(
+                    label: 'MONEDA BASE DEL SISTEMA',
+                    value: monedaBase,
+                    onChanged: (val) => setModalState(() => monedaBase = val),
                   ),
+                  const SizedBox(height: AppSpacing.lg),
+                  AppTextField(
+                    label: 'Tasa manual (opcional)',
+                    controller: tasaManualController,
+                    hint: 'Ej: 533.00 — vacío para no ofrecer tasa manual',
+                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.only(top: 4),
+                    child: Text(
+                      'Si la completás, al registrar ventas y abonos vas a poder elegir '
+                      'usar esta tasa fija en vez de la BCV automática del día.',
+                      style: AppTypography.labelSmall.copyWith(color: AppPalette.textSecondary),
+                    ),
+                  ),
+                ],
+                const SizedBox(height: AppSpacing.lg),
+                Row(
+                  children: [
+                    Expanded(child: AppOutlinedButton(label: 'Cancelar', onPressed: () => Navigator.pop(ctx))),
+                    const SizedBox(width: AppSpacing.md),
+                    Expanded(
+                      child: AppButton(
+                        label: isEditing ? 'Guardar Cambios' : 'Crear',
+                        icon: isEditing ? CupertinoIcons.check_mark : CupertinoIcons.add,
+                        onPressed: () async {
+                          final nombre = nombreController.text.trim();
+                          if (nombre.isEmpty) return;
+
+                          Navigator.pop(ctx);
+
+                          if (isEditing) {
+                            await dataService.updateOrganizacion(
+                              Organizacion(id: organizacion.id, nombre: nombre),
+                            );
+                            await dataService.setMonedaOrganizacion(organizacion.id, monedaBase);
+
+                            final tasaManual = double.tryParse(tasaManualController.text.trim().replaceAll(',', '.'));
+                            if (tasaManual != null && tasaManual > 0) {
+                              await dataService.setTasaManualOrganizacion(organizacion.id, monedaBase, tasaManual);
+                            } else if (tasaManualExistente != null) {
+                              await dataService.quitarTasaManualOrganizacion(organizacion.id);
+                            }
+                          } else {
+                            await dataService.addOrganizacion(nombre);
+                          }
+                        },
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),
-          ],
+          ),
         ),
       ),
     );
@@ -482,3 +522,4 @@ class OrganizacionesPage extends StatelessWidget {
     );
   }
 }
+

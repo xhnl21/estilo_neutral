@@ -7,6 +7,109 @@ import '../../core/router/route_paths.dart';
 import '../../models/models.dart';
 import '../../shared/shared.dart';
 
+/// Muestra la tasa que se va a aplicar al pago, junto al selector de método
+/// de pago. Si la organización no tiene una tasa manual configurada, es
+/// solo informativa (la BCV automática del día). Si sí la tiene, deja
+/// elegir entre la BCV automática y la manual de la organización — la
+/// elección queda guardada en el abono junto con el método y la fecha/hora.
+class _TasaSelector extends StatelessWidget {
+  final TasaRegistro? tasaAutomatica;
+  final TasaRegistro? tasaManual;
+  final bool usarManual;
+  final ValueChanged<bool> onChanged;
+
+  const _TasaSelector({
+    required this.tasaAutomatica,
+    required this.tasaManual,
+    required this.usarManual,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    if (tasaManual == null) {
+      return Padding(
+        padding: const EdgeInsets.only(top: AppSpacing.xs),
+        child: Row(
+          children: [
+            const Icon(CupertinoIcons.info_circle, size: 14, color: AppPalette.blue900),
+            const SizedBox(width: AppSpacing.xs),
+            Text(
+              tasaAutomatica != null
+                  ? 'Tasa BCV del día: ${tasaAutomatica!.valor.toStringAsFixed(2)} Bs. / ${tasaAutomatica!.moneda}'
+                  : 'Tasa BCV no disponible todavía',
+              style: AppTypography.labelSmall.copyWith(
+                color: AppPalette.blue900,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return Padding(
+      padding: const EdgeInsets.only(top: AppSpacing.xs),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _TasaOptionTile(
+            label: 'Tasa BCV automática',
+            valor: tasaAutomatica?.valor,
+            selected: !usarManual,
+            onTap: () => onChanged(false),
+          ),
+          _TasaOptionTile(
+            label: 'Tasa manual de la organización',
+            valor: tasaManual?.valor,
+            selected: usarManual,
+            onTap: () => onChanged(true),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _TasaOptionTile extends StatelessWidget {
+  final String label;
+  final double? valor;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _TasaOptionTile({required this.label, required this.valor, required this.selected, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(8),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 4),
+        child: Row(
+          children: [
+            Icon(
+              selected ? CupertinoIcons.checkmark_circle_fill : CupertinoIcons.circle,
+              size: 18,
+              color: selected ? AppPalette.primary : AppPalette.textSecondary,
+            ),
+            const SizedBox(width: AppSpacing.xs),
+            Expanded(
+              child: Text(
+                '$label${valor != null ? ': ${valor!.toStringAsFixed(2)} Bs.' : ''}',
+                style: AppTypography.labelSmall.copyWith(
+                  color: selected ? AppPalette.textPrimary : AppPalette.textSecondary,
+                  fontWeight: selected ? FontWeight.w600 : FontWeight.normal,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 /// Un renglón del carrito mientras se arma una factura nueva (estado local
 /// del formulario, no persistido hasta guardar la venta completa).
 class _CartLine {
@@ -196,6 +299,7 @@ class _VentasPageState extends State<VentasPage> {
                                   return _VentaCard(
                                     venta: v,
                                     cliente: ds.clientes.where((c) => c.id == v.clienteId).firstOrNull,
+                                    metodoPagoNombre: ds.metodoPagoNombre(v.metodoPagoId),
                                     cantidadItems: ds.itemsDeVenta(v.id).length,
                                     onTap: () => context.push(RoutePaths.buildSaleDetailPath(v.id)),
                                     onAbono: v.deudaUsd > 0 ? () => _showAbonoDialog(context, ds, v) : null,
@@ -223,11 +327,10 @@ class _VentasPageState extends State<VentasPage> {
     var selectedCliente = _filtroClienteId ?? ds.clientes.first.id;
     var selectedProducto = ds.productos.first.id;
     final cantidadController = TextEditingController(text: '1');
-    final tasaBcvController = TextEditingController(text: '474.00');
-    final tasaUsdController = TextEditingController(text: '30.00');
     final abonoController = TextEditingController(text: '0.00');
     final metodosActivos = ds.metodosPagoActivos;
-    var selectedMetodoPago = metodosActivos.isNotEmpty ? metodosActivos.first.nombre : 'Efectivo';
+    var selectedMetodoPago = metodosActivos.isNotEmpty ? metodosActivos.first.id : '';
+    var usarTasaManual = false;
     final carrito = <_CartLine>[];
 
     showModalBottomSheet(
@@ -248,8 +351,10 @@ class _VentasPageState extends State<VentasPage> {
             final productosParaElegir = productosUnicos.values.toList();
             final producto = productosParaElegir.firstWhere((p) => p.id == selectedProducto);
             final totalCarrito = carrito.fold<double>(0.0, (s, l) => s + l.subtotal);
-            final tasaBcv = double.tryParse(tasaBcvController.text) ?? 474.0;
-            final totalBs = totalCarrito * tasaBcv;
+            final tasaSeleccionada = usarTasaManual
+                ? ds.tasaManualOrganizacion(ds.currentOrganizacionId ?? '')
+                : ds.tasaVigenteEnMonedaBase;
+            final totalBs = totalCarrito * (tasaSeleccionada?.valor ?? 0.0);
 
             return Padding(
               padding: EdgeInsets.only(
@@ -372,36 +477,21 @@ class _VentasPageState extends State<VentasPage> {
                         );
                       }),
                     const SizedBox(height: AppSpacing.md),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: AppTextField(
-                            label: 'Tasa BCV (Bs./USD)',
-                            controller: tasaBcvController,
-                            keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                            onChanged: (_) => setModalState(() {}),
-                          ),
-                        ),
-                        const SizedBox(width: AppSpacing.md),
-                        Expanded(
-                          child: AppTextField(
-                            label: 'Tasa USD paralelo',
-                            controller: tasaUsdController,
-                            keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: AppSpacing.sm),
                     DropdownButtonFormField<String>(
-                      initialValue: metodosActivos.any((m) => m.nombre == selectedMetodoPago)
+                      initialValue: metodosActivos.any((m) => m.id == selectedMetodoPago)
                           ? selectedMetodoPago
-                          : (metodosActivos.isNotEmpty ? metodosActivos.first.nombre : null),
+                          : (metodosActivos.isNotEmpty ? metodosActivos.first.id : null),
                       decoration: const InputDecoration(labelText: 'Método de Pago', border: OutlineInputBorder()),
                       items: metodosActivos
-                          .map((mp) => DropdownMenuItem(value: mp.nombre, child: Text(mp.nombre)))
+                          .map((mp) => DropdownMenuItem(value: mp.id, child: Text(mp.nombre)))
                           .toList(),
-                      onChanged: (val) => setModalState(() => selectedMetodoPago = val ?? 'Efectivo'),
+                      onChanged: (val) => setModalState(() => selectedMetodoPago = val ?? metodosActivos.first.id),
+                    ),
+                    _TasaSelector(
+                      tasaAutomatica: ds.tasaVigenteEnMonedaBase,
+                      tasaManual: ds.tasaManualOrganizacion(ds.currentOrganizacionId ?? ''),
+                      usarManual: usarTasaManual,
+                      onChanged: (val) => setModalState(() => usarTasaManual = val),
                     ),
                     const SizedBox(height: AppSpacing.sm),
                     AppTextField(
@@ -446,10 +536,9 @@ class _VentasPageState extends State<VentasPage> {
                                 items: carrito
                                     .map((l) => (productoId: l.productoId, cantidad: l.cantidad, precioUsd: l.precioUsd))
                                     .toList(),
-                                tasaBcv: tasaBcv,
-                                tasaUsd: double.tryParse(tasaUsdController.text) ?? 30.0,
-                                metodoPago: selectedMetodoPago,
+                                metodoPagoId: selectedMetodoPago,
                                 abonoUsd: abono,
+                                usarTasaManual: usarTasaManual,
                               );
                             },
                           ),
@@ -469,7 +558,8 @@ class _VentasPageState extends State<VentasPage> {
   void _showAbonoDialog(BuildContext context, SheetsDataService ds, Venta v) {
     final abonoController = TextEditingController();
     final metodosActivos = ds.metodosPagoActivos;
-    var selectedMetodoPago = metodosActivos.isNotEmpty ? metodosActivos.first.nombre : 'Efectivo';
+    var selectedMetodoPago = metodosActivos.isNotEmpty ? metodosActivos.first.id : '';
+    var usarTasaManual = false;
 
     showDialog(
       context: context,
@@ -486,17 +576,23 @@ class _VentasPageState extends State<VentasPage> {
               ),
               const SizedBox(height: AppSpacing.md),
               DropdownButtonFormField<String>(
-                initialValue: metodosActivos.any((m) => m.nombre == selectedMetodoPago)
+                initialValue: metodosActivos.any((m) => m.id == selectedMetodoPago)
                     ? selectedMetodoPago
-                    : (metodosActivos.isNotEmpty ? metodosActivos.first.nombre : null),
+                    : (metodosActivos.isNotEmpty ? metodosActivos.first.id : null),
                 decoration: const InputDecoration(
                   labelText: 'Método de Pago para Abono',
                   border: OutlineInputBorder(),
                 ),
                 items: metodosActivos
-                    .map((mp) => DropdownMenuItem(value: mp.nombre, child: Text(mp.nombre)))
+                    .map((mp) => DropdownMenuItem(value: mp.id, child: Text(mp.nombre)))
                     .toList(),
-                onChanged: (val) => setDialogState(() => selectedMetodoPago = val ?? 'Efectivo'),
+                onChanged: (val) => setDialogState(() => selectedMetodoPago = val ?? metodosActivos.first.id),
+              ),
+              _TasaSelector(
+                tasaAutomatica: ds.tasaVigenteEnMonedaBase,
+                tasaManual: ds.tasaManualOrganizacion(ds.currentOrganizacionId ?? ''),
+                usarManual: usarTasaManual,
+                onChanged: (val) => setDialogState(() => usarTasaManual = val),
               ),
               const SizedBox(height: AppSpacing.sm),
               AppTextField(
@@ -514,7 +610,12 @@ class _VentasPageState extends State<VentasPage> {
               onPressed: () {
                 final monto = double.tryParse(abonoController.text.replaceAll(',', '.')) ?? 0.0;
                 if (monto > 0) {
-                  ds.registrarAbono(v.id, monto, metodoPago: selectedMetodoPago);
+                  ds.registrarAbono(
+                    v.id,
+                    monto,
+                    metodoPagoId: selectedMetodoPago,
+                    usarTasaManual: usarTasaManual,
+                  );
                 }
                 Navigator.pop(ctx);
               },
@@ -550,6 +651,7 @@ class _VentasPageState extends State<VentasPage> {
 class _VentaCard extends StatelessWidget {
   final Venta venta;
   final Cliente? cliente;
+  final String metodoPagoNombre;
   final int cantidadItems;
   final VoidCallback onTap;
   final VoidCallback? onAbono;
@@ -558,6 +660,7 @@ class _VentaCard extends StatelessWidget {
   const _VentaCard({
     required this.venta,
     required this.cliente,
+    required this.metodoPagoNombre,
     required this.cantidadItems,
     required this.onTap,
     required this.onAbono,
@@ -619,7 +722,7 @@ class _VentaCard extends StatelessWidget {
                 maxLines: 1,
               ),
               Text(
-                'Pago: ${venta.tipoPago.label} • Tasa BCV: ${venta.tasaBcv} • Fecha: ${venta.fecha.toIso8601String().split('T').first}',
+                'Pago: $metodoPagoNombre • Tasa BCV: ${venta.tasaBcv} • Fecha: ${venta.fecha.toIso8601String().split('T').first}',
                 style: AppTypography.labelSmall.copyWith(color: AppPalette.textSecondary),
                 overflow: TextOverflow.ellipsis,
                 maxLines: 1,

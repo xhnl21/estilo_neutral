@@ -27,4 +27,5 @@ abstract class RouteNames {
   static const String usuarios = 'usuarios';
   static const String organizaciones = 'organizaciones';
   static const String metodosPago = 'metodosPago';
+  static const String tasas = 'tasas';
 }

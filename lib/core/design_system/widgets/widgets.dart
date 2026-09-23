@@ -10,4 +10,5 @@ export 'app_refresh_button.dart';
 export 'app_scaffold.dart';
 export 'app_text_field.dart';
 export 'dismiss_keyboard.dart';
+export 'moneda_selector.dart';
 export 'skeletons/skeletons.dart';

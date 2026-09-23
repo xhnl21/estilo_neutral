@@ -132,19 +132,6 @@ function doPost(e) {
         );
         break;
 
-      case "refrescar_tasas":
-        result = obtenerTasaBCV();
-        break;
-
-      case "configurar_validaciones":
-        configurarValidacionesDatos();
-        result = { status: "success", message: "Validaciones de datos (FK) configuradas." };
-        break;
-
-      case "auditar_integridad":
-        result = auditarIntegridadReferencial();
-        break;
-
       default:
         return respond({ status: "error", message: "Acción no reconocida: " + action }, 400);
     }
@@ -235,26 +222,11 @@ function _handleCreate(ss, sheet, sheetName, data) {
     rowValues = [
       data.id,
       data.venta_id || "",
-      // Fecha Y HORA exacta del abono (ISO 8601 completo) — a diferencia de
-      // otras fechas del sistema, aquí importa el momento exacto del pago.
-      data.fecha || Utilities.formatDate(new Date(), "GMT-4", "yyyy-MM-dd'T'HH:mm:ss"),
+      data.fecha || Utilities.formatDate(new Date(), "GMT-4", "yyyy-MM-dd"),
       data.monto || 0.0,
       // Clave foránea a "metodo pago".id (no el nombre), igual que
       // ventas.tipo_pago.
-      data.metodo_pago || "",
-      // Clave foránea a "tasas".id — el valor y el origen ('bcv'/'manual')
-      // se resuelven haciendo el JOIN lógico contra esa hoja, nunca se
-      // duplican acá.
-      data.tasa_id || ""
-    ];
-  } else if (sheetName === "tasas") {
-    rowValues = [
-      data.id,
-      data.fecha || Utilities.formatDate(new Date(), "GMT-4", "yyyy-MM-dd"),
-      data.moneda || "USD",
-      data.valor || 0.0,
-      data.fuente || "bcv",
-      data.organizacion_id || ""
+      data.metodo_pago || ""
     ];
   } else if (sheetName === "compras_divisas") {
     rowValues = [
@@ -281,13 +253,6 @@ function _handleCreate(ss, sheet, sheetName, data) {
     rowValues = [
       data.id,
       data.nombre || ""
-    ];
-  } else if (sheetName === "moneda_organizacion") {
-    rowValues = [
-      data.id,
-      data.organizacion_id || "",
-      data.moneda || "USD",
-      data.actualizado_en || Utilities.formatDate(new Date(), "GMT-4", "yyyy-MM-dd'T'HH:mm:ss")
     ];
   } else if (sheetName === "usuario_organizacion") {
     rowValues = [
@@ -369,15 +334,6 @@ function _handleUpdate(ss, sheet, sheetName, id, data) {
     if (data.nombre !== undefined) sheet.getRange(rowIndex, 3).setValue(data.nombre);
   } else if (sheetName === "organizaciones") {
     if (data.nombre !== undefined) sheet.getRange(rowIndex, 2).setValue(data.nombre);
-  } else if (sheetName === "moneda_organizacion") {
-    if (data.moneda !== undefined) sheet.getRange(rowIndex, 3).setValue(data.moneda);
-    if (data.actualizado_en !== undefined) sheet.getRange(rowIndex, 4).setValue(data.actualizado_en);
-  } else if (sheetName === "tasas") {
-    if (data.fecha !== undefined) sheet.getRange(rowIndex, 2).setValue(data.fecha);
-    if (data.moneda !== undefined) sheet.getRange(rowIndex, 3).setValue(data.moneda);
-    if (data.valor !== undefined) sheet.getRange(rowIndex, 4).setValue(data.valor);
-    if (data.fuente !== undefined) sheet.getRange(rowIndex, 5).setValue(data.fuente);
-    if (data.organizacion_id !== undefined) sheet.getRange(rowIndex, 6).setValue(data.organizacion_id);
   } else if (sheetName === "usuario_organizacion") {
     if (data.organizacion_id !== undefined) sheet.getRange(rowIndex, 2).setValue(data.organizacion_id);
   } else if (sheetName === "metodo pago") {
@@ -537,260 +493,6 @@ function _appendAuditLog(ss, log) {
   } catch (e) {
     // Evitar romper la transacción si falla el log
   }
-}
-
-// =============================================================================
-// MÓDULO TASAS — tasa oficial BCV (USD/EUR) vía dolarvzla.com
-// =============================================================================
-// Se eligió el endpoint SIN API key (https://rates.dolarvzla.com/bcv/current.json)
-// en vez del que requiere generar/gestionar una x-dolarvzla-key: no hay
-// autenticación que renovar ni credenciales que guardar en Apps Script
-// (PropertiesService), la respuesta ya trae current/previous/changePercentage
-// en la forma exacta que necesitamos, y con UrlFetchApp.fetch basta una sola
-// llamada GET — cero pasos adicionales de setup.
-
-/**
- * Convierte una fecha (Date o string) al formato 'yyyy-MM-dd', para poder
- * comparar la columna "fecha" (que Sheets suele autodetectar como Date real,
- * no texto) contra un string sin que la comparación falle siempre por tipo.
- */
-function _fechaComoString(ss, valor) {
-  return valor instanceof Date
-    ? Utilities.formatDate(valor, ss.getSpreadsheetTimeZone(), 'yyyy-MM-dd')
-    : valor.toString();
-}
-
-/** Siguiente id correlativo para la hoja "tasas" (formato t00000001). */
-function _siguienteTasaId(sheet) {
-  const totalDatos = Math.max(sheet.getLastRow() - 1, 0);
-  const ids = totalDatos > 0 ? sheet.getRange(2, 1, totalDatos, 1).getValues() : [];
-  let maxId = 0;
-  ids.forEach(function (row) {
-    const n = parseInt(row[0].toString().replace(/[^0-9]/g, ''), 10);
-    if (!isNaN(n) && n > maxId) maxId = n;
-  });
-  return 't' + (maxId + 1).toString().padStart(8, '0');
-}
-
-/**
- * Crea o actualiza, en la hoja "tasas", la fila BCV global (organizacion_id
- * vacío) de [moneda] para la fecha [fecha] con [valor] — evita duplicar si
- * el trigger corre más de una vez el mismo día o si el BCV corrige la tasa
- * publicada.
- */
-function _upsertTasaBcv(ss, sheet, fecha, moneda, valor) {
-  const totalDatos = Math.max(sheet.getLastRow() - 1, 0);
-  const filas = totalDatos > 0 ? sheet.getRange(2, 1, totalDatos, 6).getValues() : [];
-  for (let i = 0; i < filas.length; i++) {
-    const [id, filaFecha, filaMoneda, , filaFuente, filaOrgId] = filas[i];
-    if (
-      filaFuente === 'bcv' &&
-      (filaOrgId || '') === '' &&
-      filaMoneda === moneda &&
-      _fechaComoString(ss, filaFecha) === fecha
-    ) {
-      sheet.getRange(i + 2, 4).setValue(valor);
-      return id;
-    }
-  }
-  const id = _siguienteTasaId(sheet);
-  sheet.appendRow([id, fecha, moneda, valor, 'bcv', '']);
-  return id;
-}
-
-/**
- * Obtiene la tasa oficial del BCV (USD y EUR) y la registra en la hoja
- * "tasas" — una fila por moneda (3FN: no empaqueta USD/EUR en la misma
- * fila). Si ya existe una fila BCV para esa fecha+moneda, la actualiza en
- * vez de duplicarla.
- */
-function obtenerTasaBCV() {
-  const URL = 'https://rates.dolarvzla.com/bcv/current.json';
-
-  try {
-    const response = UrlFetchApp.fetch(URL, { muteHttpExceptions: true });
-    const codigo = response.getResponseCode();
-    if (codigo !== 200) {
-      throw new Error('HTTP ' + codigo + ': ' + response.getContentText());
-    }
-
-    const data = JSON.parse(response.getContentText());
-
-    // Validar la forma esperada antes de leer campos anidados: si
-    // dolarvzla.com cambia su contrato, esto falla rápido y claro en vez de
-    // escribir "undefined" silenciosamente en la hoja.
-    if (!data.current || !data.current.date || data.current.usd === undefined || data.current.eur === undefined) {
-      throw new Error('Estructura de respuesta inesperada: ' + response.getContentText());
-    }
-
-    const ss = SpreadsheetApp.getActiveSpreadsheet();
-    let sheet = ss.getSheetByName('tasas');
-    if (!sheet) {
-      sheet = ss.insertSheet('tasas');
-      sheet.appendRow(['id', 'fecha', 'moneda', 'valor', 'fuente', 'organizacion_id']);
-    }
-
-    _upsertTasaBcv(ss, sheet, data.current.date, 'USD', data.current.usd);
-    _upsertTasaBcv(ss, sheet, data.current.date, 'EUR', data.current.eur);
-
-    return { status: "success", message: "Tasa del " + data.current.date + " actualizada.", fecha: data.current.date };
-  } catch (err) {
-    // El trigger diario llama a esta función e ignora el valor de retorno,
-    // así que un fallo transitorio de red no genera un correo de fallo por
-    // cada corte — queda en los logs de ejecución (Ver > Registros de
-    // ejecución en el editor). El botón "Obtener tasa de hoy" de la app SÍ
-    // usa este valor de retorno para avisarle al usuario si falló.
-    Logger.log('obtenerTasaBCV: error al obtener/registrar la tasa BCV: ' + err.toString());
-    return { status: "error", message: err.toString() };
-  }
-}
-
-/**
- * Crea (reemplazando cualquier trigger previo de la misma función) el
- * disparador diario que ejecuta obtenerTasaBCV() automáticamente. Se corre
- * UNA sola vez a mano desde el editor — no hace falta repetirla salvo que
- * se quiera cambiar el horario.
- */
-function crearTriggerDiarioTasas() {
-  ScriptApp.getProjectTriggers().forEach(function (t) {
-    if (t.getHandlerFunction() === 'obtenerTasaBCV') {
-      ScriptApp.deleteTrigger(t);
-    }
-  });
-
-  ScriptApp.newTrigger('obtenerTasaBCV')
-    .timeBased()
-    .everyDays(1)
-    .atHour(8) // 8:00 am, zona horaria del proyecto (America/Caracas)
-    .create();
-
-  Logger.log('Trigger diario creado: obtenerTasaBCV se ejecutará todos los días a las 8am.');
-}
-
-// =============================================================================
-// VALIDACIONES DE DATOS — enforcement de FK a nivel de Sheet
-// =============================================================================
-// Google Sheets no impone integridad referencial de forma nativa: nada evita
-// que alguien edite una celda a mano y escriba un id que no existe. Esta
-// función agrega listas desplegables (Data Validation) en las columnas que
-// son FK, para que el propio Sheet rechace valores fuera del catálogo real
-// — la defensa más barata contra "usar el nombre/valor en vez del ID".
-// Se corre UNA sola vez a mano desde el editor (o de nuevo si cambian los
-// rangos de alguna hoja catálogo).
-function configurarValidacionesDatos() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-
-  function requireListFromSheet(sourceSheetName, sourceColumnLetter) {
-    const sourceRange = ss.getSheetByName(sourceSheetName)
-      .getRange(sourceColumnLetter + '2:' + sourceColumnLetter + '1000');
-    return SpreadsheetApp.newDataValidation()
-      .requireValueInRange(sourceRange, true)
-      .setAllowInvalid(false)
-      .build();
-  }
-
-  const abonos = ss.getSheetByName('abonos');
-  if (abonos) {
-    abonos.getRange('E2:E1000').setDataValidation(requireListFromSheet('metodo pago', 'A'));
-    abonos.getRange('F2:F1000').setDataValidation(requireListFromSheet('tasas', 'A'));
-  }
-
-  const ventas = ss.getSheetByName('ventas');
-  if (ventas) {
-    ventas.getRange('F2:F1000').setDataValidation(requireListFromSheet('metodo pago', 'A'));
-  }
-
-  Logger.log('Validaciones de datos (FK) configuradas en abonos.metodo_pago, abonos.tasa_id y ventas.tipo_pago.');
-}
-
-// =============================================================================
-// AUDITORÍA DE INTEGRIDAD REFERENCIAL — mover huérfanos a "cuarentena"
-// =============================================================================
-// Las validaciones de datos de arriba previenen huérfanos NUEVOS, pero no
-// dicen nada de los que ya existan (datos cargados antes de la validación,
-// o filas editadas a mano en el Sheet saltándose la lista desplegable). Esta
-// función es el chequeo de fondo: recorre las hojas transaccionales,
-// confirma que cada FK resuelve a una fila real en su catálogo, y mueve a
-// "cuarentena" (sin borrar el dato — queda el JSON original completo) toda
-// fila que referencia algo que no existe. Se corre a mano cuando se
-// sospecha de datos sucios (después de una migración, o periódicamente).
-function auditarIntegridadReferencial() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-
-  function idsDe(sheetName) {
-    const sheet = ss.getSheetByName(sheetName);
-    if (!sheet || sheet.getLastRow() < 2) return {};
-    const valores = sheet.getRange(2, 1, sheet.getLastRow() - 1, 1).getValues();
-    const set = {};
-    valores.forEach(function (r) { if (r[0]) set[r[0].toString().trim()] = true; });
-    return set;
-  }
-
-  const clientesIds = idsDe('clientes');
-  const ventasIds = idsDe('ventas');
-  const metodoPagoIds = idsDe('metodo pago');
-  const tasasIds = idsDe('tasas');
-
-  let cuarentenaSheet = ss.getSheetByName('cuarentena');
-  if (!cuarentenaSheet) {
-    cuarentenaSheet = ss.insertSheet('cuarentena');
-    cuarentenaSheet.appendRow([
-      'id_registro_original', 'hoja_origen', 'fecha_deteccion', 'motivo_cuarentena',
-      'datos_originales_json', 'estado', 'resolucion', 'hash_evidencia', 'organizacion_id'
-    ]);
-  }
-
-  let totalCuarentena = 0;
-
-  function moverACuarentena(sheetName, fila, headers, rowIndex, motivo) {
-    const registro = {};
-    headers.forEach(function (h, i) { registro[h] = fila[i]; });
-    const json = JSON.stringify(registro);
-    const hash = Utilities.base64Encode(
-      Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, json)
-    );
-    cuarentenaSheet.appendRow([
-      fila[0], sheetName, new Date().toISOString(), motivo,
-      json, 'PENDIENTE_REVISION', '', hash, registro['organizacion_id'] || ''
-    ]);
-    ss.getSheetByName(sheetName).deleteRow(rowIndex);
-    totalCuarentena++;
-  }
-
-  // --- abonos: venta_id, metodo_pago y tasa_id deben resolver a algo real ---
-  const abonosSheet = ss.getSheetByName('abonos');
-  if (abonosSheet && abonosSheet.getLastRow() >= 2) {
-    const headers = abonosSheet.getRange(1, 1, 1, abonosSheet.getLastColumn()).getValues()[0];
-    // De abajo hacia arriba: deleteRow desplaza los índices de las filas
-    // siguientes, así que iterar en reversa evita saltarse una fila.
-    for (let r = abonosSheet.getLastRow(); r >= 2; r--) {
-      const fila = abonosSheet.getRange(r, 1, 1, abonosSheet.getLastColumn()).getValues()[0];
-      const [, ventaId, , , metodoPago, tasaId] = fila;
-      if (ventaId && !ventasIds[ventaId.toString().trim()]) {
-        moverACuarentena('abonos', fila, headers, r, 'venta_id "' + ventaId + '" no existe en ventas');
-      } else if (metodoPago && !metodoPagoIds[metodoPago.toString().trim()]) {
-        moverACuarentena('abonos', fila, headers, r, 'metodo_pago "' + metodoPago + '" no existe en metodo pago');
-      } else if (tasaId && !tasasIds[tasaId.toString().trim()]) {
-        moverACuarentena('abonos', fila, headers, r, 'tasa_id "' + tasaId + '" no existe en tasas');
-      }
-    }
-  }
-
-  // --- ventas: cliente_id debe resolver a un cliente real ---
-  const ventasSheet = ss.getSheetByName('ventas');
-  if (ventasSheet && ventasSheet.getLastRow() >= 2) {
-    const headers = ventasSheet.getRange(1, 1, 1, ventasSheet.getLastColumn()).getValues()[0];
-    for (let r = ventasSheet.getLastRow(); r >= 2; r--) {
-      const fila = ventasSheet.getRange(r, 1, 1, ventasSheet.getLastColumn()).getValues()[0];
-      const clienteId = fila[2];
-      if (clienteId && !clientesIds[clienteId.toString().trim()]) {
-        moverACuarentena('ventas', fila, headers, r, 'cliente_id "' + clienteId + '" no existe en clientes');
-      }
-    }
-  }
-
-  Logger.log('Auditoría de integridad referencial completa: ' + totalCuarentena + ' registro(s) movido(s) a cuarentena.');
-  return { status: 'success', message: totalCuarentena + ' registro(s) huérfano(s) movido(s) a cuarentena.' };
 }
 
 function respond(data, code) {
