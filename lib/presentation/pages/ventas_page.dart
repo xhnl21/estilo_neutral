@@ -110,6 +110,34 @@ class _TasaOptionTile extends StatelessWidget {
   }
 }
 
+/// Diálogo de progreso mientras se registra un abono — no descartable
+/// (ni tocando afuera ni con el botón de retroceso), para que el usuario no
+/// lo cierre a mitad de camino pensando que quedó colgado.
+class _ProcesandoPagoDialog extends StatelessWidget {
+  const _ProcesandoPagoDialog();
+
+  @override
+  Widget build(BuildContext context) {
+    return PopScope(
+      canPop: false,
+      child: AlertDialog(
+        content: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SizedBox(
+              width: 20,
+              height: 20,
+              child: CircularProgressIndicator(strokeWidth: 2.5),
+            ),
+            const SizedBox(width: AppSpacing.md),
+            Text('Procesando pago...', style: AppTypography.bodyMedium),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 /// Un renglón del carrito mientras se arma una factura nueva (estado local
 /// del formulario, no persistido hasta guardar la venta completa).
 class _CartLine {
@@ -155,16 +183,27 @@ class _VentasPageState extends State<VentasPage> {
   }
 
   @override
+  void didUpdateWidget(covariant VentasPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // StatefulShellRoute.indexedStack preserva el estado de la pestaña
+    // Ventas entre visitas — al volver a navegar acá (ej. desde "Ver
+    // Compras" en Clientes) con un ?cliente= distinto, Flutter reutiliza
+    // este mismo State en vez de recrearlo, así que initState() no vuelve a
+    // correr. Sin este chequeo, el filtro de cliente del primer ingreso
+    // queda pegado para siempre y los clics posteriores en "Ver Compras"
+    // no filtran nada.
+    if (widget.clienteIdInicial != oldWidget.clienteIdInicial) {
+      _filtroClienteId = widget.clienteIdInicial;
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
     final ds = widget.dataService;
 
     return ListenableBuilder(
       listenable: ds,
       builder: (context, _) {
-        final clienteFiltrado = _filtroClienteId == null
-            ? null
-            : ds.clientes.where((c) => c.id == _filtroClienteId).firstOrNull;
-
         final ventas = ds.ventas.where((v) {
           if (_filtroClienteId != null && v.clienteId != _filtroClienteId) return false;
           if (_filterStatus == 'Pagada') return v.estado == EstadoVenta.pagada;
@@ -173,7 +212,12 @@ class _VentasPageState extends State<VentasPage> {
         }).toList();
 
         final totalVentasUsd = ventas.fold<double>(0.0, (sum, v) => sum + v.totalPagarUsd);
-        final totalDeudaUsd = ventas.fold<double>(0.0, (sum, v) => sum + v.deudaUsd);
+        // Defensivo: deuda_usd viene de una fórmula del Sheet — se clamp acá
+        // también, por si alguna fila vieja todavía no recalculó con el
+        // MAX(0,...) nuevo. Un excedente (pago que superó el total de esa
+        // factura) nunca debe aparecer mezclado como deuda negativa.
+        final totalDeudaUsd = ventas.fold<double>(0.0, (sum, v) => sum + (v.deudaUsd > 0 ? v.deudaUsd : 0.0));
+        final totalExcedenteUsd = ventas.fold<double>(0.0, (sum, v) => sum + v.excedenteUsd);
 
         return AppScaffold(
           title: 'Ventas',
@@ -202,18 +246,35 @@ class _VentasPageState extends State<VentasPage> {
                 : Column(
                     key: const ValueKey('sales_content'),
                     children: [
-                      if (clienteFiltrado != null)
-                        Padding(
-                          padding: const EdgeInsets.fromLTRB(AppSpacing.lg, AppSpacing.sm, AppSpacing.lg, 0),
-                          child: Align(
-                            alignment: Alignment.centerLeft,
-                            child: InputChip(
-                              label: Text('Cliente: ${clienteFiltrado.nombre}'),
-                              avatar: const Icon(CupertinoIcons.person_fill, size: 16),
-                              onDeleted: () => setState(() => _filtroClienteId = null),
-                            ),
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(AppSpacing.lg, AppSpacing.sm, AppSpacing.lg, 0),
+                        child: DropdownButtonFormField<String?>(
+                          // Sin este key, si _filtroClienteId cambia desde
+                          // afuera (ej. didUpdateWidget al llegar por otro
+                          // "Ver Compras" mientras esta pestaña ya estaba
+                          // viva), el FormField interno no vuelve a leer
+                          // initialValue y la selección visible queda
+                          // desactualizada aunque el filtro real sí cambió.
+                          key: ValueKey('cliente_filter_$_filtroClienteId'),
+                          initialValue: _filtroClienteId,
+                          isExpanded: true,
+                          decoration: const InputDecoration(
+                            labelText: 'Filtrar por cliente',
+                            prefixIcon: Icon(CupertinoIcons.person_fill, size: 18),
+                            border: OutlineInputBorder(),
+                            isDense: true,
                           ),
+                          items: [
+                            const DropdownMenuItem<String?>(value: null, child: Text('Todos los clientes')),
+                            // Deduplicado por id: un dato sucio en clientes
+                            // (id repetido) no debería tumbar este dropdown.
+                            ...{for (final c in ds.clientes) c.id: c}.values.map(
+                                  (c) => DropdownMenuItem<String?>(value: c.id, child: Text(c.nombre, overflow: TextOverflow.ellipsis)),
+                                ),
+                          ],
+                          onChanged: (val) => setState(() => _filtroClienteId = val),
                         ),
+                      ),
                       Padding(
                         padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg, vertical: AppSpacing.sm),
                         child: Row(
@@ -261,6 +322,31 @@ class _VentasPageState extends State<VentasPage> {
                           ],
                         ),
                       ),
+                      // Solo se muestra si de verdad hay un excedente (algún
+                      // cliente abonó más de lo que costaba una factura
+                      // puntual) — no es un estado normal, así que no ocupa
+                      // espacio en pantalla cuando no aplica.
+                      if (totalExcedenteUsd > 0)
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(AppSpacing.lg, 0, AppSpacing.lg, AppSpacing.sm),
+                          child: AppCard(
+                            padding: AppSpacing.pMd,
+                            mergeSemantics: true,
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Text('EXCEDENTE', style: AppTypography.labelSmall.copyWith(color: AppPalette.success)),
+                                AppMoneyText(
+                                  amount: totalExcedenteUsd,
+                                  currency: MoneyCurrency.usd,
+                                  nature: MoneyNature.credit,
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
                       Padding(
                         padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg, vertical: AppSpacing.xs),
                         child: Row(
@@ -607,17 +693,53 @@ class _VentasPageState extends State<VentasPage> {
             TextButton(child: const Text('Cancelar'), onPressed: () => Navigator.pop(ctx)),
             FilledButton(
               child: const Text('Aplicar Abono'),
-              onPressed: () {
+              onPressed: () async {
                 final monto = double.tryParse(abonoController.text.replaceAll(',', '.')) ?? 0.0;
-                if (monto > 0) {
-                  ds.registrarAbono(
-                    v.id,
-                    monto,
-                    metodoPagoId: selectedMetodoPago,
-                    usarTasaManual: usarTasaManual,
+                if (monto <= 0) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Ingresá un monto válido para abonar.')),
                   );
+                  return;
                 }
-                Navigator.pop(ctx);
+
+                Navigator.pop(ctx); // cierra el diálogo de abono
+
+                // Diálogo de progreso mientras se sincroniza con Google
+                // Sheets — no se puede cerrar tocando afuera ni con el
+                // botón de retroceso, para que el usuario no piense que
+                // falló y lo intente de nuevo mientras el pedido sigue en
+                // curso (evita abonos duplicados).
+                showDialog(
+                  context: context,
+                  barrierDismissible: false,
+                  useRootNavigator: true, // ver por qué en el pop de abajo
+                  builder: (_) => const _ProcesandoPagoDialog(),
+                );
+
+                final ok = await ds.registrarAbono(
+                  v.id,
+                  monto,
+                  metodoPagoId: selectedMetodoPago,
+                  usarTasaManual: usarTasaManual,
+                );
+
+                if (!context.mounted) return;
+                // showDialog empuja el diálogo de progreso al Navigator
+                // raíz (useRootNavigator: true, su default) — pero
+                // Navigator.pop(context) a secas resuelve el Navigator MÁS
+                // CERCANO, que acá adentro de un StatefulShellRoute es el
+                // Navigator de la propia rama "Ventas", no el raíz. Sin
+                // rootNavigator: true, esto no cerraba el diálogo sino que
+                // sacaba a Ventas de su propia rama (sin nada debajo),
+                // tumbando go_router con "no pages left to show".
+                Navigator.of(context, rootNavigator: true).pop(); // cierra "Procesando pago..."
+
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text(ok ? 'Pago registrado' : 'No se pudo registrar el pago. Probá de nuevo.'),
+                    backgroundColor: ok ? AppPalette.success : AppPalette.error,
+                  ),
+                );
               },
             ),
           ],

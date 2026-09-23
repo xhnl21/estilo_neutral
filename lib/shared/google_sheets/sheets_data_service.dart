@@ -314,7 +314,7 @@ class SheetsDataService extends ChangeNotifier {
         safeFetch(
           'abonos',
           _parseAbonos,
-          expectedHeaders: const ['id', 'venta_id', 'fecha', 'monto', 'metodo_pago', 'tasa_bcv', 'tasa_fuente'],
+          expectedHeaders: const ['id', 'venta_id', 'fecha', 'monto', 'metodo_pago', 'tasa_id'],
         ),
         safeFetch('compras_divisas', _parseCompras),
         safeFetch('resumen_diario', _parseResumenes),

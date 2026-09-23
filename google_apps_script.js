@@ -215,7 +215,11 @@ function _handleCreate(ss, sheet, sheetName, data) {
       // hay que probarlo contra el Sheet real. Ver docs/google/troubleshooting.md.
       '=SUMIF(venta_items!B:B; A' + r + '; venta_items!F:F)',
       data.abono_usd || 0.0,
-      '=L' + r + '-J' + r,
+      // MAX(0, ...): si el cliente abona más de lo que costaba esta
+      // factura puntual, esto NO debe quedar como un número negativo (eso
+      // es un excedente, no una deuda) — ver Venta.excedenteUsd en Dart,
+      // que calcula ese exceso aparte a partir de abono_usd/total_pagar_usd.
+      '=MAX(0;L' + r + '-J' + r + ')',
       '=I' + r,
       data.validacion || "OK",
       data.estado || "Pendiente",

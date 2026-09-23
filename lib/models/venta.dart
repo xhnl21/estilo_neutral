@@ -58,6 +58,15 @@ class Venta {
   /// Columna O: Identificador de la organización a la que pertenece el registro
   final String organizacionId;
 
+  /// Cuánto pagó de más el cliente en ESTA factura puntual (abonoUsd por
+  /// encima de totalPagarUsd) — 0 si no hubo excedente. No es una columna
+  /// del Sheet: se calcula solo, para no duplicar en el Sheet un dato ya
+  /// derivable de abono_usd/total_pagar_usd.
+  double get excedenteUsd {
+    final exceso = abonoUsd - totalPagarUsd;
+    return exceso > 0 ? exceso : 0.0;
+  }
+
   const Venta({
     required this.id,
     required this.fecha,

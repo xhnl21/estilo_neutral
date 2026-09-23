@@ -148,7 +148,24 @@ class _ClientesView extends StatelessWidget {
                         itemCount: clientes.length,
                         itemBuilder: (context, index) {
                           final cliente = clientes[index];
-                          final hasDebt = cliente.saldoDeudaUsd > 0;
+                          final ventasDelCliente = cubit.dataService.ventas
+                              .where((v) => v.clienteId == cliente.id);
+                          // Deuda real, calculada desde las facturas del
+                          // cliente (fuente de verdad) en vez de
+                          // cliente.saldoDeudaUsd — ese campo se mantiene
+                          // aparte, incrementado/decrementado a mano en cada
+                          // venta/abono, y puede desincronizarse (fue
+                          // exactamente lo que pasó acá: quedó en $600
+                          // aunque la factura correspondiente ya estaba
+                          // pagada).
+                          final deudaReal = ventasDelCliente.fold<double>(
+                              0.0, (sum, v) => sum + (v.deudaUsd > 0 ? v.deudaUsd : 0.0));
+                          final hasDebt = deudaReal > 0;
+                          // Cuánto pagó de más este cliente en alguna de
+                          // sus facturas (ver Venta.excedenteUsd) — solo se
+                          // muestra si de verdad existe, no es un estado
+                          // normal de un cliente.
+                          final excedente = ventasDelCliente.fold<double>(0.0, (sum, v) => sum + v.excedenteUsd);
 
                           return Padding(
                             padding: const EdgeInsets.only(bottom: AppSpacing.sm),
@@ -225,7 +242,7 @@ class _ClientesView extends StatelessWidget {
                                                 ),
                                               ),
                                               AppMoneyText(
-                                                amount: cliente.saldoDeudaUsd,
+                                                amount: deudaReal,
                                                 currency: MoneyCurrency.usd,
                                                 nature: hasDebt
                                                     ? MoneyNature.debt
@@ -241,6 +258,22 @@ class _ClientesView extends StatelessWidget {
                                                   color: AppPalette.textSecondary,
                                                 ),
                                               ),
+                                              if (excedente > 0) ...[
+                                                Text(
+                                                  '• Excedente: ',
+                                                  style: AppTypography.labelSmall.copyWith(
+                                                    color: AppPalette.success,
+                                                    fontWeight: FontWeight.w600,
+                                                  ),
+                                                ),
+                                                AppMoneyText(
+                                                  amount: excedente,
+                                                  currency: MoneyCurrency.usd,
+                                                  nature: MoneyNature.credit,
+                                                  fontSize: 13,
+                                                  fontWeight: FontWeight.w600,
+                                                ),
+                                              ],
                                             ],
                                           ),
                                         ],
