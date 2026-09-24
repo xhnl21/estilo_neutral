@@ -51,7 +51,14 @@ function doPost(e) {
     const payload = JSON.parse(e.postData.contents);
     const action = payload.action; // "create", "update", "delete", "toggle_checklist", "set_metodo_seguridad", "upload_image"
     const sheetName = payload.sheet;
-    const data = payload.data || {};
+    // Sanitizado contra inyección de fórmulas (CWE-1236): un nombre/email/
+    // teléfono que empiece con =, +, -, @ o tab se interpreta como fórmula
+    // al escribirlo con setValues(). Se antepone una comilla simple — la
+    // misma convención que usa Sheets para forzar texto plano cuando el
+    // usuario tipea a mano — a cualquier string de "data" que empiece así,
+    // antes de que ningún handler la use. De paso evita que un teléfono
+    // E.164 (empieza con "+") se guarde como número, perdiendo el signo.
+    const data = _sanitizarContraFormulas(payload.data || {});
     const id = payload.id || (data ? data.id : null);
 
     const ss = getSpreadsheet();
@@ -820,4 +827,34 @@ function auditarIntegridadReferencial() {
 function respond(data, code) {
   return ContentService.createTextOutput(JSON.stringify(data))
     .setMimeType(ContentService.MimeType.JSON);
+}
+
+// Caracteres que Sheets interpreta como inicio de fórmula/expresión al
+// escribirlos con setValues() (CWE-1236 / CSV-Formula Injection): '=', '+',
+// '-', '@' y tab. Anteponer una comilla simple fuerza texto plano — es la
+// misma convención que usa la UI de Sheets cuando el usuario tipea un valor
+// así a mano, y setValues()/setValue() la respetan igual (mismo parseo que
+// "USER_ENTERED").
+const _CARACTERES_FORMULA = ['=', '+', '-', '@', '\t'];
+
+function _sanitizarContraFormulas(valor) {
+  if (typeof valor === 'string') {
+    if (valor.length > 0 && _CARACTERES_FORMULA.indexOf(valor.charAt(0)) !== -1) {
+      return "'" + valor;
+    }
+    return valor;
+  }
+  if (Array.isArray(valor)) {
+    return valor.map(_sanitizarContraFormulas);
+  }
+  if (valor && typeof valor === 'object') {
+    const limpio = {};
+    for (const key in valor) {
+      if (Object.prototype.hasOwnProperty.call(valor, key)) {
+        limpio[key] = _sanitizarContraFormulas(valor[key]);
+      }
+    }
+    return limpio;
+  }
+  return valor;
 }

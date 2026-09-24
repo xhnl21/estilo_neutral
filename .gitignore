@@ -60,6 +60,10 @@ tools/sheets_sync/client_secret.json
 tools/sheets_sync/token.json
 tools/sheets_sync/__pycache__/
 
+# Cualquier credencial OAuth de Google Cloud descargada a mano a la raíz del
+# repo (ver docs/google/troubleshooting.md) — no solo la de tools/sheets_sync/.
+client_secret*.json
+
 # MkDocs — sitio generado, no se commitea
 /site/
 

@@ -53,9 +53,10 @@ El código de este proyecto referencia constantemente normas internacionales en 
 **Cumple:**
 
 - Tokens de sesión cifrados con `flutter_secure_storage` (Keychain en iOS, EncryptedSharedPreferences en Android).
-- Credenciales de las herramientas de automatización (`client_secret.json`, `token.json`, `~/.clasprc.json`) excluidas de control de versiones.
+- Credenciales de las herramientas de automatización (`client_secret.json`, `token.json`, `~/.clasprc.json`) excluidas de control de versiones. **Corrección:** una auditoría posterior encontró 3 archivos `client_secret_312343708119-*.json` (credenciales OAuth tipo "Desktop app", sin campo `client_secret` real) commiteados en la raíz del repo — no cubiertos por esta regla. Se sacaron del control de versiones y se agregó el patrón `client_secret*.json` al `.gitignore` para que no vuelva a pasar. Pendiente de decisión: `upload-keystore.jks.md` (el keystore real de firma, con extensión disfrazada) sigue en el historial de git — no se tocó, requiere decidir si ya se usó para firmar algo publicado antes de rotar la clave o reescribir historia.
 - Bitácora de auditoría (`audit_log`) que registra las mutaciones del sistema.
 - Sanitización de PII antes de loguear (`Logger.sanitize` ofusca emails, JWTs y claves sensibles — ver [`lib/core/utils/logger.dart`](../lib/core/utils/logger.dart)).
+- **Sanitización contra inyección de fórmulas (CWE-1236 / CSV-Formula Injection):** `google_apps_script.js` (`_sanitizarContraFormulas`) antepone una comilla simple a cualquier valor de texto que empiece con `=`, `+`, `-`, `@` o tab, antes de escribirlo en cualquier hoja — un nombre de cliente como `=IMPORTXML(...)` ya no se ejecuta como fórmula al abrir la planilla en un navegador. De paso, preserva el `+` de teléfonos en formato E.164 (antes se perdía, porque Sheets interpretaba `+584121234567` como una expresión numérica).
 
 **No cumple (brechas reales de arquitectura, no de configuración):**
 
@@ -87,6 +88,7 @@ El código de este proyecto referencia constantemente normas internacionales en 
 
 - **MASVS-STORAGE**: tokens en almacenamiento cifrado nativo.
 - **MASVS-PRIVACY** (parcial): sanitización de PII en logs.
+- **MASVS-PLATFORM** (CWE-1236, Formula/CSV Injection): sanitizado del lado del backend (`_sanitizarContraFormulas` en `google_apps_script.js`) — ver arriba, sección ISO/IEC 27001.
 
 **No cumple:**
 
