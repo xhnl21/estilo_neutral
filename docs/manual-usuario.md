@@ -47,9 +47,9 @@ Acá se registran las personas que te compran.
 
 Acá están los productos que vendés, con su stock y precio.
 
-- **Agregar un producto:** botón **"Nuevo Producto"** → nombre, marca, modelo, talla, cantidad y precio en dólares. Opcionalmente podés poner el enlace de una foto guardada en Google Drive.
+- **Agregar un producto:** botón **"Nuevo Producto"** → nombre, marca, modelo, talla, cantidad y precio en dólares. Opcionalmente le sacás una foto (cámara o galería) — no hace falta ningún enlace ni ID.
 - **Sumar o restar stock rápido:** cada producto tiene botones **+** y **−** al lado de la cantidad, para no tener que abrir el formulario completo cada vez que entra o sale mercadería.
-- **Cambiar la foto:** ícono de imagen en la tarjeta del producto.
+- **Cambiar la foto:** ícono de imagen en la tarjeta del producto → tomar una foto nueva, elegirla de la galería, descargarla al teléfono, o quitarla.
 - **Editar o borrar:** igual que en Clientes.
 
 ## Ventas

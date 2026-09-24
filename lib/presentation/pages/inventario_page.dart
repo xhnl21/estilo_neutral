@@ -1,12 +1,17 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:gal/gal.dart';
+import 'package:http/http.dart' as http;
+import 'package:image_picker/image_picker.dart';
 import '../../core/config/environment_config.dart';
 import '../../core/design_system/design_system.dart';
 import '../../models/models.dart';
 import '../../shared/shared.dart';
 
 /// Vista de Inventario / Catálogo de Productos (hoja: inventario)
-/// Integración directa con Google Drive para almacenamiento, actualización y reemplazo de fotos.
+/// La foto de cada producto se toma con la cámara o se elige de la
+/// galería del teléfono — el usuario nunca ve rutas ni IDs de Google
+/// Drive (ver [_FotoPicker] y [SheetsDataService.subirFotoGaleria]).
 class InventarioPage extends StatefulWidget {
   final SheetsDataService dataService;
   final String? initialSearchQuery;
@@ -60,60 +65,9 @@ class _InventarioPageState extends State<InventarioPage> {
           ),
           body: Column(
             children: [
-              // Banner informativo de la carpeta de Google Drive
-              Padding(
-                padding: const EdgeInsets.fromLTRB(AppSpacing.lg, AppSpacing.sm, AppSpacing.lg, AppSpacing.xs),
-                child: AppCard(
-                  padding: AppSpacing.pSm,
-                  child: Row(
-                    children: [
-                      const Icon(CupertinoIcons.folder_badge_person_crop, size: 22, color: AppPalette.blue700),
-                      const SizedBox(width: AppSpacing.sm),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'Carpeta Google Drive Oficial',
-                              style: AppTypography.titleLarge.copyWith(fontSize: 13, color: AppPalette.blue900),
-                            ),
-                            Text(
-                              'ID: ${GoogleDriveHelper.folderId}',
-                              style: AppTypography.labelSmall.copyWith(
-                                fontSize: 10,
-                                fontFamily: 'monospace',
-                                color: AppPalette.textSecondary,
-                              ),
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ],
-                        ),
-                      ),
-                      IconButton(
-                        icon: const Icon(CupertinoIcons.doc_on_clipboard, size: 18, color: AppPalette.blue700),
-                        tooltip: 'Copiar enlace de carpeta',
-                        onPressed: () async {
-                          await GoogleDriveHelper.copyFolderUrl();
-                          if (context.mounted) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(content: Text('Enlace de la carpeta copiado al portapapeles.')),
-                            );
-                          }
-                        },
-                      ),
-                      IconButton(
-                        icon: const Icon(CupertinoIcons.arrow_up_right_square, size: 18, color: AppPalette.blue700),
-                        tooltip: 'Abrir carpeta en Google Drive',
-                        onPressed: () => GoogleDriveHelper.openFolder(),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-
               // Barra de búsqueda
               Padding(
-                padding: const EdgeInsets.fromLTRB(AppSpacing.lg, AppSpacing.xs, AppSpacing.lg, AppSpacing.sm),
+                padding: const EdgeInsets.fromLTRB(AppSpacing.lg, AppSpacing.sm, AppSpacing.lg, AppSpacing.sm),
                 child: AppTextField(
                   label: 'Buscar producto',
                   hint: 'Prenda, marca, modelo, talla o ID...',
@@ -145,7 +99,8 @@ class _InventarioPageState extends State<InventarioPage> {
                           final producto = productos[index];
                           final isDepleted = producto.cantidad <= 0;
                           final isLowStock = producto.cantidad > 0 && producto.cantidad <= 3;
-                          final hasPhoto = producto.fotoUrl != null && producto.fotoUrl!.isNotEmpty;
+                          final fotoUrl = widget.dataService.fotoUrlPorId(producto.fotoId);
+                          final hasPhoto = fotoUrl != null && fotoUrl.isNotEmpty;
 
                           return Padding(
                             padding: const EdgeInsets.only(bottom: AppSpacing.sm),
@@ -158,10 +113,10 @@ class _InventarioPageState extends State<InventarioPage> {
                                   Semantics(
                                     button: true,
                                     label: 'Actualizar foto de ${producto.nombre}',
-                                    hint: 'Toca dos veces para cambiar o ver la foto',
+                                    hint: 'Toca dos veces para tomar, elegir o descargar la foto',
                                     child: InkWell(
                                       borderRadius: BorderRadius.circular(8),
-                                      onTap: () => _showUpdateImageDialog(context, producto),
+                                      onTap: () => _showFotoActionSheet(context, producto),
                                       child: Stack(
                                         children: [
                                           Container(
@@ -175,7 +130,7 @@ class _InventarioPageState extends State<InventarioPage> {
                                                 ? ClipRRect(
                                                     borderRadius: BorderRadius.circular(8),
                                                     child: Image.network(
-                                                      producto.fotoUrl!,
+                                                      fotoUrl,
                                                       fit: BoxFit.cover,
                                                       errorBuilder: (_, __, ___) => const Center(
                                                         child: ExcludeSemantics(
@@ -331,14 +286,14 @@ class _InventarioPageState extends State<InventarioPage> {
                                     children: [
                                       Semantics(
                                         button: true,
-                                        label: 'Cambiar o actualizar imagen de ${producto.nombre}',
+                                        label: 'Cambiar foto de ${producto.nombre}',
                                         child: IconButton(
                                           visualDensity: VisualDensity.compact,
                                           padding: EdgeInsets.zero,
                                           constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
                                           icon: const Icon(CupertinoIcons.photo_camera, size: 18, color: AppPalette.blue700),
-                                          tooltip: 'Cambiar o actualizar imagen en Google Drive',
-                                          onPressed: () => _showUpdateImageDialog(context, producto),
+                                          tooltip: 'Tomar, elegir o descargar foto',
+                                          onPressed: () => _showFotoActionSheet(context, producto),
                                         ),
                                       ),
                                       const SizedBox(height: 2),
@@ -384,212 +339,68 @@ class _InventarioPageState extends State<InventarioPage> {
     );
   }
 
-  /// Diálogo especializado para cambiar o actualizar la imagen en Google Drive
-  void _showUpdateImageDialog(BuildContext context, Producto producto) {
-    var rawInput = producto.fotoUrl ?? '';
-    var previewUrl = producto.fotoUrl ?? '';
-    final urlController = TextEditingController(text: rawInput);
+  /// Bottom sheet para tomar/elegir/descargar la foto de un producto que ya
+  /// existe en inventario — los cambios se guardan al instante (no hace
+  /// falta un botón "Guardar" aparte, es la única acción de este diálogo).
+  void _showFotoActionSheet(BuildContext context, Producto producto) {
+    var fotoIdActual = producto.fotoId;
 
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
-      builder: (ctx) {
-        return StatefulBuilder(
-          builder: (context, setModalState) {
-            return Padding(
-              padding: EdgeInsets.only(
-                bottom: MediaQuery.of(ctx).viewInsets.bottom + AppSpacing.lg,
-                left: AppSpacing.lg,
-                right: AppSpacing.lg,
-                top: AppSpacing.lg,
-              ),
-              child: SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Flexible(
-                          child: Text(
-                            'Actualizar Imagen: ${producto.nombre}',
-                            style: AppTypography.titleLarge.copyWith(fontSize: 16),
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                        IconButton(
-                          icon: const Icon(CupertinoIcons.xmark_circle_fill, color: AppPalette.textSecondary),
-                          onPressed: () => Navigator.pop(ctx),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: AppSpacing.sm),
-
-                    // Card informativa con botón para abrir Google Drive
-                    AppCard(
-                      padding: AppSpacing.pSm,
-                      child: Row(
-                        children: [
-                          const Icon(CupertinoIcons.cloud_upload_fill, color: AppPalette.blue700, size: 20),
-                          const SizedBox(width: AppSpacing.sm),
-                          const Expanded(
-                            child: Text(
-                              'Sube tu foto a la carpeta de Google Drive y pega aquí el enlace o ID.',
-                              style: TextStyle(fontSize: 12),
-                            ),
-                          ),
-                          TextButton.icon(
-                            icon: const Icon(CupertinoIcons.arrow_up_right, size: 14),
-                            label: const Text('Abrir Drive', style: TextStyle(fontSize: 12)),
-                            onPressed: () => GoogleDriveHelper.openFolder(),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: AppSpacing.md),
-
-                    // Previsualización en vivo de la imagen
-                    Center(
-                      child: Container(
-                        width: 140,
-                        height: 140,
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFF1F5F9),
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: AppPalette.border, width: 1.5),
-                        ),
-                        child: previewUrl.isNotEmpty
-                            ? ClipRRect(
-                                borderRadius: BorderRadius.circular(11),
-                                child: Image.network(
-                                  previewUrl,
-                                  fit: BoxFit.cover,
-                                  loadingBuilder: (context, child, progress) {
-                                    if (progress == null) return child;
-                                    return const Center(child: CupertinoActivityIndicator());
-                                  },
-                                  errorBuilder: (_, __, ___) => Center(
-                                    child: Column(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        const Icon(CupertinoIcons.exclamationmark_circle, color: AppPalette.warning, size: 28),
-                                        const SizedBox(height: 4),
-                                        Text(
-                                          'Sin vista previa\n(Verifica permisos)',
-                                          textAlign: TextAlign.center,
-                                          style: AppTypography.labelSmall.copyWith(fontSize: 10, color: AppPalette.textSecondary),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ),
-                              )
-                            : const Center(
-                                child: Column(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Icon(CupertinoIcons.photo, color: AppPalette.blue400, size: 36),
-                                    SizedBox(height: 4),
-                                    Text('Sin foto asignada', style: TextStyle(fontSize: 11, color: AppPalette.textSecondary)),
-                                  ],
-                                ),
-                              ),
-                      ),
-                    ),
-                    const SizedBox(height: AppSpacing.md),
-
-                    // Campo de entrada de URL o ID
-                    AppTextField(
-                      label: 'Enlace o ID de Archivo en Google Drive',
-                      hint: 'Pega el enlace de compartir o el ID...',
-                      controller: urlController,
-                      onChanged: (val) {
-                        setModalState(() {
-                          rawInput = val;
-                          previewUrl = GoogleDriveHelper.formatDirectImageUrl(val);
-                        });
-                      },
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      'Formato detectado: ${previewUrl.isNotEmpty ? previewUrl : "Esperando enlace..."}',
-                      style: AppTypography.labelSmall.copyWith(
-                        fontSize: 10,
-                        fontFamily: 'monospace',
-                        color: AppPalette.textSecondary,
-                      ),
-                      maxLines: 1,
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setModalState) => Padding(
+          padding: EdgeInsets.only(
+            bottom: MediaQuery.of(ctx).viewInsets.bottom + AppSpacing.lg,
+            left: AppSpacing.lg,
+            right: AppSpacing.lg,
+            top: AppSpacing.lg,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Flexible(
+                    child: Text(
+                      'Foto de ${producto.nombre}',
+                      style: AppTypography.titleLarge.copyWith(fontSize: 16),
                       overflow: TextOverflow.ellipsis,
                     ),
-                    const SizedBox(height: AppSpacing.lg),
-
-                    // Botones de acción
-                    Row(
-                      children: [
-                        if (producto.fotoUrl != null && producto.fotoUrl!.isNotEmpty)
-                          Padding(
-                            padding: const EdgeInsets.only(right: AppSpacing.sm),
-                            child: IconButton(
-                              icon: const Icon(CupertinoIcons.trash, color: AppPalette.error),
-                              tooltip: 'Quitar foto',
-                              onPressed: () {
-                                final updated = Producto(
-                                  id: producto.id,
-                                  cantidad: producto.cantidad,
-                                  nombre: producto.nombre,
-                                  marca: producto.marca,
-                                  modelo: producto.modelo,
-                                  talla: producto.talla,
-                                  precioUsd: producto.precioUsd,
-                                  fotoUrl: null,
-                                );
-                                widget.dataService.updateProducto(updated);
-                                Navigator.pop(ctx);
-                              },
-                            ),
-                          ),
-                        Expanded(
-                          child: AppOutlinedButton(
-                            label: 'Cancelar',
-                            onPressed: () => Navigator.pop(ctx),
-                          ),
-                        ),
-                        const SizedBox(width: AppSpacing.md),
-                        Expanded(
-                          child: AppButton(
-                            label: 'Guardar Imagen',
-                            icon: CupertinoIcons.check_mark,
-                            onPressed: () {
-                              final formatted = GoogleDriveHelper.formatDirectImageUrl(urlController.text.trim());
-                              final updated = Producto(
-                                id: producto.id,
-                                cantidad: producto.cantidad,
-                                nombre: producto.nombre,
-                                marca: producto.marca,
-                                modelo: producto.modelo,
-                                talla: producto.talla,
-                                precioUsd: producto.precioUsd,
-                                fotoUrl: formatted.isNotEmpty ? formatted : null,
-                              );
-                              widget.dataService.updateProducto(updated);
-                              Navigator.pop(ctx);
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(content: Text('Imagen de "${producto.nombre}" actualizada con éxito.')),
-                              );
-                            },
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
+                  ),
+                  IconButton(
+                    icon: const Icon(CupertinoIcons.xmark_circle_fill, color: AppPalette.textSecondary),
+                    onPressed: () => Navigator.pop(ctx),
+                  ),
+                ],
               ),
-            );
-          },
-        );
-      },
+              const SizedBox(height: AppSpacing.sm),
+              _FotoPicker(
+                fotoId: fotoIdActual,
+                dataService: widget.dataService,
+                onChanged: (nuevoFotoId) {
+                  setModalState(() => fotoIdActual = nuevoFotoId);
+                  final actualizado = Producto(
+                    id: producto.id,
+                    cantidad: producto.cantidad,
+                    nombre: producto.nombre,
+                    marca: producto.marca,
+                    modelo: producto.modelo,
+                    talla: producto.talla,
+                    precioUsd: producto.precioUsd,
+                    fotoId: nuevoFotoId,
+                    organizacionId: producto.organizacionId,
+                  );
+                  widget.dataService.updateProducto(actualizado);
+                },
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 
@@ -602,8 +413,7 @@ class _InventarioPageState extends State<InventarioPage> {
     final tallaController = TextEditingController(text: producto?.talla ?? 'M');
     final cantidadController = TextEditingController(text: producto?.cantidad.toString() ?? '10');
     final precioController = TextEditingController(text: producto?.precioUsd.toStringAsFixed(2) ?? '20.00');
-    final fotoUrlController = TextEditingController(text: producto?.fotoUrl ?? '');
-    var currentPreview = producto?.fotoUrl ?? '';
+    var pendingFotoId = producto?.fotoId;
 
     showModalBottomSheet(
       context: context,
@@ -635,6 +445,12 @@ class _InventarioPageState extends State<InventarioPage> {
                         onPressed: () => Navigator.pop(ctx),
                       ),
                     ],
+                  ),
+                  const SizedBox(height: AppSpacing.md),
+                  _FotoPicker(
+                    fotoId: pendingFotoId,
+                    dataService: widget.dataService,
+                    onChanged: (nuevoFotoId) => setModalState(() => pendingFotoId = nuevoFotoId),
                   ),
                   const SizedBox(height: AppSpacing.md),
                   AppTextField(
@@ -686,43 +502,6 @@ class _InventarioPageState extends State<InventarioPage> {
                     controller: precioController,
                     keyboardType: const TextInputType.numberWithOptions(decimal: true),
                   ),
-                  const SizedBox(height: AppSpacing.sm),
-                  AppTextField(
-                    label: 'Enlace o ID de Foto (Google Drive)',
-                    controller: fotoUrlController,
-                    hint: 'Pega el enlace o ID de Drive...',
-                    onChanged: (val) {
-                      setModalState(() {
-                        currentPreview = GoogleDriveHelper.formatDirectImageUrl(val);
-                      });
-                    },
-                  ),
-                  if (currentPreview.isNotEmpty) ...[
-                    const SizedBox(height: 6),
-                    Row(
-                      children: [
-                        ClipRRect(
-                          borderRadius: BorderRadius.circular(6),
-                          child: Image.network(
-                            currentPreview,
-                            width: 36,
-                            height: 36,
-                            fit: BoxFit.cover,
-                            errorBuilder: (_, __, ___) => const Icon(CupertinoIcons.photo, size: 24, color: AppPalette.blue400),
-                          ),
-                        ),
-                        const SizedBox(width: AppSpacing.sm),
-                        Expanded(
-                          child: Text(
-                            'Formato directo generado para Sheets: $currentPreview',
-                            style: AppTypography.labelSmall.copyWith(fontSize: 10, fontFamily: 'monospace'),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
                   const SizedBox(height: AppSpacing.lg),
                   Row(
                     children: [
@@ -741,9 +520,6 @@ class _InventarioPageState extends State<InventarioPage> {
                             final nombre = nombreController.text.trim();
                             if (nombre.isEmpty) return;
 
-                            final rawUrl = fotoUrlController.text.trim();
-                            final directUrl = rawUrl.isNotEmpty ? GoogleDriveHelper.formatDirectImageUrl(rawUrl) : null;
-
                             final p = Producto(
                               id: id,
                               cantidad: int.tryParse(cantidadController.text) ?? 0,
@@ -752,7 +528,7 @@ class _InventarioPageState extends State<InventarioPage> {
                               modelo: modeloController.text.trim(),
                               talla: tallaController.text.trim(),
                               precioUsd: double.tryParse(precioController.text.replaceAll(',', '.')) ?? 0.0,
-                              fotoUrl: directUrl,
+                              fotoId: pendingFotoId,
                             );
 
                             if (isEditing) {
@@ -796,6 +572,211 @@ class _InventarioPageState extends State<InventarioPage> {
           ),
         ],
       ),
+    );
+  }
+}
+
+/// Control de foto simple: previsualización + tomar/elegir/descargar/quitar,
+/// sin que el usuario tenga que ver ni escribir rutas o IDs de Drive. Subir
+/// una foto nueva SIEMPRE crea una fila nueva en "galeria" — nunca se pisa
+/// ni se borra una foto existente (ver
+/// [SheetsDataService.subirFotoGaleria]), así que una foto que ya usó un
+/// producto vendido nunca se pierde.
+class _FotoPicker extends StatefulWidget {
+  final String? fotoId;
+  final SheetsDataService dataService;
+  final ValueChanged<String?> onChanged;
+
+  const _FotoPicker({
+    required this.fotoId,
+    required this.dataService,
+    required this.onChanged,
+  });
+
+  @override
+  State<_FotoPicker> createState() => _FotoPickerState();
+}
+
+class _FotoPickerState extends State<_FotoPicker> {
+  bool _procesando = false;
+  String? _procesandoMensaje;
+
+  void _mostrarInfo(String mensaje) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(mensaje)));
+  }
+
+  void _mostrarError(String mensaje) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(mensaje), backgroundColor: AppPalette.error),
+    );
+  }
+
+  Future<void> _tomarOElegir(ImageSource source) async {
+    XFile? picked;
+    try {
+      picked = await ImagePicker().pickImage(source: source, imageQuality: 85, maxWidth: 1600);
+    } catch (_) {
+      _mostrarError(
+        source == ImageSource.camera ? 'No se pudo abrir la cámara.' : 'No se pudo abrir la galería.',
+      );
+      return;
+    }
+    if (picked == null) return; // el usuario canceló
+
+    setState(() {
+      _procesando = true;
+      _procesandoMensaje = 'Subiendo foto...';
+    });
+    try {
+      final bytes = await picked.readAsBytes();
+      final nuevoFotoId = await widget.dataService.subirFotoGaleria(
+        bytes: bytes,
+        fileName: picked.name,
+        mimeType: picked.mimeType ?? 'image/jpeg',
+      );
+      if (!mounted) return;
+      if (nuevoFotoId != null) {
+        // El CDN público de Drive (lh3.googleusercontent.com) tarda unos
+        // segundos en empezar a servir un archivo recién creado; esperamos a
+        // que la URL responda antes de mostrarla, para no pintar el ícono de
+        // error de entrada aunque la foto ya haya quedado bien guardada.
+        setState(() => _procesandoMensaje = 'Verificando foto...');
+        await _esperarUrlDisponible(widget.dataService.fotoUrlPorId(nuevoFotoId));
+        if (!mounted) return;
+        widget.onChanged(nuevoFotoId);
+        _mostrarInfo('Foto subida correctamente.');
+      } else {
+        _mostrarError('No se pudo subir la foto. Probá de nuevo.');
+      }
+    } finally {
+      if (mounted) setState(() => _procesando = false);
+    }
+  }
+
+  Future<void> _esperarUrlDisponible(String? url) async {
+    if (url == null || url.isEmpty) return;
+    for (var intento = 0; intento < 5; intento++) {
+      try {
+        final response = await http.get(Uri.parse(url)).timeout(const Duration(seconds: 5));
+        if (response.statusCode == 200) return;
+      } catch (_) {}
+      await Future.delayed(const Duration(seconds: 1));
+    }
+  }
+
+  Future<void> _descargar() async {
+    final url = widget.dataService.fotoUrlPorId(widget.fotoId);
+    if (url == null || url.isEmpty) return;
+
+    setState(() {
+      _procesando = true;
+      _procesandoMensaje = 'Descargando foto...';
+    });
+    try {
+      final response = await http.get(Uri.parse(url));
+      if (response.statusCode != 200) {
+        _mostrarError('No se pudo descargar la foto.');
+        return;
+      }
+      await Gal.putImageBytes(response.bodyBytes);
+      _mostrarInfo('Foto guardada en tu galería.');
+    } catch (_) {
+      _mostrarError('No se pudo descargar la foto.');
+    } finally {
+      if (mounted) setState(() => _procesando = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final url = widget.dataService.fotoUrlPorId(widget.fotoId);
+    final hasPhoto = url != null && url.isNotEmpty;
+
+    return Column(
+      children: [
+        Center(
+          child: Container(
+            width: 140,
+            height: 140,
+            decoration: BoxDecoration(
+              color: const Color(0xFFF1F5F9),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: AppPalette.border, width: 1.5),
+            ),
+            child: _procesando
+                ? Center(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const CupertinoActivityIndicator(),
+                        const SizedBox(height: 6),
+                        Text(
+                          _procesandoMensaje ?? '',
+                          style: AppTypography.labelSmall.copyWith(fontSize: 10, color: AppPalette.textSecondary),
+                        ),
+                      ],
+                    ),
+                  )
+                : hasPhoto
+                    ? ClipRRect(
+                        borderRadius: BorderRadius.circular(11),
+                        child: Image.network(
+                          url,
+                          fit: BoxFit.cover,
+                          loadingBuilder: (context, child, progress) {
+                            if (progress == null) return child;
+                            return const Center(child: CupertinoActivityIndicator());
+                          },
+                          errorBuilder: (_, __, ___) => const Center(
+                            child: Icon(CupertinoIcons.exclamationmark_circle, color: AppPalette.warning, size: 28),
+                          ),
+                        ),
+                      )
+                    : const Center(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(CupertinoIcons.photo, color: AppPalette.blue400, size: 36),
+                            SizedBox(height: 4),
+                            Text('Sin foto asignada', style: TextStyle(fontSize: 11, color: AppPalette.textSecondary)),
+                          ],
+                        ),
+                      ),
+          ),
+        ),
+        const SizedBox(height: AppSpacing.md),
+        Wrap(
+          alignment: WrapAlignment.center,
+          spacing: AppSpacing.sm,
+          runSpacing: AppSpacing.xs,
+          children: [
+            AppOutlinedButton(
+              label: 'Tomar foto',
+              icon: CupertinoIcons.camera,
+              onPressed: _procesando ? null : () => _tomarOElegir(ImageSource.camera),
+            ),
+            AppOutlinedButton(
+              label: 'Galería',
+              icon: CupertinoIcons.photo,
+              onPressed: _procesando ? null : () => _tomarOElegir(ImageSource.gallery),
+            ),
+            if (hasPhoto)
+              AppOutlinedButton(
+                label: 'Descargar',
+                icon: CupertinoIcons.arrow_down_circle,
+                onPressed: _procesando ? null : _descargar,
+              ),
+            if (hasPhoto)
+              AppOutlinedButton(
+                label: 'Quitar',
+                icon: CupertinoIcons.xmark,
+                onPressed: _procesando ? null : () => widget.onChanged(null),
+              ),
+          ],
+        ),
+      ],
     );
   }
 }

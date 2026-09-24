@@ -24,11 +24,14 @@ class Producto {
   /// Columna G: Precio de venta unitario en USD
   final double precioUsd;
 
-  /// Columna H: Enlace directo a la imagen en Google Drive (opcional)
-  final String? fotoUrl;
+  /// Columna H: Clave foránea a la hoja "galeria" (id de la foto subida) —
+  /// nunca la URL directa, para no duplicar esa fuente de verdad (ver
+  /// SheetsDataService.fotoUrlPorId). Null si el producto no tiene foto.
+  final String? fotoId;
 
   /// Nota: La Columna I ("foto") no se mapea en el cliente,
-  /// ya que es una fórmula calculada =IMAGE(foto_url) en la hoja.
+  /// ya que es una fórmula calculada en la hoja que resuelve fotoId contra
+  /// "galeria" (=IMAGE(VLOOKUP(H, galeria!A:B, 2, FALSE))).
 
   /// Columna J: Identificador de la organización a la que pertenece el registro
   final String organizacionId;
@@ -41,7 +44,7 @@ class Producto {
     required this.modelo,
     required this.talla,
     required this.precioUsd,
-    this.fotoUrl,
+    this.fotoId,
     this.organizacionId = '67774411-6aa1-4aa3-a4b2-d3fc6913b768',
   });
 
@@ -54,26 +57,11 @@ class Producto {
       modelo: row.length > 4 ? row[4].toString() : '',
       talla: row.length > 5 ? row[5].toString() : '',
       precioUsd: row.length > 6 ? parseSheetDouble(row[6]) : 0.0,
-      fotoUrl: row.length > 7 && row[7].toString().isNotEmpty ? row[7].toString() : null,
+      fotoId: row.length > 7 && row[7].toString().isNotEmpty ? row[7].toString() : null,
       organizacionId: row.length > 9 && row[9].toString().trim().isNotEmpty
           ? row[9].toString().trim()
           : '67774411-6aa1-4aa3-a4b2-d3fc6913b768',
     );
-  }
-
-  List<dynamic> toRow() {
-    return [
-      id,
-      cantidad,
-      nombre,
-      marca,
-      modelo,
-      talla,
-      precioUsd.toStringAsFixed(2),
-      fotoUrl ?? '',
-      fotoUrl != null && fotoUrl!.isNotEmpty ? '=IF(H2="","",IMAGE(H2))' : '',
-      organizacionId,
-    ];
   }
 
   Map<String, dynamic> toMap() {
@@ -85,7 +73,7 @@ class Producto {
       'modelo': modelo,
       'talla': talla,
       'precio_usd': precioUsd,
-      'foto_url': fotoUrl,
+      'foto_id': fotoId ?? '',
       'organizacion_id': organizacionId,
     };
   }

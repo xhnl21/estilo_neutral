@@ -6,6 +6,7 @@ export 'venta_item.dart';
 export 'abono.dart';
 export 'tasa_registro.dart';
 export 'moneda_organizacion.dart';
+export 'galeria_item.dart';
 export 'compra_divisa.dart';
 export 'resumen_diario.dart';
 export 'registro_cuarentena.dart';

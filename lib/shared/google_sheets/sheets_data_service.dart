@@ -67,6 +67,7 @@ class SheetsDataService extends ChangeNotifier {
   ];
   List<TasaRegistro> _tasas = [];
   List<MonedaOrganizacion> _monedasOrganizacion = [];
+  List<GaleriaItem> _galeria = [];
 
   /// Organización actualmente activa en la sesión (resuelta tras el login mediante
   /// la hoja de relación "usuario_organizacion"). Las 9 hojas de negocio (todas
@@ -207,6 +208,9 @@ class SheetsDataService extends ChangeNotifier {
   /// "moneda_organizacion").
   List<MonedaOrganizacion> get monedasOrganizacion => List.unmodifiable(_monedasOrganizacion);
 
+  /// Catálogo de fotos subidas (hoja "galeria") — ver [fotoUrlPorId].
+  List<GaleriaItem> get galeria => List.unmodifiable(_galeria);
+
   /// La moneda base seleccionada por [organizacionId] ('USD'/'EUR') — 'USD'
   /// por defecto si esa organización todavía no eligió ninguna.
   String monedaOrganizacion(String organizacionId) =>
@@ -296,6 +300,13 @@ class SheetsDataService extends ChangeNotifier {
       await Future.wait([
         safeFetch('clientes', _parseClientes),
         safeFetch('inventario', _parseProductos),
+        // Catálogo de fotos — inventario.foto_id apunta acá por FK, nunca
+        // guarda la URL directa (ver GaleriaItem/fotoUrlPorId).
+        safeFetch(
+          'galeria',
+          _parseGaleria,
+          expectedHeaders: const ['id', 'url', 'drive_file_id', 'nombre_archivo', 'fecha_subida'],
+        ),
         // "ventas" es el header de la factura (esquema nuevo, ver
         // docs/google/multi-organizacion.md) — se valida el encabezado por la
         // misma razón que seguridad/usuarios/organizaciones.
@@ -453,6 +464,16 @@ class SheetsDataService extends ChangeNotifier {
     final cloud = rows.map((r) => Producto.fromRow(r)).toList();
     final localPending = _productos.where((local) => !cloud.any((p) => p.id == local.id)).toList();
     _productos = [...cloud, ...localPending];
+  }
+
+  void _parseGaleria(List<List<String>> rows) {
+    if (rows.isEmpty) return;
+    final cloud = rows
+        .where((r) => r.isNotEmpty && r.first.trim().isNotEmpty)
+        .map((r) => GaleriaItem.fromRow(r))
+        .toList();
+    final localPending = _galeria.where((local) => !cloud.any((g) => g.id == local.id)).toList();
+    _galeria = [...cloud, ...localPending];
   }
 
   void _parseVentas(List<List<String>> rows) {
@@ -661,8 +682,29 @@ class SheetsDataService extends ChangeNotifier {
     }
   }
 
-  /// Sube una imagen directamente a la carpeta de Google Drive configurada vía Web App
-  Future<String?> uploadImageToDrive({
+  String get nextGaleriaId {
+    final maxId = _galeria.fold<int>(0, (prev, g) {
+      final n = int.tryParse(g.id.replaceAll(RegExp(r'[^0-9]'), '')) ?? 0;
+      return n > prev ? n : prev;
+    });
+    return 'g${(maxId + 1).toString().padLeft(8, '0')}';
+  }
+
+  /// Resuelve el id de una foto (FK de Producto.fotoId) a su URL real,
+  /// haciendo el JOIN lógico contra la hoja "galeria" — nunca se guarda la
+  /// URL directamente en `inventario`.
+  String? fotoUrlPorId(String? fotoId) {
+    if (fotoId == null || fotoId.isEmpty) return null;
+    return _galeria.where((g) => g.id == fotoId).firstOrNull?.url;
+  }
+
+  /// Sube una imagen a la carpeta de Google Drive configurada vía Web App y
+  /// la registra como una fila nueva en "galeria". Devuelve el ID de esa
+  /// fila (no la URL): eso es lo único que debe guardarse en
+  /// `Producto.fotoId`. Las fotos nunca se reemplazan ni se borran de la
+  /// galería — cada subida crea una fila nueva, así una foto usada por un
+  /// producto que ya tuvo ventas nunca se pierde ni se pisa.
+  Future<String?> subirFotoGaleria({
     required List<int> bytes,
     required String fileName,
     String mimeType = 'image/jpeg',
@@ -673,33 +715,106 @@ class SheetsDataService extends ChangeNotifier {
     }
     try {
       final base64Data = base64Encode(bytes);
-      var response = await _httpClient.post(
-        Uri.parse(url),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({
-          'action': 'upload_image',
-          'fileName': fileName,
-          'mimeType': mimeType,
-          'base64Data': base64Data,
-        }),
-      ).timeout(const Duration(seconds: 30));
 
-      if ((response.statusCode == 302 || response.statusCode == 303 || response.statusCode == 307) &&
-          response.headers.containsKey('location')) {
-        final redirectUrl = response.headers['location']!;
-        try {
-          response = await _httpClient.get(Uri.parse(redirectUrl)).timeout(const Duration(seconds: 30));
-        } catch (_) {}
-      }
+      // El candado global de doPost (LockService) puede estar ocupado por
+      // otra ejecución todavía corriendo del lado del servidor (p.ej. un
+      // intento anterior que el teléfono ya dio por perdido, pero que Apps
+      // Script sigue procesando). En ese caso doPost devuelve de inmediato
+      // "Servidor ocupado" SIN haber llegado a crear ningún archivo — es
+      // seguro reintentar el POST completo desde cero.
+      const reintentosPorCandadoOcupado = 3;
+      Map<String, dynamic>? data;
+      for (var intentoGlobal = 1; intentoGlobal <= reintentosPorCandadoOcupado; intentoGlobal++) {
+        Logger.api('POST $url [upload_image, archivo: $fileName, ${bytes.length} bytes, intento $intentoGlobal/$reintentosPorCandadoOcupado]', isRequest: true);
+        var response = await _httpClient.post(
+          Uri.parse(url),
+          headers: {'Content-Type': 'application/json'},
+          body: jsonEncode({
+            'action': 'upload_image',
+            'fileName': fileName,
+            'mimeType': mimeType,
+            'base64Data': base64Data,
+          }),
+        ).timeout(const Duration(seconds: 90));
+        Logger.api(
+          'subirFotoGaleria: POST inicial devolvió ${response.statusCode}'
+          '${response.headers.containsKey('location') ? ' con location' : ' SIN location'}',
+          isRequest: false,
+        );
 
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        if (data['status'] == 'success' && data['fileUrl'] != null) {
-          return data['fileUrl'] as String;
+        if ((response.statusCode == 302 || response.statusCode == 303 || response.statusCode == 307) &&
+            response.headers.containsKey('location')) {
+          final redirectUrl = response.headers['location']!;
+          // El eco de Apps Script (script.googleusercontent.com/macros/echo?...)
+          // a veces responde 404 de forma transitoria aunque la subida ya se
+          // completó del lado del servidor; reintentamos con backoff antes de
+          // darnos por vencidos, en vez de reportar un fallo falso al usuario.
+          const reintentosEco = [
+            Duration(milliseconds: 500),
+            Duration(milliseconds: 1000),
+            Duration(milliseconds: 2000),
+            Duration(milliseconds: 3000),
+            Duration(milliseconds: 4000),
+            Duration(milliseconds: 5000),
+          ];
+          for (var intento = 0; intento < reintentosEco.length; intento++) {
+            try {
+              response = await _httpClient.get(Uri.parse(redirectUrl)).timeout(const Duration(seconds: 30));
+              Logger.api('subirFotoGaleria: eco intento ${intento + 1}/${reintentosEco.length} -> HTTP ${response.statusCode}', isRequest: false);
+            } catch (e) {
+              Logger.api('subirFotoGaleria: eco intento ${intento + 1}/${reintentosEco.length} -> excepción: $e', isRequest: false);
+            }
+            if (response.statusCode == 200) break;
+            if (intento < reintentosEco.length - 1) await Future.delayed(reintentosEco[intento]);
+          }
         }
+
+        if (response.statusCode != 200) {
+          Logger.error('subirFotoGaleria: no se pudo confirmar la subida (HTTP ${response.statusCode}). El archivo puede haberse subido igual a Drive.');
+          return null;
+        }
+
+        final parsed = jsonDecode(response.body) as Map<String, dynamic>;
+        final ocupado = parsed['status'] != 'success' &&
+            (parsed['message']?.toString().toLowerCase().contains('ocupado') ?? false);
+        if (ocupado && intentoGlobal < reintentosPorCandadoOcupado) {
+          Logger.warning('subirFotoGaleria: servidor ocupado (candado de Apps Script), reintentando el POST completo...');
+          await Future.delayed(const Duration(seconds: 2));
+          continue;
+        }
+
+        if (parsed['status'] != 'success' || parsed['fileUrl'] == null) {
+          Logger.error('subirFotoGaleria: respuesta 200 pero contenido inesperado: ${response.body}');
+          return null;
+        }
+
+        data = parsed;
+        break;
       }
+
+      if (data == null) return null;
+
+      final nuevo = GaleriaItem(
+        id: nextGaleriaId,
+        url: data['fileUrl'] as String,
+        driveFileId: (data['fileId'] ?? '').toString(),
+        nombreArchivo: fileName,
+        fechaSubida: DateTime.now(),
+      );
+      _galeria.insert(0, nuevo);
+      notifyListeners();
+
+      final sincronizado = await _postToAppsScript({
+        'action': 'create',
+        'sheet': 'galeria',
+        'data': nuevo.toMap(),
+      });
+      if (!sincronizado) {
+        Logger.warning('SheetsDataService: foto subida a Drive pero no se pudo registrar en "galeria" (${nuevo.id}).');
+      }
+      return nuevo.id;
     } catch (e) {
-      debugPrint('Error uploading image to Google Drive: $e');
+      Logger.error('subirFotoGaleria: excepción subiendo la imagen (la subida a Drive puede haberse completado igual del lado del servidor)', e);
     }
     return null;
   }
@@ -823,7 +938,7 @@ class SheetsDataService extends ChangeNotifier {
       modelo: producto.modelo,
       talla: producto.talla,
       precioUsd: producto.precioUsd,
-      fotoUrl: producto.fotoUrl,
+      fotoId: producto.fotoId,
       organizacionId: _currentOrganizacionId ?? '67774411-6aa1-4aa3-a4b2-d3fc6913b768',
     );
     _productos.add(stamped);
@@ -881,7 +996,7 @@ class SheetsDataService extends ChangeNotifier {
         modelo: old.modelo,
         talla: old.talla,
         precioUsd: old.precioUsd,
-        fotoUrl: old.fotoUrl,
+        fotoId: old.fotoId,
         organizacionId: old.organizacionId,
       );
       _logAudit(
@@ -1638,8 +1753,18 @@ class SheetsDataService extends ChangeNotifier {
         modelo: 'Casual',
         talla: 'M',
         precioUsd: 20.0,
-        fotoUrl: 'https://lh3.googleusercontent.com/d/1_DRIVE_FILE_ID_PANTALON_CASUAL',
+        fotoId: 'g00000001',
         organizacionId: '67774411-6aa1-4aa3-a4b2-d3fc6913b768',
+      ),
+    ];
+
+    _galeria = [
+      GaleriaItem(
+        id: 'g00000001',
+        url: 'https://lh3.googleusercontent.com/d/1_DRIVE_FILE_ID_PANTALON_CASUAL',
+        driveFileId: '1_DRIVE_FILE_ID_PANTALON_CASUAL',
+        nombreArchivo: 'pantalon_casual.jpg',
+        fechaSubida: DateTime(2026, 4, 3),
       ),
     ];
 

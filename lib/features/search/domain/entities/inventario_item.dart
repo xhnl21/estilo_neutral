@@ -20,8 +20,8 @@ class InventarioItem extends SearchableItem {
   /// Precio unitario de venta en USD.
   final double precioUsd;
 
-  /// Enlace directo a la fotografía en Google Drive (opcional).
-  final String? fotoUrl;
+  /// Clave foránea a la hoja "galeria" (id de la foto subida, opcional).
+  final String? fotoId;
 
   /// Crea una entidad de inventario indexable y evaluable por el buscador.
   const InventarioItem({
@@ -32,7 +32,7 @@ class InventarioItem extends SearchableItem {
     required this.talla,
     required this.cantidad,
     required this.precioUsd,
-    this.fotoUrl,
+    this.fotoId,
     super.searchResult,
   });
 
@@ -47,7 +47,7 @@ class InventarioItem extends SearchableItem {
       talla: producto.talla,
       cantidad: producto.cantidad,
       precioUsd: producto.precioUsd,
-      fotoUrl: producto.fotoUrl,
+      fotoId: producto.fotoId,
       searchResult: searchResult,
     );
   }
@@ -62,7 +62,7 @@ class InventarioItem extends SearchableItem {
       talla: talla,
       cantidad: cantidad,
       precioUsd: precioUsd,
-      fotoUrl: fotoUrl,
+      fotoId: fotoId,
       searchResult: result,
     );
   }
@@ -76,7 +76,7 @@ class InventarioItem extends SearchableItem {
         talla,
         cantidad,
         precioUsd,
-        fotoUrl,
+        fotoId,
         searchResult,
       ];
 }

@@ -72,5 +72,11 @@
 		<true/>
 		<key>UIViewControllerBasedStatusBarAppearance</key>
 		<false/>
+		<key>NSCameraUsageDescription</key>
+		<string>Se usa la cámara para tomarle una foto a los productos del inventario.</string>
+		<key>NSPhotoLibraryUsageDescription</key>
+		<string>Se accede a tus fotos para elegir una imagen de producto desde la galería.</string>
+		<key>NSPhotoLibraryAddUsageDescription</key>
+		<string>Se guarda la foto del producto en tu galería cuando la descargás.</string>
 	</dict>
 </plist>

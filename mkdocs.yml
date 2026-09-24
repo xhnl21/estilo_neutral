@@ -43,6 +43,7 @@ nav:
       - Resumen: google/index.md
       - Google Sign-In: google/sign-in.md
       - Google Apps Script: google/apps-script.md
+      - Galería de fotos (Inventario): google/galeria-fotos.md
       - Multi-organización: google/multi-organizacion.md
       - Automatización local: google/automatizacion.md
       - Troubleshooting: google/troubleshooting.md

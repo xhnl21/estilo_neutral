@@ -87,7 +87,7 @@ class FacturaDetallePage extends StatelessWidget {
               else
                 ...items.map((item) {
                   final producto = dataService.productos.where((p) => p.id == item.itemId).firstOrNull;
-                  final fotoUrl = producto?.fotoUrl;
+                  final fotoUrl = dataService.fotoUrlPorId(producto?.fotoId);
                   final hasPhoto = fotoUrl != null && fotoUrl.isNotEmpty;
 
                   return Padding(

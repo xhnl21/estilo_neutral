@@ -72,7 +72,10 @@ function doPost(e) {
       const decodedBytes = Utilities.base64Decode(base64Data);
       const blob = Utilities.newBlob(decodedBytes, mimeType, fileName);
       const file = folder.createFile(blob);
-      file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+      // No se llama a file.setSharing(): Google bloquea a apps no verificadas
+      // hacer públicos archivos vía API (prevención de abuso/malware). No hace
+      // falta: el archivo hereda el permiso "cualquiera con el enlace" que ya
+      // tiene configurado DRIVE_FOLDER_ID a nivel de carpeta.
 
       const directUrl = "https://lh3.googleusercontent.com/d/" + file.getId();
 
@@ -177,8 +180,13 @@ function _handleCreate(ss, sheet, sheetName, data) {
       data.organizacion_id || "67774411-6aa1-4aa3-a4b2-d3fc6913b768"
     ];
   } else if (sheetName === "inventario") {
-    const fotoUrl = data.foto_url || "";
-    const fotoFormula = fotoUrl ? '=IF(H' + nextRow + '="","",IMAGE(H' + nextRow + '))' : "";
+    // foto_id es una FK a "galeria".id (nunca la URL directa) — la columna
+    // de imagen se resuelve con un VLOOKUP contra esa hoja, así la URL real
+    // vive en un solo lugar.
+    const fotoId = data.foto_id || "";
+    const fotoFormula = fotoId
+      ? '=IFERROR(IMAGE(VLOOKUP(H' + nextRow + ';galeria!A:B;2;FALSE));"")'
+      : "";
     rowValues = [
       data.id,
       data.cantidad || 0,
@@ -187,9 +195,17 @@ function _handleCreate(ss, sheet, sheetName, data) {
       data.modelo || "",
       data.talla || "",
       data.precio_usd || 0.0,
-      fotoUrl,
+      fotoId,
       fotoFormula,
       data.organizacion_id || "67774411-6aa1-4aa3-a4b2-d3fc6913b768"
+    ];
+  } else if (sheetName === "galeria") {
+    rowValues = [
+      data.id,
+      data.url || "",
+      data.drive_file_id || "",
+      data.nombre_archivo || "",
+      data.fecha_subida || Utilities.formatDate(new Date(), "GMT-4", "yyyy-MM-dd'T'HH:mm:ss")
     ];
   } else if (sheetName === "ventas") {
     // "ventas" es el header de la factura (esquema nuevo): ya no lleva
@@ -342,9 +358,13 @@ function _handleUpdate(ss, sheet, sheetName, id, data) {
     if (data.modelo !== undefined) sheet.getRange(rowIndex, 5).setValue(data.modelo);
     if (data.talla !== undefined) sheet.getRange(rowIndex, 6).setValue(data.talla);
     if (data.precio_usd !== undefined) sheet.getRange(rowIndex, 7).setValue(data.precio_usd);
-    if (data.foto_url !== undefined) {
-      sheet.getRange(rowIndex, 8).setValue(data.foto_url);
-      sheet.getRange(rowIndex, 9).setFormula('=IF(H' + rowIndex + '="","",IMAGE(H' + rowIndex + '))');
+    if (data.foto_id !== undefined) {
+      sheet.getRange(rowIndex, 8).setValue(data.foto_id);
+      sheet.getRange(rowIndex, 9).setFormula(
+        data.foto_id
+          ? '=IFERROR(IMAGE(VLOOKUP(H' + rowIndex + ';galeria!A:B;2;FALSE));"")'
+          : ''
+      );
     }
   } else if (sheetName === "ventas") {
     // Solo los campos editables del header (nunca las columnas fórmula:

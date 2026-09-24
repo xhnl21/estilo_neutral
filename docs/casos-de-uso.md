@@ -61,13 +61,13 @@ Actor único: **Usuario autenticado** (una de las cuentas de Google en `ALLOWED_
 ## Inventario
 
 ### UC-20 — Registrar un producto nuevo
-- **Flujo principal:** vista **Inventario** → **"Nuevo Producto"** → nombre, marca, modelo, talla, cantidad, precio USD, y opcionalmente el enlace/ID de una foto en Google Drive → guardar.
+- **Flujo principal:** vista **Inventario** → **"Nuevo Producto"** → nombre, marca, modelo, talla, cantidad, precio USD, y opcionalmente una foto (cámara o galería) → guardar.
 
 ### UC-21 — Ajustar stock
 - Botones **+ / −** en cada producto para sumar o restar unidades sin abrir el formulario completo.
 
 ### UC-22 — Actualizar la foto de un producto
-- Ícono de imagen en la tarjeta → subir una foto nueva o pegar el enlace de Drive → se actualiza la miniatura.
+- Ícono de imagen en la tarjeta → tomar foto nueva, elegir de galería, descargar la actual al teléfono, o quitarla → se actualiza la miniatura. El usuario nunca maneja enlaces ni IDs de Drive (ver [Galería de fotos](google/galeria-fotos.md)).
 
 ### UC-23 — Buscar, editar o eliminar un producto
 - Igual patrón que Clientes (buscador, editar, eliminar con confirmación).

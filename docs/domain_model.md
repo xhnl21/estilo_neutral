@@ -40,7 +40,7 @@ Todos los Value Objects son **inmutables**, **auto-validados** en sus constructo
 
 ### 2.2 Aggregate Root: `Product` (Producto)
 - **Identidad**: `ProductId`.
-- **Atributos**: `stock` (`StockQuantity`), `name`, `brand`, `model`, `size`, `priceUsd` (`MoneyUsd`), `photoUrl`.
+- **Atributos**: `stock` (`StockQuantity`), `name`, `brand`, `model`, `size`, `priceUsd` (`MoneyUsd`), `photoId` (FK a la hoja `galeria`, nunca una URL directa — ver [Galería de fotos](google/galeria-fotos.md)).
 - **Invariantes**:
   - El stock físico nunca puede ser negativo ($\text{quantity} \ge 0$).
   - El precio en USD debe ser estrictamente mayor a cero ($> 0.00$).

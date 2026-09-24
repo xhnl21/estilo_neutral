@@ -82,6 +82,16 @@ Esto pasa fácil porque `Range.setValues()` de Apps Script **siempre** convierte
 2. Si el problema reaparece, revisar que todo lo que escribe en esa hoja (Apps Script y cualquier script de migración) escriba el mismo tipo — ver el comentario en `_handleSetMetodoSeguridad` de `google_apps_script.js`.
 3. `SheetsDataService._fetchSheet` valida el encabezado esperado antes de parsear cualquier hoja con esquema nuevo (`usuarios`, `seguridad`, `organizaciones`, `usuario_organizacion`, `ventas`, `venta_items`) — por eso este bug se manifiesta como una excepción clara en los logs en vez de datos silenciosamente corruptos.
 
+## `Exception: Access denied: DriveApp.` al subir una foto de producto
+
+**Causa:** el código llamaba a `file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW)` después de crear el archivo — Google bloquea esa operación puntual (hacer un archivo público vía API) para apps no verificadas, como medida antiabuso. El resto del acceso a Drive (crear el archivo, leerlo) funcionaba bien; solo esa línea específica fallaba.
+
+**Diagnóstico:** los "Registros de Cloud" del editor no se pueblan para ejecuciones de tipo Aplicación web en este proyecto. Hubo que devolver `Session.getEffectiveUser().getEmail()` y `err.stack` directo en la respuesta JSON de error para ver que la cuenta era la correcta y que el fallo apuntaba exactamente a la línea de `setSharing`, no a `getFolderById`/`createFile`.
+
+**Fix:** sacar el `setSharing()` — es innecesario porque `DRIVE_FOLDER_ID` ya tiene el permiso "cualquiera con el enlace" configurado a nivel de carpeta, y los archivos nuevos lo heredan.
+
+Caso completo (diseño de la feature, diagnóstico paso a paso y el runbook de reautorización de scopes que se usó en el camino): ver [Galería de fotos](galeria-fotos.md).
+
 ## El `.xlsx` local "desaparece" o cambia de tamaño drásticamente
 
 Si abrís el `.xlsx` con una app de oficina de terceros (ej. WPS Office) para revisarlo, puede quedar bloqueado momentáneamente o guardarse con mucho más peso del original (formato/metadata extra) al re-guardarlo. El contenido en sí no se corrompe, pero:

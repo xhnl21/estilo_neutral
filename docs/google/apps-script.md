@@ -11,7 +11,7 @@ Recibe peticiones HTTP (`doGet` / `doPost`) de la app Flutter y opera directamen
   - `create` / `update` / `delete` — CRUD sobre `clientes`, `inventario`, `ventas`, `compras_divisas` (y genérico para el resto).
   - `toggle_checklist` — cambia el estado de un ítem de `checklist_iso`.
   - `set_metodo_seguridad` — reemplaza el método de seguridad activo de la hoja `seguridad`, **por organización** (los 3 métodos son mutuamente excluyentes) (ver [Multi-organización](multi-organizacion.md)).
-  - `upload_image` — sube una imagen a la carpeta de Google Drive configurada (`DRIVE_FOLDER_ID`) y devuelve la URL pública.
+  - `upload_image` — sube una imagen a la carpeta de Google Drive configurada (`DRIVE_FOLDER_ID`) y devuelve la URL pública. La app la registra como una fila nueva en la hoja `galeria` (nunca se pisan URLs existentes) — ver [Galería de fotos](galeria-fotos.md).
 
 Todas las mutaciones quedan además registradas en la hoja `audit_log` vía `_appendAuditLog(...)`.
 
@@ -26,11 +26,20 @@ Todas las mutaciones quedan además registradas en la hoja `audit_log` vía `_ap
   "webapp": {
     "access": "ANYONE_ANONYMOUS",
     "executeAs": "USER_DEPLOYING"
-  }
+  },
+  "oauthScopes": [
+    "https://www.googleapis.com/auth/spreadsheets",
+    "https://www.googleapis.com/auth/drive",
+    "https://www.googleapis.com/auth/script.external_request",
+    "https://www.googleapis.com/auth/script.scriptapp",
+    "https://www.googleapis.com/auth/userinfo.email"
+  ]
 }
 ```
 
 `executeAs: USER_DEPLOYING` es importante: el script corre con los permisos de quien lo desplegó (no de quien lo invoca), así la app no necesita su propio acceso a la planilla — solo necesita la URL pública del Web App.
+
+`oauthScopes` está declarado explícitamente (en vez de dejar que Apps Script auto-detecte). Si agregás una llamada a un servicio nuevo (otro que no sea `SpreadsheetApp`/`DriveApp`/`UrlFetchApp`/`ScriptApp`), sumá el scope correspondiente acá — si no, va a fallar con `Access denied: <Servicio>` aunque la cuenta ya tenga otros permisos concedidos. Ver el runbook de reautorización en [Galería de fotos](galeria-fotos.md#4-runbook-reautorizar-apps-script-cuando-cambian-los-scopes).
 
 ## Desplegar manualmente (sin `clasp`)
 
