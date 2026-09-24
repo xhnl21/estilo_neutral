@@ -1,7 +1,8 @@
 import 'dart:convert';
 import 'dart:math';
+import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
-import 'package:http/http.dart' as http;
+import '../../core/network/dio_client.dart';
 import '../../core/utils/logger.dart';
 import '../../models/models.dart';
 import '../storage/secure_token_storage.dart';
@@ -14,15 +15,23 @@ class SheetsDataService extends ChangeNotifier {
   final String spreadsheetId;
   String? _appsScriptUrl;
   String? get appsScriptUrl => _appsScriptUrl;
-  final http.Client _httpClient;
+  final DioClient _dioClient;
+  Dio get _dio => _dioClient.dio;
 
   SheetsDataService({
     String? spreadsheetId,
     String? appsScriptUrl,
-    http.Client? httpClient,
+    Dio? dio,
   })  : spreadsheetId = SheetsConfig.extractSpreadsheetId(spreadsheetId ?? SheetsConfig.defaultSpreadsheetId),
         _appsScriptUrl = appsScriptUrl ?? SheetsConfig.defaultAppsScriptUrl,
-        _httpClient = httpClient ?? http.Client();
+        _dioClient = DioClient(customDio: dio) {
+    // No se pasa `baseOptions` a DioClient: hacerlo reemplazaría por completo
+    // sus valores por defecto (connectTimeout, headers, etc.) en vez de
+    // combinarse con ellos. Solo se ajusta `validateStatus` después de
+    // construido, para que Apps Script pueda devolver 3xx/4xx sin que dio
+    // los trate como excepción (los seguimos/leemos nosotros a mano).
+    _dioClient.dio.options.validateStatus = (status) => status != null && status < 500;
+  }
 
   Future<void> setAppsScriptUrl(String url) async {
     _appsScriptUrl = url.trim();
@@ -409,15 +418,22 @@ class SheetsDataService extends ChangeNotifier {
     final url = Uri.parse(
       'https://docs.google.com/spreadsheets/d/$cleanId/gviz/tq?tqx=out:csv&sheet=$sheetName',
     );
-    final response = await _httpClient.get(url, headers: {
-      'User-Agent': 'Flutter-EstiloNeutral/1.0',
-    }).timeout(const Duration(seconds: 15));
+    final response = await _dio.get<String>(
+      url.toString(),
+      options: Options(
+        headers: {'User-Agent': 'Flutter-EstiloNeutral/1.0'},
+        responseType: ResponseType.plain,
+        sendTimeout: const Duration(seconds: 15),
+        receiveTimeout: const Duration(seconds: 15),
+      ),
+    );
+    final body = response.data ?? '';
 
-    if (response.statusCode == 200 && response.body.isNotEmpty) {
-      if (response.body.contains('<html') || response.body.contains('ServiceLogin')) {
+    if (response.statusCode == 200 && body.isNotEmpty) {
+      if (body.contains('<html') || body.contains('ServiceLogin')) {
         throw Exception('HTTP 401: Documento Privado');
       }
-      final rows = parseCsv(response.body);
+      final rows = parseCsv(body);
       if (rows.isEmpty) return;
 
       // Si se pasan encabezados esperados, se valida la fila 1 antes de parsear.
@@ -444,7 +460,7 @@ class SheetsDataService extends ChangeNotifier {
         parser(rows.sublist(1));
       }
     } else if (response.statusCode != 200) {
-      throw Exception('HTTP ${response.statusCode}: ${response.reasonPhrase}');
+      throw Exception('HTTP ${response.statusCode}: ${response.statusMessage}');
     }
   }
 
@@ -620,6 +636,74 @@ class SheetsDataService extends ChangeNotifier {
     _auditLogs.insert(0, log);
   }
 
+  /// Hace un POST a Apps Script con [payload] y sigue el redirect de eco de
+  /// Google (`script.googleusercontent.com/macros/echo?...`) si aparece —
+  /// dio no lo sigue automáticamente en un POST, así que hay que pedirlo a
+  /// mano con un GET aparte. Ese eco a veces responde con un código
+  /// distinto de 200 de forma transitoria aunque Apps Script ya haya
+  /// terminado de procesar la acción; se reintenta con backoff antes de
+  /// darse por vencido. `huboRedirect` indica si Apps Script llegó a
+  /// aceptar el POST (recibimos un 302) aunque no se haya podido confirmar
+  /// el contenido de la respuesta — lo usa `_postToAppsScript` para no
+  /// reportar un fallo falso en acciones donde no hace falta leer el body.
+  Future<({bool huboRedirect, Map<String, dynamic>? data})> _postAppsScriptJson(
+    Map<String, dynamic> payload, {
+    Duration sendTimeout = const Duration(seconds: 15),
+    Duration receiveTimeout = const Duration(seconds: 15),
+    List<Duration> reintentosEco = const [
+      Duration(milliseconds: 500),
+      Duration(milliseconds: 1000),
+      Duration(milliseconds: 2000),
+    ],
+  }) async {
+    final url = appsScriptUrl;
+    if (url == null || url.trim().isEmpty) return (huboRedirect: false, data: null);
+
+    Response response;
+    try {
+      response = await _dio.post(
+        url,
+        data: payload,
+        options: Options(sendTimeout: sendTimeout, receiveTimeout: receiveTimeout),
+      );
+    } catch (e) {
+      Logger.error('SheetsDataService: excepción en POST a Apps Script', e);
+      return (huboRedirect: false, data: null);
+    }
+
+    var huboRedirect = false;
+    final location = response.headers.value('location');
+    if ((response.statusCode == 302 || response.statusCode == 303 || response.statusCode == 307) &&
+        location != null) {
+      huboRedirect = true;
+      Logger.api('Siguiendo redirección de Apps Script: $location', isRequest: true);
+      for (var intento = 0; intento < reintentosEco.length; intento++) {
+        try {
+          response = await _dio.get(location, options: Options(receiveTimeout: receiveTimeout));
+        } catch (e) {
+          Logger.warning('SheetsDataService: eco de Apps Script falló (intento ${intento + 1}/${reintentosEco.length}): $e');
+        }
+        if (response.statusCode == 200) break;
+        if (intento < reintentosEco.length - 1) await Future.delayed(reintentosEco[intento]);
+      }
+    }
+
+    Logger.api('${response.statusCode} - Respuesta Apps Script: ${Logger.truncate(response.data?.toString() ?? '')}', isRequest: false);
+
+    if (response.statusCode != 200) return (huboRedirect: huboRedirect, data: null);
+
+    final raw = response.data;
+    if (raw is Map<String, dynamic>) return (huboRedirect: huboRedirect, data: raw);
+    if (raw is String && raw.isNotEmpty) {
+      try {
+        return (huboRedirect: huboRedirect, data: jsonDecode(raw) as Map<String, dynamic>);
+      } catch (_) {
+        return (huboRedirect: huboRedirect, data: null);
+      }
+    }
+    return (huboRedirect: huboRedirect, data: null);
+  }
+
   /// Sincroniza de forma asíncrona la acción con la Web App de Google Apps Script (Opción A)
   Future<bool> _postToAppsScript(Map<String, dynamic> payload) async {
     final url = appsScriptUrl;
@@ -643,36 +727,20 @@ class SheetsDataService extends ChangeNotifier {
     try {
       final sheet = payload['sheet'] ?? 'desconocida';
       final action = payload['action'] ?? 'desconocida';
-      Logger.api('POST $url [Hoja: $sheet, Acción: $action]', isRequest: true);
-      Logger.object('Payload Apps Script', payload);
+      Logger.object('Payload Apps Script [Hoja: $sheet, Acción: $action]', payload);
 
-      var response = await _httpClient.post(
-        Uri.parse(url),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode(payload),
-      ).timeout(const Duration(seconds: 15));
+      final resultado = await _postAppsScriptJson(payload);
 
-      // Google Apps Script responde con 302 Found redirigiendo a googleusercontent.com
-      if ((response.statusCode == 302 || response.statusCode == 303 || response.statusCode == 307) &&
-          response.headers.containsKey('location')) {
-        final redirectUrl = response.headers['location']!;
-        Logger.api('Siguiendo redirección de Apps Script: $redirectUrl', isRequest: true);
-        try {
-          response = await _httpClient.get(Uri.parse(redirectUrl)).timeout(const Duration(seconds: 15));
-        } catch (_) {
-          // Si el redirect falla por red o timeout pero ya se recibió 302 de Apps Script, la acción ya fue procesada
-        }
-      }
-
-      Logger.api('${response.statusCode} - Respuesta Apps Script: ${response.body}', isRequest: false);
-
-      final isOk = response.statusCode == 200 || response.statusCode == 302;
+      // OK si se pudo confirmar la respuesta, o si al menos Apps Script
+      // aceptó el POST (302) aunque no se haya podido leer el eco — la
+      // acción ya quedó en cola/procesada del lado del servidor.
+      final isOk = resultado.data != null || resultado.huboRedirect;
       if (isOk) {
         Logger.success('SheetsDataService: Sincronización exitosa en Google Sheets (Hoja: $sheet, Acción: $action).');
         return true;
       } else {
         Logger.error(
-          'SheetsDataService: Falló sincronización con Google Sheets. Código HTTP: ${response.statusCode}. Respuesta: ${response.body}',
+          'SheetsDataService: Falló sincronización con Google Sheets (Hoja: $sheet, Acción: $action).',
         );
         return false;
       }
@@ -713,110 +781,90 @@ class SheetsDataService extends ChangeNotifier {
     if (url == null || url.trim().isEmpty) {
       return null;
     }
-    try {
-      final base64Data = base64Encode(bytes);
 
-      // El candado global de doPost (LockService) puede estar ocupado por
-      // otra ejecución todavía corriendo del lado del servidor (p.ej. un
-      // intento anterior que el teléfono ya dio por perdido, pero que Apps
-      // Script sigue procesando). En ese caso doPost devuelve de inmediato
-      // "Servidor ocupado" SIN haber llegado a crear ningún archivo — es
-      // seguro reintentar el POST completo desde cero.
-      const reintentosPorCandadoOcupado = 3;
-      Map<String, dynamic>? data;
-      for (var intentoGlobal = 1; intentoGlobal <= reintentosPorCandadoOcupado; intentoGlobal++) {
-        Logger.api('POST $url [upload_image, archivo: $fileName, ${bytes.length} bytes, intento $intentoGlobal/$reintentosPorCandadoOcupado]', isRequest: true);
-        var response = await _httpClient.post(
-          Uri.parse(url),
-          headers: {'Content-Type': 'application/json'},
-          body: jsonEncode({
-            'action': 'upload_image',
-            'fileName': fileName,
-            'mimeType': mimeType,
-            'base64Data': base64Data,
-          }),
-        ).timeout(const Duration(seconds: 90));
-        Logger.api(
-          'subirFotoGaleria: POST inicial devolvió ${response.statusCode}'
-          '${response.headers.containsKey('location') ? ' con location' : ' SIN location'}',
-          isRequest: false,
-        );
+    final base64Data = base64Encode(bytes);
 
-        if ((response.statusCode == 302 || response.statusCode == 303 || response.statusCode == 307) &&
-            response.headers.containsKey('location')) {
-          final redirectUrl = response.headers['location']!;
-          // El eco de Apps Script (script.googleusercontent.com/macros/echo?...)
-          // a veces responde 404 de forma transitoria aunque la subida ya se
-          // completó del lado del servidor; reintentamos con backoff antes de
-          // darnos por vencidos, en vez de reportar un fallo falso al usuario.
-          const reintentosEco = [
-            Duration(milliseconds: 500),
-            Duration(milliseconds: 1000),
-            Duration(milliseconds: 2000),
-            Duration(milliseconds: 3000),
-            Duration(milliseconds: 4000),
-            Duration(milliseconds: 5000),
-          ];
-          for (var intento = 0; intento < reintentosEco.length; intento++) {
-            try {
-              response = await _httpClient.get(Uri.parse(redirectUrl)).timeout(const Duration(seconds: 30));
-              Logger.api('subirFotoGaleria: eco intento ${intento + 1}/${reintentosEco.length} -> HTTP ${response.statusCode}', isRequest: false);
-            } catch (e) {
-              Logger.api('subirFotoGaleria: eco intento ${intento + 1}/${reintentosEco.length} -> excepción: $e', isRequest: false);
-            }
-            if (response.statusCode == 200) break;
-            if (intento < reintentosEco.length - 1) await Future.delayed(reintentosEco[intento]);
-          }
-        }
-
-        if (response.statusCode != 200) {
-          Logger.error('subirFotoGaleria: no se pudo confirmar la subida (HTTP ${response.statusCode}). El archivo puede haberse subido igual a Drive.');
-          return null;
-        }
-
-        final parsed = jsonDecode(response.body) as Map<String, dynamic>;
-        final ocupado = parsed['status'] != 'success' &&
-            (parsed['message']?.toString().toLowerCase().contains('ocupado') ?? false);
-        if (ocupado && intentoGlobal < reintentosPorCandadoOcupado) {
-          Logger.warning('subirFotoGaleria: servidor ocupado (candado de Apps Script), reintentando el POST completo...');
-          await Future.delayed(const Duration(seconds: 2));
-          continue;
-        }
-
-        if (parsed['status'] != 'success' || parsed['fileUrl'] == null) {
-          Logger.error('subirFotoGaleria: respuesta 200 pero contenido inesperado: ${response.body}');
-          return null;
-        }
-
-        data = parsed;
-        break;
-      }
-
-      if (data == null) return null;
-
-      final nuevo = GaleriaItem(
-        id: nextGaleriaId,
-        url: data['fileUrl'] as String,
-        driveFileId: (data['fileId'] ?? '').toString(),
-        nombreArchivo: fileName,
-        fechaSubida: DateTime.now(),
-      );
-      _galeria.insert(0, nuevo);
-      notifyListeners();
-
-      final sincronizado = await _postToAppsScript({
-        'action': 'create',
-        'sheet': 'galeria',
-        'data': nuevo.toMap(),
+    // El candado global de doPost (LockService) puede estar ocupado por
+    // otra ejecución todavía corriendo del lado del servidor (p.ej. un
+    // intento anterior que el teléfono ya dio por perdido, pero que Apps
+    // Script sigue procesando). En ese caso doPost devuelve de inmediato
+    // "Servidor ocupado" SIN haber llegado a crear ningún archivo — es
+    // seguro reintentar el POST completo desde cero.
+    const reintentosPorCandadoOcupado = 3;
+    Map<String, dynamic>? data;
+    for (var intentoGlobal = 1; intentoGlobal <= reintentosPorCandadoOcupado; intentoGlobal++) {
+      Logger.object('Payload Apps Script [upload_image, archivo: $fileName, ${bytes.length} bytes, intento $intentoGlobal/$reintentosPorCandadoOcupado]', {
+        'action': 'upload_image',
+        'fileName': fileName,
+        'mimeType': mimeType,
       });
-      if (!sincronizado) {
-        Logger.warning('SheetsDataService: foto subida a Drive pero no se pudo registrar en "galeria" (${nuevo.id}).');
+
+      final resultado = await _postAppsScriptJson(
+        {
+          'action': 'upload_image',
+          'fileName': fileName,
+          'mimeType': mimeType,
+          'base64Data': base64Data,
+        },
+        // El payload en base64 puede ser grande y una red móvil real puede
+        // tardar bastante en subirlo + procesarlo del lado del servidor —
+        // se necesita mucho más margen que en el resto de las acciones.
+        sendTimeout: const Duration(seconds: 90),
+        receiveTimeout: const Duration(seconds: 90),
+        reintentosEco: const [
+          Duration(milliseconds: 500),
+          Duration(milliseconds: 1000),
+          Duration(milliseconds: 2000),
+          Duration(milliseconds: 3000),
+          Duration(milliseconds: 4000),
+          Duration(milliseconds: 5000),
+        ],
+      );
+
+      final parsed = resultado.data;
+      if (parsed == null) {
+        Logger.error('subirFotoGaleria: no se pudo confirmar la subida. El archivo puede haberse subido igual a Drive.');
+        return null;
       }
-      return nuevo.id;
-    } catch (e) {
-      Logger.error('subirFotoGaleria: excepción subiendo la imagen (la subida a Drive puede haberse completado igual del lado del servidor)', e);
+
+      final ocupado = parsed['status'] != 'success' &&
+          (parsed['message']?.toString().toLowerCase().contains('ocupado') ?? false);
+      if (ocupado && intentoGlobal < reintentosPorCandadoOcupado) {
+        Logger.warning('subirFotoGaleria: servidor ocupado (candado de Apps Script), reintentando el POST completo...');
+        await Future.delayed(const Duration(seconds: 2));
+        continue;
+      }
+
+      if (parsed['status'] != 'success' || parsed['fileUrl'] == null) {
+        Logger.error('subirFotoGaleria: respuesta inesperada: $parsed');
+        return null;
+      }
+
+      data = parsed;
+      break;
     }
-    return null;
+
+    if (data == null) return null;
+
+    final nuevo = GaleriaItem(
+      id: nextGaleriaId,
+      url: data['fileUrl'] as String,
+      driveFileId: (data['fileId'] ?? '').toString(),
+      nombreArchivo: fileName,
+      fechaSubida: DateTime.now(),
+    );
+    _galeria.insert(0, nuevo);
+    notifyListeners();
+
+    final sincronizado = await _postToAppsScript({
+      'action': 'create',
+      'sheet': 'galeria',
+      'data': nuevo.toMap(),
+    });
+    if (!sincronizado) {
+      Logger.warning('SheetsDataService: foto subida a Drive pero no se pudo registrar en "galeria" (${nuevo.id}).');
+    }
+    return nuevo.id;
   }
 
   // ===========================================================================
@@ -2443,25 +2491,15 @@ class SheetsDataService extends ChangeNotifier {
     if (url == null || url.trim().isEmpty) return false;
 
     try {
-      var response = await _httpClient.post(
-        Uri.parse(url),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({'action': 'refrescar_tasas', 'sheet': 'tasas'}),
-      ).timeout(const Duration(seconds: 20));
+      final resultado = await _postAppsScriptJson(
+        {'action': 'refrescar_tasas', 'sheet': 'tasas'},
+        sendTimeout: const Duration(seconds: 20),
+        receiveTimeout: const Duration(seconds: 20),
+      );
 
-      if ((response.statusCode == 302 || response.statusCode == 303 || response.statusCode == 307) &&
-          response.headers.containsKey('location')) {
-        final redirectUrl = response.headers['location']!;
-        try {
-          response = await _httpClient.get(Uri.parse(redirectUrl)).timeout(const Duration(seconds: 20));
-        } catch (_) {}
-      }
-
-      if (response.statusCode != 200) return false;
-
-      final body = jsonDecode(response.body);
-      if (body['status'] != 'success') {
-        Logger.error('SheetsDataService: refrescarTasaHoy falló: ${body['message']}');
+      final body = resultado.data;
+      if (body == null || body['status'] != 'success') {
+        Logger.error('SheetsDataService: refrescarTasaHoy falló: ${body?['message']}');
         return false;
       }
 

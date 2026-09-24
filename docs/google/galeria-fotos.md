@@ -43,8 +43,14 @@ En Flutter, `SheetsDataService.fotoUrlPorId(fotoId)` hace ese mismo JOIN lógico
 
 Un único widget reutilizable (creación de producto y edición de foto existente) con 4 botones: **Tomar foto**, **Galería**, **Descargar**, **Quitar**. El usuario nunca ve un ID ni una URL.
 
-- Tomar/Elegir → `image_picker` (`ImagePicker().pickImage(...)`) → bytes → `SheetsDataService.subirFotoGaleria(...)`.
-- Descargar → `http.get` sobre la URL resuelta → `gal` (`Gal.putImageBytes(...)`) guarda en la galería del teléfono.
+- Tomar/Elegir → `image_picker` (`ImagePicker().pickImage(...)`) → bytes → recomprimir con `flutter_image_compress` (ver más abajo) → `SheetsDataService.subirFotoGaleria(...)`.
+- Descargar → un `Dio` propio (`DioClient().dio`, ver [Cliente HTTP](red-http.md)) sobre la URL resuelta → `gal` (`Gal.putImageBytes(...)`) guarda en la galería del teléfono.
+
+### Recompresión antes de subir (`flutter_image_compress`)
+
+`image_picker` ya reduce calidad/dimensiones al elegir la foto (`imageQuality: 85, maxWidth: 1600`), pero **eso no aplica a PNG** — image_picker directamente no comprime ese formato. Como el payload viaja en base64 y cada upload usó a tener que competir con los 90s de timeout de red (ver [Cliente HTTP](red-http.md)), en `_tomarOElegir` se agregó un paso extra: recomprimir siempre a JPEG calidad 80 con `FlutterImageCompress.compressWithList(...)` antes de llamar a `subirFotoGaleria`. Si la compresión falla por lo que sea (formato raro, etc.), se sigue con los bytes originales — nunca bloquea la subida.
+
+No hace falta ningún permiso nuevo en Android/iOS: opera sobre bytes en memoria (`compressWithList`), no toca el sistema de archivos.
 
 ### Backend (Apps Script)
 
@@ -118,13 +124,15 @@ Future<void> _esperarUrlDisponible(String? url) async {
   if (url == null || url.isEmpty) return;
   for (var intento = 0; intento < 5; intento++) {
     try {
-      final response = await http.get(Uri.parse(url)).timeout(const Duration(seconds: 5));
+      final response = await _dio.get(url, options: Options(receiveTimeout: const Duration(seconds: 5)));
       if (response.statusCode == 200) return;
     } catch (_) {}
     await Future.delayed(const Duration(seconds: 1));
   }
 }
 ```
+
+(migrado a `dio` — ver [Cliente HTTP](red-http.md) para el resto de la capa de red).
 
 **Causa 2 (la real, de fondo):** en `_showFotoActionSheet` (el bottom sheet que se abre al tocar el ícono de cámara en la lista, sin pasar por "Editar Producto"), `_FotoPicker` recibía `fotoId: producto.fotoId` como un valor **fijo**, capturado una sola vez cuando se abría la hoja — el `Column` de ese bottom sheet no estaba envuelto en un `StatefulBuilder`. El upload y el `updateProducto()` sí guardaban bien el `foto_id` nuevo en el backend (se pudo confirmar leyendo la hoja directamente), pero la UI nunca se enteraba del cambio: seguía mostrando la foto (o el estado) que tenía el producto al momento de abrir la hoja, no la recién subida. Por eso el síntoma persistía incluso después de arreglar el retraso del CDN — no era un problema de timing, era que el widget nunca iba a actualizarse pasara lo que pasara.
 

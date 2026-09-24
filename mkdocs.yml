@@ -39,10 +39,12 @@ nav:
   - Manual Técnico: manual-tecnico.md
   - Casos de Uso: casos-de-uso.md
   - Cumplimiento Normativo: cumplimiento-normativo.md
+  - Optimización de Build (APK): build-optimizacion-apk.md
   - Integraciones con Google:
       - Resumen: google/index.md
       - Google Sign-In: google/sign-in.md
       - Google Apps Script: google/apps-script.md
+      - Cliente HTTP (dio): google/red-http.md
       - Galería de fotos (Inventario): google/galeria-fotos.md
       - Multi-organización: google/multi-organizacion.md
       - Automatización local: google/automatizacion.md

@@ -1,10 +1,36 @@
 import 'dart:convert';
+import 'dart:typed_data';
+import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:http/http.dart' as http;
-import 'package:http/testing.dart';
 import 'package:estilo_neutral/shared/google_sheets/sheets_data_service.dart';
 import 'package:estilo_neutral/models/models.dart';
 import '../test_sheets_config.dart';
+
+/// Adapter falso de dio para simular respuestas de Apps Script sin red real.
+class _FakeHttpClientAdapter implements HttpClientAdapter {
+  final void Function(RequestOptions options) onRequest;
+  _FakeHttpClientAdapter(this.onRequest);
+
+  @override
+  void close({bool force = false}) {}
+
+  @override
+  Future<ResponseBody> fetch(
+    RequestOptions options,
+    Stream<Uint8List>? requestStream,
+    Future<void>? cancelFuture,
+  ) async {
+    onRequest(options);
+    final bytes = utf8.encode('{"status":"success"}');
+    return ResponseBody.fromBytes(
+      bytes,
+      200,
+      headers: {
+        Headers.contentTypeHeader: ['application/json'],
+      },
+    );
+  }
+}
 
 void main() {
   group('SheetsDataService Unit & CRUD Tests', () {
@@ -179,17 +205,16 @@ void main() {
         'Apps Script dispatch envía acciones remotas cuando appsScriptUrl está configurada',
         () async {
       final dispatched = <Map<String, dynamic>>[];
-      final mockClient = MockClient((request) async {
-        if (request.url.toString().contains('script.google.com')) {
-          dispatched.add(jsonDecode(request.body) as Map<String, dynamic>);
-          return http.Response('{"status":"success"}', 200);
-        }
-        return http.Response('', 200);
-      });
+      final fakeDio = Dio()
+        ..httpClientAdapter = _FakeHttpClientAdapter((options) {
+          if (options.uri.toString().contains('script.google.com') && options.data is Map) {
+            dispatched.add(Map<String, dynamic>.from(options.data as Map));
+          }
+        });
 
       final testService = SheetsDataService(
         appsScriptUrl: 'https://script.google.com/macros/s/TEST/exec',
-        httpClient: mockClient,
+        dio: fakeDio,
       );
 
       final cliente = Cliente(

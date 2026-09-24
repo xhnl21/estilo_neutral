@@ -179,9 +179,9 @@ abstract final class Logger {
     try {
       if (object is Map || object is List) {
         const encoder = JsonEncoder.withIndent('  ');
-        content = encoder.convert(object);
+        content = encoder.convert(_truncarValoresLargos(object));
       } else {
-        content = object.toString();
+        content = _truncarValoresLargos(object.toString()) as String;
       }
     } catch (_) {
       content = object.toString();
@@ -190,6 +190,29 @@ abstract final class Logger {
     final sanitized = sanitize(content);
     final timestamp = DateTime.now().toIso8601String();
     debugPrint('[$timestamp] 📦 [$tag]:\n$sanitized');
+  }
+
+  /// Reemplaza cadenas muy largas (ej. imágenes en base64) por un resumen,
+  /// para que loguear un payload grande no inunde la consola con miles de
+  /// caracteres ilegibles. Preserva la estructura del Map/List original.
+  static const int _maxStringLengthEnLog = 300;
+
+  /// Trunca una cadena larga para armar mensajes de [api] a mano sin
+  /// inundar la consola (p.ej. el body crudo de una respuesta HTTP). Para
+  /// loguear un objeto/Map completo, usar [object] en su lugar.
+  static String truncate(String value) => _truncarValoresLargos(value) as String;
+
+  static dynamic _truncarValoresLargos(dynamic value) {
+    if (value is Map) {
+      return value.map((k, v) => MapEntry(k, _truncarValoresLargos(v)));
+    }
+    if (value is List) {
+      return value.map(_truncarValoresLargos).toList();
+    }
+    if (value is String && value.length > _maxStringLengthEnLog) {
+      return '${value.substring(0, _maxStringLengthEnLog)}… (${value.length} caracteres en total, truncado)';
+    }
+    return value;
   }
 
   /// Sanitiza una cadena ofuscando información personal identificable (PII) y credenciales.

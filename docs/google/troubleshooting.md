@@ -92,6 +92,16 @@ Esto pasa fácil porque `Range.setValues()` de Apps Script **siempre** convierte
 
 Caso completo (diseño de la feature, diagnóstico paso a paso y el runbook de reautorización de scopes que se usó en el camino): ver [Galería de fotos](galeria-fotos.md).
 
+## `pumpAndSettle timed out` / el test se cuelga hasta el timeout de 10 minutos
+
+**Causa:** un `testWidgets()` disparó, directa o indirectamente, una llamada real de `dio` (a través de `SheetsDataService`) — por ejemplo `ServiceLocator().init()`, `addCliente()`, `addVenta()`. Ese `Future` no se resuelve nunca dentro del zone "fake async" de Flutter Test a menos que corra dentro de `tester.runAsync()`.
+
+**Fix:** envolver la llamada en `runAsync`. Detalle completo, por qué pasa y por qué `package:http` no lo sufría de la misma forma: ver [Cliente HTTP § Testing con dio](red-http.md#testing-con-dio).
+
+## APK de release demasiado grande
+
+Ver [Optimización de Build (APK)](../build-optimizacion-apk.md) — diagnóstico completo (assets sin comprimir, R8 desactivado, APK FAT multi-arquitectura) y los pasos ya aplicados con los números medidos.
+
 ## El `.xlsx` local "desaparece" o cambia de tamaño drásticamente
 
 Si abrís el `.xlsx` con una app de oficina de terceros (ej. WPS Office) para revisarlo, puede quedar bloqueado momentáneamente o guardarse con mucho más peso del original (formato/metadata extra) al re-guardarlo. El contenido en sí no se corrompe, pero:

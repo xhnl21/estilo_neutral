@@ -25,23 +25,34 @@ void main() {
     service.setCurrentOrganizacion('67774411-6aa1-4aa3-a4b2-d3fc6913b768');
 
     // Add a customer with large debt that previously caused the 29px RenderFlex overflow
-    service.addCliente(
-      Cliente(
-        id: 'c99999999',
-        nombre: 'Cliente Con Deuda Grande',
-        telefono: '+584121234567',
-        email: 'deuda@ejemplo.com',
-        saldoDeudaUsd: 20000.00,
-        fechaRegistro: DateTime(2026, 9, 14),
-      ),
-    );
-
-    FlutterErrorDetails? errorDetails;
-    final oldHandler = FlutterError.onError;
-    FlutterError.onError = (details) {
-      errorDetails = details;
-    };
-    addTearDown(() => FlutterError.onError = oldHandler);
+    //
+    // ClientesPage ya no confía en cliente.saldoDeudaUsd para mostrar la
+    // deuda (ese campo puede desincronizarse) — calcula "deudaReal" a partir
+    // de las facturas (ventas) del cliente. Por eso hace falta una Venta con
+    // deuda pendiente, no solo poner saldoDeudaUsd en el modelo Cliente.
+    //
+    // addCliente()/addVenta() sincronizan en segundo plano con Apps Script
+    // (sin esperarlo) — esos POST reales con dio necesitan correr en la zone
+    // real de `runAsync`, si no, el Future nunca se resuelve dentro del zone
+    // "fake async" de testWidgets() y pumpAndSettle() se cuelga esperándolo.
+    await tester.runAsync(() async {
+      await service.addCliente(
+        Cliente(
+          id: 'c99999999',
+          nombre: 'Cliente Con Deuda Grande',
+          telefono: '+584121234567',
+          email: 'deuda@ejemplo.com',
+          saldoDeudaUsd: 20000.00,
+          fechaRegistro: DateTime(2026, 9, 14),
+        ),
+      );
+      await service.addVenta(
+        clienteId: 'c99999999',
+        items: const [(productoId: 'p_fake', cantidad: 1, precioUsd: 20000.00)],
+        metodoPagoId: 'mp_fake',
+        abonoUsd: 0.0,
+      );
+    });
 
     await tester.pumpWidget(
       MaterialApp(
@@ -52,11 +63,19 @@ void main() {
 
     await tester.pumpAndSettle();
 
-    if (errorDetails != null) {
+    // tester.takeException() es la API soportada por Flutter para revisar si
+    // el árbol de widgets tiró un error (ej. un RenderFlex overflow) durante
+    // el pump, sin que el test lo dé por fallido automáticamente. La versión
+    // anterior reemplazaba `FlutterError.onError` a mano sin encadenar el
+    // handler original — eso rompe el tracking interno de excepciones
+    // pendientes de TestWidgetsFlutterBinding y hacía fallar el test con un
+    // `_pendingExceptionDetails != null` ajeno al layout que se quería probar.
+    final exception = tester.takeException();
+    if (exception != null) {
       // ignore: avoid_print
-      print('CAUGHT DETAILS:\n$errorDetails');
+      print('CAUGHT EXCEPTION:\n$exception');
     }
-    expect(errorDetails, isNull);
+    expect(exception, isNull);
     expect(find.textContaining('Cliente Con Deuda Grande'), findsOneWidget);
     expect(find.text(r'$20000.00'), findsOneWidget);
   });

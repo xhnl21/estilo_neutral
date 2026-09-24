@@ -10,6 +10,7 @@ Guía de referencia para desarrolladores que se suman al proyecto. Para arquitec
 | Navegación | `go_router` (rutas + `StatefulShellRoute.indexedStack` para las 12 vistas) |
 | Estado | En su mayoría `ChangeNotifier` (`SheetsDataService`) + `ListenableBuilder`; algunas features nuevas (`sales`, `search`) usan `flutter_bloc` |
 | Backend de datos | Google Sheets, sin servidor propio (ver más abajo) |
+| Cliente HTTP | `dio` (ver [Cliente HTTP](google/red-http.md)) |
 | Autenticación | `google_sign_in` (OAuth Android nativo) |
 | Almacenamiento seguro | `flutter_secure_storage` (Keychain / EncryptedSharedPreferences) |
 | Video | `video_player` (splash de introducción) |
@@ -82,6 +83,8 @@ flutter build apk --flavor prod --release --dart-define-from-file=.env
 
 Keystore en `android/app/upload-keystore.jks` (config en `android/key.properties`, gitignoreado). Ver [Google Sign-In → sacar el SHA-1](google/sign-in.md#sacar-el-sha-1-de-un-keystore).
 
+El build de release tiene R8 (minify) + resource shrinking activos (`android/app/build.gradle.kts` + `android/app/proguard-rules.pro`) — ver [Optimización de Build](build-optimizacion-apk.md) antes de agregar un plugin nuevo con código nativo Android, por si necesita una regla de ProGuard propia.
+
 ## Testing
 
 ```bash
@@ -89,7 +92,9 @@ flutter analyze lib/ test/
 flutter test
 ```
 
-138 tests a la fecha de este documento (widgets, cubits, routing, config). `test/test_live_fetch.dart` es un test de integración manual contra una hoja externa vieja — no forma parte del suite estándar (su nombre no termina en `_test.dart`, así que `flutter test` no lo descubre automáticamente) y hoy está roto; no es necesario arreglarlo para el CI normal.
+144 tests a la fecha de este documento (widgets, cubits, routing, config). `test/test_live_fetch.dart` es un test de integración manual contra una hoja externa vieja — no forma parte del suite estándar (su nombre no termina en `_test.dart`, así que `flutter test` no lo descubre automáticamente) y hoy está roto; no es necesario arreglarlo para el CI normal.
+
+**Si un `testWidgets()` dispara una llamada real de red a través de `SheetsDataService`** (por ejemplo `ServiceLocator().init()`, `addCliente()`, `addVenta()`), envolvela en `tester.runAsync()` — si no, el `Future` de `dio` puede no resolverse nunca dentro del zone "fake async" de Flutter Test y `pumpAndSettle()` cuelga hasta el timeout del test. Ver [Cliente HTTP § Testing con dio](google/red-http.md#testing-con-dio) para el detalle y los dos casos reales que se arreglaron así.
 
 ## Puntos de extensión comunes
 

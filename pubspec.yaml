@@ -11,7 +11,6 @@ dependencies:
     sdk: flutter
   google_sign_in: ^6.2.1
   googleapis: ^13.1.0
-  http: ^1.2.0
   flutter_secure_storage: ^9.0.0
   cupertino_icons: ^1.0.8
   google_fonts: ^6.1.0
@@ -25,6 +24,7 @@ dependencies:
   local_auth: ^3.0.2
   image_picker: ^1.2.3
   gal: ^2.3.3
+  flutter_image_compress: ^2.5.1
 
 dev_dependencies:
   flutter_test:
@@ -36,7 +36,6 @@ dev_dependencies:
 flutter:
   uses-material-design: true
   assets:
-    - assets/icon.png
     - assets/icons.png
     - assets/splash_screen.jpeg
     - assets/estilo_neutral.mp4

@@ -1,3 +1,4 @@
+import 'package:dio/dio.dart';
 import '../../core/router/router.dart';
 import '../../features/auth/auth.dart';
 import '../../shared/shared.dart';
@@ -18,7 +19,12 @@ class ServiceLocator {
   bool _initialized = false;
   bool get isInitialized => _initialized;
 
-  void init() {
+  /// [dio] es un punto de inyección solo para tests: permite reemplazar el
+  /// cliente HTTP real por uno falso (ver `_FakeHttpClientAdapter` en los
+  /// tests de widgets) para no depender de la red real dentro de
+  /// `testWidgets()` — ahí Flutter intercepta el `HttpClient` y una llamada
+  /// real puede volverse lenta/errática en vez de fallar rápido.
+  void init({Dio? dio}) {
     if (_initialized) return;
     _initialized = true;
     tokenStorage = SecureTokenStorage();
@@ -29,6 +35,7 @@ class ServiceLocator {
     );
     sheetsDataService = SheetsDataService(
       spreadsheetId: SheetsConfig.defaultSpreadsheetId,
+      dio: dio,
     )..initialize();
 
     authNotifier = AuthNotifier(

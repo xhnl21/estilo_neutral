@@ -1,2 +1,0 @@
-﻿id,fecha_compra,fecha_entrega,capital_usd,comision_binance_usd,numero_orden,plataforma,vendedor,tasa_bcv,tasa_usd,validacion
-,,,,,,,,,,"=IF(B2="""","""",IF(AND(C2>=B2, E2>=0, D2>0), ""OK"", ""ERROR""))"

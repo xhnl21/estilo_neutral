@@ -1,10 +1,14 @@
+import 'dart:typed_data';
+
+import 'package:dio/dio.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'package:gal/gal.dart';
-import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
 import '../../core/config/environment_config.dart';
 import '../../core/design_system/design_system.dart';
+import '../../core/network/dio_client.dart';
 import '../../models/models.dart';
 import '../../shared/shared.dart';
 
@@ -598,6 +602,7 @@ class _FotoPicker extends StatefulWidget {
 }
 
 class _FotoPickerState extends State<_FotoPicker> {
+  final Dio _dio = DioClient().dio;
   bool _procesando = false;
   String? _procesandoMensaje;
 
@@ -630,11 +635,38 @@ class _FotoPickerState extends State<_FotoPicker> {
       _procesandoMensaje = 'Subiendo foto...';
     });
     try {
-      final bytes = await picked.readAsBytes();
+      final original = await picked.readAsBytes();
+      var bytes = original;
+      var fileName = picked.name;
+      var mimeType = picked.mimeType ?? 'image/jpeg';
+      // image_picker ya reduce calidad/dimensiones al elegir la foto, pero
+      // eso no aplica a PNG. Se comprime de nuevo acá (a JPEG, sin
+      // transparencia real en fotos de productos) para bajar el peso del
+      // payload en base64 — más chico, más rápido y menos probable de pisar
+      // el timeout de red al subir.
+      try {
+        final comprimido = await FlutterImageCompress.compressWithList(
+          original,
+          minWidth: 1600,
+          minHeight: 1600,
+          quality: 80,
+          format: CompressFormat.jpeg,
+        );
+        if (comprimido.length < original.length) {
+          bytes = comprimido;
+          mimeType = 'image/jpeg';
+          final sinExtension = fileName.contains('.') ? fileName.substring(0, fileName.lastIndexOf('.')) : fileName;
+          fileName = '$sinExtension.jpg';
+        }
+      } catch (_) {
+        // Si la compresión falla (formato no soportado, etc.), seguimos con
+        // los bytes originales tal cual venían de image_picker.
+      }
+
       final nuevoFotoId = await widget.dataService.subirFotoGaleria(
         bytes: bytes,
-        fileName: picked.name,
-        mimeType: picked.mimeType ?? 'image/jpeg',
+        fileName: fileName,
+        mimeType: mimeType,
       );
       if (!mounted) return;
       if (nuevoFotoId != null) {
@@ -659,7 +691,7 @@ class _FotoPickerState extends State<_FotoPicker> {
     if (url == null || url.isEmpty) return;
     for (var intento = 0; intento < 5; intento++) {
       try {
-        final response = await http.get(Uri.parse(url)).timeout(const Duration(seconds: 5));
+        final response = await _dio.get(url, options: Options(receiveTimeout: const Duration(seconds: 5)));
         if (response.statusCode == 200) return;
       } catch (_) {}
       await Future.delayed(const Duration(seconds: 1));
@@ -675,12 +707,12 @@ class _FotoPickerState extends State<_FotoPicker> {
       _procesandoMensaje = 'Descargando foto...';
     });
     try {
-      final response = await http.get(Uri.parse(url));
-      if (response.statusCode != 200) {
+      final response = await _dio.get<List<int>>(url, options: Options(responseType: ResponseType.bytes));
+      if (response.statusCode != 200 || response.data == null) {
         _mostrarError('No se pudo descargar la foto.');
         return;
       }
-      await Gal.putImageBytes(response.bodyBytes);
+      await Gal.putImageBytes(Uint8List.fromList(response.data!));
       _mostrarInfo('Foto guardada en tu galería.');
     } catch (_) {
       _mostrarError('No se pudo descargar la foto.');

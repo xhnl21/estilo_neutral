@@ -9,18 +9,45 @@ import 'package:estilo_neutral/features/auth/application/auth_notifier.dart';
 import 'package:estilo_neutral/presentation/pages/clientes_page.dart';
 import 'package:estilo_neutral/presentation/pages/factura_detalle_page.dart';
 import 'package:estilo_neutral/presentation/pages/inventario_page.dart';
+import '../../test_fake_dio.dart';
 
-void main() {
-  setUp(() {
-    ServiceLocator().init();
+/// `ServiceLocator().init()` dispara — sin esperarlo — el fetch inicial de
+/// `SheetsDataService` (`initialize()`). Un `Future` real de dio creado
+/// dentro del zone "fake async" de `testWidgets()` no llega a resolverse
+/// nunca (es una limitación conocida de Flutter Test con async real, no un
+/// bug de la app) y `pumpAndSettle()` se cuelga esperándolo. Por eso el
+/// `init()` (la única llamada que realmente dispara ese fetch, gracias al
+/// guard `_initialized` del singleton) se hace dentro de `tester.runAsync`,
+/// que sí corre en una zone real — la función async que arranca ahí sigue
+/// corriendo en esa misma zone después, aunque nadie la espere.
+Future<void> _initServiceLocator(WidgetTester tester) {
+  return tester.runAsync(() async {
+    ServiceLocator().init(dio: buildFakeDio());
+    // `init()` no espera a que termine `initialize()` (fetch en segundo
+    // plano). Si lo dejamos "colgando", sigue corriendo durante los tests
+    // siguientes y puede pisar su ventana de `pumpAndSettle()`. Como acá
+    // estamos en la zone real de `runAsync`, sí podemos esperarlo bien.
+    // `initialize()` recién pone `isLoading` en true DESPUÉS de su primer
+    // `await` (token guardado), así que primero hay que esperar a que
+    // arranque antes de esperar a que termine.
+    final deadline = DateTime.now().add(const Duration(seconds: 5));
+    while (!ServiceLocator().sheetsDataService.isLoading && DateTime.now().isBefore(deadline)) {
+      await Future.delayed(const Duration(milliseconds: 5));
+    }
+    while (ServiceLocator().sheetsDataService.isLoading) {
+      await Future.delayed(const Duration(milliseconds: 20));
+    }
     // Simula una sesión con organización activa (como ocurre siempre en la
     // app real tras el login) para que los getters filtrados por
     // organización (p.ej. `ventas`) expongan los datos semilla.
     ServiceLocator().sheetsDataService.setCurrentOrganizacion('67774411-6aa1-4aa3-a4b2-d3fc6913b768');
   });
+}
 
+void main() {
   group('AppRouter Widget Tests', () {
     testWidgets('navigates to initialLocation /ventas by default', (tester) async {
+      await _initServiceLocator(tester);
       final authNotifier = AuthNotifier();
       final appRouter = AppRouter(
         authNotifier: authNotifier,
@@ -42,6 +69,7 @@ void main() {
     });
 
     testWidgets('renders NotFoundPage when navigating to an unknown route', (tester) async {
+      await _initServiceLocator(tester);
       final authNotifier = AuthNotifier();
       final appRouter = AppRouter(
         authNotifier: authNotifier,
@@ -63,6 +91,7 @@ void main() {
     });
 
     testWidgets('supports deep linking to /ventas/:id with FacturaDetallePage', (tester) async {
+      await _initServiceLocator(tester);
       final authNotifier = AuthNotifier();
       final appRouter = AppRouter(
         authNotifier: authNotifier,
@@ -84,6 +113,7 @@ void main() {
     });
 
     testWidgets('supports deep linking with query parameters on /inventario?q=Pantalon', (tester) async {
+      await _initServiceLocator(tester);
       final authNotifier = AuthNotifier();
       final appRouter = AppRouter(
         authNotifier: authNotifier,
@@ -104,6 +134,7 @@ void main() {
     });
 
     testWidgets('persists StatefulShellRoute across tab navigation', (tester) async {
+      await _initServiceLocator(tester);
       final authNotifier = AuthNotifier();
       final appRouter = AppRouter(
         authNotifier: authNotifier,
