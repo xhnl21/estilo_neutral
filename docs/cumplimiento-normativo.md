@@ -10,7 +10,7 @@ El código de este proyecto referencia constantemente normas internacionales en 
 | Norma | Estado | Nota corta |
 |---|---|---|
 | ISO/IEC 25010 (Calidad de software) | 🟡 Parcial | Cero Polling real; mantenibilidad afectada por un archivo "god object" |
-| ISO 8000 (Calidad de datos) | 🟡 Parcial | IDs y fechas consistentes; teléfono/email **sin validación real** |
+| ISO 8000 (Calidad de datos) | 🟡 Parcial | PKs duplicadas e integridad referencial corregidas (2026-09-25); teléfono/email **sin validación real** |
 | ISO 8601 (Fechas) | 🟢 Cumple | Formato consistente en todos los modelos |
 | ISO/IEC 27001 (Seguridad de la información) | 🔴 No cumple | Lectura y escritura del backend son **públicas y sin autenticación** |
 | GDPR Art. 5 / Art. 17 | 🔴 No cumple | Sin política de retención, sin derecho al olvido real |
@@ -35,8 +35,24 @@ El código de este proyecto referencia constantemente normas internacionales en 
 
 **Cumple:**
 
-- IDs con prefijo y secuencia consistentes (`c00000001`, `p00000001`, ...).
+- IDs con prefijo y secuencia consistentes (`c00000001`, `p00000001`, ...) — **generados en el servidor**, no en el cliente (ver corrección abajo).
 - Fechas en formato ISO 8601 en todos los modelos.
+- **Integridad referencial validada en el servidor**: `google_apps_script.js` rechaza la creación de `ventas` con `cliente_id` inexistente, de `venta_items` con `venta_id`/`item_id` inexistentes, y de `abonos` con `venta_id` inexistente (`_validarForeignKeys`).
+
+**Corrección de integridad aplicada (2026-09-25):**
+
+Una auditoría externa (ver hallazgos de DeepSeek sobre `Estilo Neutral.xlsx`) encontró **claves primarias duplicadas reales y en vivo**: dos filas con `id=c00000002` en `clientes` y dos pares de filas duplicadas en `galeria` (`g00000002`, `g00000003`). Se verificó cada hallazgo contra el Google Sheet real (no contra una copia local desactualizada) antes de actuar.
+
+- **Causa raíz identificada**: el "siguiente ID" (`nextClienteId`, `nextGaleriaId`, etc.) se calculaba en `sheets_data_service.dart` a partir de una caché en memoria del cliente Flutter — si dos sesiones/dispositivos calculaban el mismo "siguiente ID" antes de que el otro sincronizara, ambas creaban filas con el mismo `id`.
+- **Fix estructural**: la generación de ID se movió al servidor (`_siguienteIdServidor` en `google_apps_script.js`), ejecutándose **dentro del `LockService.getScriptLock()` global** que ya envolvía todo `doPost` — esto la hace atómica entre escrituras concurrentes. Se extendió a las 10 hojas con ID con prefijo (`clientes`, `inventario`, `galeria`, `ventas`, `venta_items`, `abonos`, `compras_divisas`, `usuarios`, `tasas`, `moneda_organizacion`). Del lado de Flutter, cada método de creación (`addCliente`, `addProducto`, `subirFotoGaleria`, `addVenta`, `addUsuario`, `addCompraDivisa`, `setTasaManualOrganizacion`, `setMonedaOrganizacion`) ahora espera el ID real devuelto por el servidor y reconcilia la fila local insertada de forma optimista si el servidor asignó un ID distinto al calculado localmente (`_crearEnServidor`).
+- **Riesgo detectado y corregido durante la implementación**: `addVenta` sincronizaba `venta` + `venta_items` + `abono` en paralelo (`Future.wait`), los tres referenciando el ID de venta calculado localmente. Combinado con la validación de FK ya activa, una colisión de ID en la venta habría hecho que el servidor rechazara sus ítems/abono (por apuntar a un `venta_id` que ya no existe bajo ese ID). Se reestructuró para crear la venta primero, esperar su ID confirmado, y solo entonces sincronizar ítems y abono con ese ID.
+- **Limpieza de los datos ya rotos en producción** (vía Sheets API, verificado con lectura antes/después):
+    - `clientes`: se fusionó el duplicado de `c00000002` en una sola fila, con `saldo_deuda_usd` recalculado desde la venta real pendiente (`v00000002`, sin abonos) → 180 USD.
+    - `galeria`: las dos filas huérfanas duplicadas (mismo `id` que `g00000002`/`g00000003`, subidas más tarde y no referenciadas por ningún `inventario.foto_id`) se renumeraron a `g00000007`/`g00000008` — ninguna foto se eliminó.
+    - `ventas`: se limpió un valor fantasma en la columna P de `v00000001` (sin encabezado, resto de una columna eliminada en algún momento).
+    - `ventas`: se corrigió una tasa cambiaria cruzada — `v00000002`/`v00000003` (fecha 2026-09-22) usaban `tasa_bcv=474` (la tasa manual de otra fecha) en vez de `852.4168` (la tasa BCV real de ese día, `t00000003`); `v00000004` (fecha 2026-09-23) usaba `976.5483`, que es la tasa **EUR** de ese día (`t00000002`), en vez de `853.4993`, la tasa USD correcta (`t00000001`). Se recalculó `monto_bs` para las tres filas.
+    - `inventario`: se eliminaron 4 filas duplicadas de "Gorra Deportiva" (`p00000005`-`p00000008`, sin ninguna venta asociada en `venta_items`) y se completó el `organizacion_id` faltante en `p00000004` (la fila real, con una venta asociada).
+- **Fuera de este alcance, explícitamente**: no se implementó RBAC, Row-Level Security, bitácora con hash-chaining, tokenización de PII ni comité de gobierno de datos — un plan de 12 fases propuesto en paralelo para "cumplir normas internacionales" fue evaluado y descartado por desproporcionado para el tamaño del negocio; además, ninguna cantidad de código puede por sí sola producir una certificación real ISO 27001/GDPR/COBIT, que requiere procesos organizacionales, acuerdos legales (ej. un DPA con Google) y auditorías externas.
 
 **No cumple:**
 

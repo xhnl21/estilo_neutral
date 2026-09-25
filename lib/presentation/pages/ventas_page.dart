@@ -1,11 +1,16 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
+import '../../app/di/injection.dart';
 import '../../core/config/environment_config.dart';
 import '../../core/design_system/design_system.dart';
 import '../../core/router/route_paths.dart';
+import '../../features/credits/credits.dart';
 import '../../models/models.dart';
 import '../../shared/shared.dart';
+import '../cubits/ventas/ventas_cubit.dart';
+import '../cubits/ventas/ventas_state.dart';
 
 /// Muestra la tasa que se va a aplicar al pago, junto al selector de método
 /// de pago. Si la organización no tiene una tasa manual configurada, es
@@ -159,41 +164,43 @@ class _CartLine {
 /// Pantalla de Ventas (hoja: ventas, header de factura + hoja "venta_items").
 /// Una venta puede tener varios ítems (relación 1:N venta→ítems), como una
 /// factura real con múltiples renglones.
-class VentasPage extends StatefulWidget {
+class VentasPage extends StatelessWidget {
   final SheetsDataService dataService;
-
-  /// Si se pasa, la lista arranca filtrada a las facturas de ese cliente
-  /// (navegación desde "Ver compras" en Clientes).
   final String? clienteIdInicial;
 
   const VentasPage({super.key, required this.dataService, this.clienteIdInicial});
 
   @override
-  State<VentasPage> createState() => _VentasPageState();
+  Widget build(BuildContext context) {
+    return BlocProvider(
+      create: (_) => VentasCubit(
+        dataService: dataService,
+        initialClienteId: clienteIdInicial,
+      ),
+      child: _VentasView(
+        dataService: dataService,
+        clienteIdInicial: clienteIdInicial,
+      ),
+    );
+  }
 }
 
-class _VentasPageState extends State<VentasPage> {
-  String _filterStatus = 'Todos'; // 'Todos', 'Pagada', 'Pendiente'
-  String? _filtroClienteId;
+class _VentasView extends StatefulWidget {
+  final SheetsDataService dataService;
+  final String? clienteIdInicial;
+
+  const _VentasView({required this.dataService, this.clienteIdInicial});
 
   @override
-  void initState() {
-    super.initState();
-    _filtroClienteId = widget.clienteIdInicial;
-  }
+  State<_VentasView> createState() => _VentasViewState();
+}
 
+class _VentasViewState extends State<_VentasView> {
   @override
-  void didUpdateWidget(covariant VentasPage oldWidget) {
+  void didUpdateWidget(covariant _VentasView oldWidget) {
     super.didUpdateWidget(oldWidget);
-    // StatefulShellRoute.indexedStack preserva el estado de la pestaña
-    // Ventas entre visitas — al volver a navegar acá (ej. desde "Ver
-    // Compras" en Clientes) con un ?cliente= distinto, Flutter reutiliza
-    // este mismo State en vez de recrearlo, así que initState() no vuelve a
-    // correr. Sin este chequeo, el filtro de cliente del primer ingreso
-    // queda pegado para siempre y los clics posteriores en "Ver Compras"
-    // no filtran nada.
     if (widget.clienteIdInicial != oldWidget.clienteIdInicial) {
-      _filtroClienteId = widget.clienteIdInicial;
+      context.read<VentasCubit>().setFiltroCliente(widget.clienteIdInicial);
     }
   }
 
@@ -201,21 +208,12 @@ class _VentasPageState extends State<VentasPage> {
   Widget build(BuildContext context) {
     final ds = widget.dataService;
 
-    return ListenableBuilder(
-      listenable: ds,
-      builder: (context, _) {
-        final ventas = ds.ventas.where((v) {
-          if (_filtroClienteId != null && v.clienteId != _filtroClienteId) return false;
-          if (_filterStatus == 'Pagada') return v.estado == EstadoVenta.pagada;
-          if (_filterStatus == 'Pendiente') return v.estado == EstadoVenta.pendiente;
-          return true;
-        }).toList();
+    return BlocBuilder<VentasCubit, VentasState>(
+      builder: (context, state) {
+        final cubit = context.read<VentasCubit>();
+        final ventas = state.filteredVentas;
 
         final totalVentasUsd = ventas.fold<double>(0.0, (sum, v) => sum + v.totalPagarUsd);
-        // Defensivo: deuda_usd viene de una fórmula del Sheet — se clamp acá
-        // también, por si alguna fila vieja todavía no recalculó con el
-        // MAX(0,...) nuevo. Un excedente (pago que superó el total de esa
-        // factura) nunca debe aparecer mezclado como deuda negativa.
         final totalDeudaUsd = ventas.fold<double>(0.0, (sum, v) => sum + (v.deudaUsd > 0 ? v.deudaUsd : 0.0));
         final totalExcedenteUsd = ventas.fold<double>(0.0, (sum, v) => sum + v.excedenteUsd);
 
@@ -223,12 +221,12 @@ class _VentasPageState extends State<VentasPage> {
           title: 'Ventas',
           subtitle: EnvironmentConfig.formatSubtitle(
             sheetName: 'ventas',
-            userFriendlyText: '${ds.ventas.length} facturas registradas',
+            userFriendlyText: '${state.ventas.length} facturas registradas',
           ),
           actions: [
             AppRefreshButton(
-              onRefresh: () => ds.fetchAllSheets(),
-              isLoading: ds.isLoading,
+              onRefresh: () => cubit.refresh(),
+              isLoading: state.status == VentasStatus.loading,
             ),
           ],
           floatingActionButton: FloatingActionButton.extended(
@@ -241,7 +239,7 @@ class _VentasPageState extends State<VentasPage> {
           ),
           body: AnimatedSwitcher(
             duration: const Duration(milliseconds: 300),
-            child: ds.isLoading
+            child: (state.status == VentasStatus.loading && state.ventas.isEmpty)
                 ? const SalesSkeleton(key: ValueKey('sales_skeleton'))
                 : Column(
                     key: const ValueKey('sales_content'),
@@ -249,14 +247,8 @@ class _VentasPageState extends State<VentasPage> {
                       Padding(
                         padding: const EdgeInsets.fromLTRB(AppSpacing.lg, AppSpacing.sm, AppSpacing.lg, 0),
                         child: DropdownButtonFormField<String?>(
-                          // Sin este key, si _filtroClienteId cambia desde
-                          // afuera (ej. didUpdateWidget al llegar por otro
-                          // "Ver Compras" mientras esta pestaña ya estaba
-                          // viva), el FormField interno no vuelve a leer
-                          // initialValue y la selección visible queda
-                          // desactualizada aunque el filtro real sí cambió.
-                          key: ValueKey('cliente_filter_$_filtroClienteId'),
-                          initialValue: _filtroClienteId,
+                          key: ValueKey('cliente_filter_${state.filtroClienteId}'),
+                          initialValue: state.filtroClienteId,
                           isExpanded: true,
                           decoration: const InputDecoration(
                             labelText: 'Filtrar por cliente',
@@ -266,13 +258,11 @@ class _VentasPageState extends State<VentasPage> {
                           ),
                           items: [
                             const DropdownMenuItem<String?>(value: null, child: Text('Todos los clientes')),
-                            // Deduplicado por id: un dato sucio en clientes
-                            // (id repetido) no debería tumbar este dropdown.
-                            ...{for (final c in ds.clientes) c.id: c}.values.map(
+                            ...{for (final c in state.clientes) c.id: c}.values.map(
                                   (c) => DropdownMenuItem<String?>(value: c.id, child: Text(c.nombre, overflow: TextOverflow.ellipsis)),
                                 ),
                           ],
-                          onChanged: (val) => setState(() => _filtroClienteId = val),
+                          onChanged: (val) => cubit.setFiltroCliente(val),
                         ),
                       ),
                       Padding(
@@ -322,10 +312,6 @@ class _VentasPageState extends State<VentasPage> {
                           ],
                         ),
                       ),
-                      // Solo se muestra si de verdad hay un excedente (algún
-                      // cliente abonó más de lo que costaba una factura
-                      // puntual) — no es un estado normal, así que no ocupa
-                      // espacio en pantalla cuando no aplica.
                       if (totalExcedenteUsd > 0)
                         Padding(
                           padding: const EdgeInsets.fromLTRB(AppSpacing.lg, 0, AppSpacing.lg, AppSpacing.sm),
@@ -351,7 +337,7 @@ class _VentasPageState extends State<VentasPage> {
                         padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg, vertical: AppSpacing.xs),
                         child: Row(
                           children: ['Todos', 'Pagada', 'Pendiente'].map((st) {
-                            final isSel = _filterStatus == st;
+                            final isSel = state.filterStatus == st;
                             return Padding(
                               padding: const EdgeInsets.only(right: AppSpacing.sm),
                               child: ChoiceChip(
@@ -363,7 +349,7 @@ class _VentasPageState extends State<VentasPage> {
                                   fontWeight: isSel ? FontWeight.w600 : FontWeight.w400,
                                 ),
                                 onSelected: (val) {
-                                  if (val) setState(() => _filterStatus = st);
+                                  if (val) cubit.setFilterStatus(st);
                                 },
                               ),
                             );
@@ -382,14 +368,43 @@ class _VentasPageState extends State<VentasPage> {
                                 itemCount: ventas.length,
                                 itemBuilder: (context, index) {
                                   final v = ventas[index];
-                                  return _VentaCard(
-                                    venta: v,
-                                    cliente: ds.clientes.where((c) => c.id == v.clienteId).firstOrNull,
-                                    metodoPagoNombre: ds.metodoPagoNombre(v.metodoPagoId),
-                                    cantidadItems: ds.itemsDeVenta(v.id).length,
-                                    onTap: () => context.push(RoutePaths.buildSaleDetailPath(v.id)),
-                                    onAbono: v.deudaUsd > 0 ? () => _showAbonoDialog(context, ds, v) : null,
-                                    onDelete: () => _confirmDelete(context, ds, v),
+                                  final cliente = state.clientes.where((c) => c.id == v.clienteId).firstOrNull;
+                                  final availableCredits = ServiceLocator().creditsDataSource.credits.where((c) => c.clienteId == v.clienteId && c.isAvailable).toList();
+                                  final saldoAFavor = availableCredits.fold<double>(0.0, (sum, c) => sum + c.saldoUsd);
+                                  final pagadaConCredito = ds.abonosDeVenta(v.id).any((a) => a.metodoPagoId == 'mp00000009');
+
+                                  return AnimatedContainer(
+                                    key: ValueKey('venta_${v.id}'),
+                                    duration: const Duration(milliseconds: 300),
+                                    curve: Curves.easeOutCubic,
+                                    child: _VentaCard(
+                                      venta: v,
+                                      cliente: cliente,
+                                      metodoPagoNombre: ds.metodoPagoNombre(v.metodoPagoId),
+                                      cantidadItems: ds.itemsDeVenta(v.id).length,
+                                      saldoAFavorCliente: saldoAFavor,
+                                      pagadaConSaldoAFavor: pagadaConCredito,
+                                      onTap: () => context.push(RoutePaths.buildSaleDetailPath(v.id)),
+                                      onAbono: v.deudaUsd > 0 ? () => _showAbonoDialog(context, ds, v) : null,
+                                      onAplicarSaldo: () {
+                                        final cubit = ApplyCreditCubit(
+                                          repository: ServiceLocator().creditRepository,
+                                          dataService: ds,
+                                        );
+                                        ApplyCreditSheet.show(
+                                          context,
+                                          cubit: cubit,
+                                          clienteId: v.clienteId,
+                                          clienteNombre: cliente?.nombre ?? v.clienteId,
+                                          ventaId: v.id,
+                                          deudaVenta: v.deudaUsd,
+                                          totalCreditoDisponible: saldoAFavor,
+                                          origenVentaId: availableCredits.firstOrNull?.origenVentaId,
+                                          userEmail: ds.currentUsuarioEmail ?? 'Antigravity Senior Agent',
+                                        );
+                                      },
+                                      onDelete: () => _confirmDelete(context, ds, v),
+                                    ),
                                   );
                                 },
                               ),
@@ -410,7 +425,7 @@ class _VentasPageState extends State<VentasPage> {
       return;
     }
 
-    var selectedCliente = _filtroClienteId ?? ds.clientes.first.id;
+    var selectedCliente = context.read<VentasCubit>().state.filtroClienteId ?? ds.clientes.first.id;
     var selectedProducto = ds.productos.first.id;
     final cantidadController = TextEditingController(text: '1');
     final abonoController = TextEditingController(text: '0.00');
@@ -638,7 +653,10 @@ class _VentasPageState extends State<VentasPage> {
           },
         );
       },
-    );
+    ).whenComplete(() {
+      cantidadController.dispose();
+      abonoController.dispose();
+    });
   }
 
   void _showAbonoDialog(BuildContext context, SheetsDataService ds, Venta v) {
@@ -745,7 +763,9 @@ class _VentasPageState extends State<VentasPage> {
           ],
         ),
       ),
-    );
+    ).whenComplete(() {
+      abonoController.dispose();
+    });
   }
 
   void _confirmDelete(BuildContext context, SheetsDataService ds, Venta v) {
@@ -778,6 +798,9 @@ class _VentaCard extends StatelessWidget {
   final VoidCallback onTap;
   final VoidCallback? onAbono;
   final VoidCallback onDelete;
+  final double saldoAFavorCliente;
+  final VoidCallback? onAplicarSaldo;
+  final bool pagadaConSaldoAFavor;
 
   const _VentaCard({
     required this.venta,
@@ -787,6 +810,9 @@ class _VentaCard extends StatelessWidget {
     required this.onTap,
     required this.onAbono,
     required this.onDelete,
+    this.saldoAFavorCliente = 0.0,
+    this.onAplicarSaldo,
+    this.pagadaConSaldoAFavor = false,
   });
 
   @override
@@ -822,7 +848,9 @@ class _VentaCard extends StatelessWidget {
                       ),
                       const SizedBox(width: AppSpacing.xs),
                       AppChip(
-                        label: isPaid ? 'Pagada' : 'Pendiente',
+                        label: isPaid
+                            ? (pagadaConSaldoAFavor ? 'Pagada con saldo a favor' : 'Pagada')
+                            : 'Pendiente',
                         variant: isPaid ? AppChipVariant.success : AppChipVariant.warning,
                         icon: isPaid ? AppIcons.success : AppIcons.warning,
                       ),
@@ -879,9 +907,17 @@ class _VentaCard extends StatelessWidget {
                 ),
               ],
               const SizedBox(height: AppSpacing.sm),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.end,
+              Wrap(
+                alignment: WrapAlignment.end,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                spacing: AppSpacing.xs,
+                runSpacing: AppSpacing.xs,
                 children: [
+                  if (hasDebt && saldoAFavorCliente > 0)
+                    ApplyCreditButton(
+                      applicableAmount: saldoAFavorCliente < venta.deudaUsd ? saldoAFavorCliente : venta.deudaUsd,
+                      onPressed: onAplicarSaldo,
+                    ),
                   if (onAbono != null)
                     TextButton.icon(
                       icon: const Icon(CupertinoIcons.money_dollar, size: 16),

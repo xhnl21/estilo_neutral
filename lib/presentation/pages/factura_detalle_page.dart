@@ -1,8 +1,13 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
+import '../../app/di/injection.dart';
 import '../../core/design_system/design_system.dart';
+import '../../features/credits/credits.dart';
 import '../../models/models.dart';
 import '../../shared/shared.dart';
+import '../cubits/factura_detalle/factura_detalle_cubit.dart';
+import '../cubits/factura_detalle/factura_detalle_state.dart';
 
 /// Detalle de una factura (hoja "ventas" + sus ítems en "venta_items"):
 /// número de factura, cliente, lista de productos comprados (imagen, código,
@@ -15,23 +20,39 @@ class FacturaDetallePage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ListenableBuilder(
-      listenable: dataService,
-      builder: (context, _) {
-        final venta = dataService.ventas.where((v) => v.id == ventaId).firstOrNull;
+    return BlocProvider(
+      create: (_) => FacturaDetalleCubit(
+        dataService: dataService,
+        ventaId: ventaId,
+      ),
+      child: _FacturaDetalleView(dataService: dataService),
+    );
+  }
+}
+
+class _FacturaDetalleView extends StatelessWidget {
+  final SheetsDataService dataService;
+
+  const _FacturaDetalleView({required this.dataService});
+
+  @override
+  Widget build(BuildContext context) {
+    return BlocBuilder<FacturaDetalleCubit, FacturaDetalleState>(
+      builder: (context, state) {
+        final venta = state.venta;
 
         if (venta == null) {
           return Scaffold(
-            appBar: AppBar(title: Text('Factura #$ventaId')),
+            appBar: AppBar(title: Text('Factura #${state.ventaId}')),
             body: const Center(child: Text('Esta factura no existe o fue anulada.')),
           );
         }
 
-        final cliente = dataService.clientes.where((c) => c.id == venta.clienteId).firstOrNull;
-        final items = dataService.itemsDeVenta(venta.id);
-        final abonos = dataService.abonosDeVenta(venta.id).toList()
-          ..sort((a, b) => a.fecha.compareTo(b.fecha));
+        final cliente = state.cliente;
+        final items = state.items;
+        final abonos = state.abonos;
         final isPaid = venta.estado == EstadoVenta.pagada;
+        final isPaidWithCredit = abonos.any((a) => a.metodoPagoId == 'mp00000009');
 
         return Scaffold(
           backgroundColor: AppPalette.surface,
@@ -53,7 +74,9 @@ class FacturaDetallePage extends StatelessWidget {
                       children: [
                         Text('Cliente: ${cliente?.nombre ?? venta.clienteId}', style: AppTypography.titleLarge.copyWith(fontSize: 15)),
                         AppChip(
-                          label: isPaid ? 'Pagada' : 'Pendiente',
+                          label: isPaid
+                              ? (isPaidWithCredit ? 'Pagada con saldo a favor' : 'Pagada')
+                              : 'Pendiente',
                           variant: isPaid ? AppChipVariant.success : AppChipVariant.warning,
                           icon: isPaid ? AppIcons.success : AppIcons.warning,
                         ),
@@ -155,7 +178,41 @@ class FacturaDetallePage extends StatelessWidget {
                   children: [
                     _TotalRow(label: 'Total', amount: venta.totalPagarUsd, bold: true),
                     _TotalRow(label: 'Abonado', amount: venta.abonoUsd),
-                    if (venta.deudaUsd > 0) _TotalRow(label: 'Deuda pendiente', amount: venta.deudaUsd, isDebt: true),
+                    if (venta.deudaUsd > 0) ...[
+                      _TotalRow(label: 'Deuda pendiente', amount: venta.deudaUsd, isDebt: true),
+                      Builder(builder: (context) {
+                        final availableCredits = ServiceLocator().creditsDataSource.credits.where((c) => c.clienteId == venta.clienteId && c.isAvailable).toList();
+                        final totalCredito = availableCredits.fold<double>(0.0, (acc, c) => acc + c.saldoUsd);
+                        if (totalCredito <= 0) return const SizedBox.shrink();
+
+                        return Padding(
+                          padding: const EdgeInsets.only(top: AppSpacing.sm),
+                          child: Align(
+                            alignment: Alignment.centerRight,
+                            child: ApplyCreditButton(
+                              applicableAmount: totalCredito < venta.deudaUsd ? totalCredito : venta.deudaUsd,
+                              onPressed: () {
+                                final cubit = ApplyCreditCubit(
+                                  repository: ServiceLocator().creditRepository,
+                                  dataService: dataService,
+                                );
+                                ApplyCreditSheet.show(
+                                  context,
+                                  cubit: cubit,
+                                  clienteId: venta.clienteId,
+                                  clienteNombre: cliente?.nombre ?? venta.clienteId,
+                                  ventaId: venta.id,
+                                  deudaVenta: venta.deudaUsd,
+                                  totalCreditoDisponible: totalCredito,
+                                  origenVentaId: availableCredits.firstOrNull?.origenVentaId,
+                                  userEmail: dataService.currentUsuarioEmail ?? 'Antigravity Senior Agent',
+                                );
+                              },
+                            ),
+                          ),
+                        );
+                      }),
+                    ],
                   ],
                 ),
               ),

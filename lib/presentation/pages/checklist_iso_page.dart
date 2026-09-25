@@ -1,30 +1,61 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../core/config/environment_config.dart';
 import '../../core/design_system/design_system.dart';
 import '../../models/models.dart';
 import '../../shared/shared.dart';
+import '../cubits/checklist_iso/checklist_iso_cubit.dart';
+import '../cubits/checklist_iso/checklist_iso_state.dart';
 
 /// Vista de Matriz de Cumplimiento Normativo (hoja: checklist_iso)
 /// Controles ISO 27001, ISO 8000, ISO 25010, WCAG 2.2 AA y CRUD interactivo.
-class ChecklistIsoPage extends StatefulWidget {
+class ChecklistIsoPage extends StatelessWidget {
   final SheetsDataService dataService;
 
   const ChecklistIsoPage({super.key, required this.dataService});
 
   @override
-  State<ChecklistIsoPage> createState() => _ChecklistIsoPageState();
+  Widget build(BuildContext context) {
+    return BlocProvider(
+      create: (_) => ChecklistIsoCubit(dataService: dataService),
+      child: _ChecklistIsoView(dataService: dataService),
+    );
+  }
 }
 
-class _ChecklistIsoPageState extends State<ChecklistIsoPage> {
+class _ChecklistIsoView extends StatefulWidget {
+  final SheetsDataService dataService;
+
+  const _ChecklistIsoView({required this.dataService});
+
+  @override
+  State<_ChecklistIsoView> createState() => _ChecklistIsoViewState();
+}
+
+class _ChecklistIsoViewState extends State<_ChecklistIsoView> {
   @override
   Widget build(BuildContext context) {
-    return ListenableBuilder(
-      listenable: widget.dataService,
-      builder: (context, _) {
-        final items = widget.dataService.checklistIsos;
-        final totalConformes = items.where((i) => i.estado == '☑').length;
-        final porcentaje = items.isNotEmpty ? (totalConformes / items.length * 100).round() : 0;
+    return BlocConsumer<ChecklistIsoCubit, ChecklistIsoState>(
+      listenWhen: (prev, curr) =>
+          curr.actionSuccessMessage != null &&
+          prev.actionSuccessMessage != curr.actionSuccessMessage,
+      listener: (context, state) {
+        if (state.actionSuccessMessage != null) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              backgroundColor: AppPalette.success,
+              content: Text(state.actionSuccessMessage!),
+              duration: const Duration(seconds: 2),
+            ),
+          );
+        }
+      },
+      builder: (context, state) {
+        final cubit = context.read<ChecklistIsoCubit>();
+        final items = state.items;
+        final totalConformes = state.totalConformes;
+        final porcentaje = state.porcentaje;
 
         return AppScaffold(
           title: 'Checklist Normativo ISO',
@@ -34,8 +65,8 @@ class _ChecklistIsoPageState extends State<ChecklistIsoPage> {
           ),
           actions: [
             AppRefreshButton(
-              onRefresh: () => widget.dataService.fetchAllSheets(),
-              isLoading: widget.dataService.isLoading,
+              onRefresh: () => cubit.refresh(),
+              isLoading: state.status == ChecklistIsoStatus.loading,
             ),
           ],
           floatingActionButton: FloatingActionButton.extended(
@@ -48,7 +79,7 @@ class _ChecklistIsoPageState extends State<ChecklistIsoPage> {
           ),
           body: AnimatedSwitcher(
             duration: const Duration(milliseconds: 300),
-            child: widget.dataService.isLoading
+            child: (state.status == ChecklistIsoStatus.loading && items.isEmpty)
                 ? const ChecklistIsoSkeleton(key: ValueKey('checklist_iso_skeleton'))
                 : ListView(
                     key: const ValueKey('checklist_iso_content'),

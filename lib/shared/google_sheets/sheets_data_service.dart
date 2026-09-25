@@ -4,8 +4,14 @@ import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import '../../core/network/dio_client.dart';
 import '../../core/utils/logger.dart';
+import '../../features/credits/domain/entities/client_credit.dart';
+import '../../features/credits/domain/entities/credit_status.dart';
+import '../../features/credits/domain/value_objects/credit_amount.dart';
+import '../../features/credits/domain/value_objects/credit_id.dart';
+import '../../features/credits/infrastructure/models/client_credit_model.dart';
 import '../../models/models.dart';
 import '../storage/secure_token_storage.dart';
+import 'batch/sheets_batch_executor.dart';
 import 'sheets_config.dart';
 
 /// Servicio centralizado de datos y sincronización para las 10 hojas de Google Sheets.
@@ -73,10 +79,15 @@ class SheetsDataService extends ChangeNotifier {
     const MetodoPago(id: 'mp00000004', nombre: 'Zelle', status: true),
     const MetodoPago(id: 'mp00000005', nombre: 'Binance', status: true),
     const MetodoPago(id: 'mp00000006', nombre: 'Otro', status: true),
+    const MetodoPago(id: 'mp00000009', nombre: 'Saldo a Favor', status: true),
   ];
   List<TasaRegistro> _tasas = [];
   List<MonedaOrganizacion> _monedasOrganizacion = [];
   List<GaleriaItem> _galeria = [];
+  List<ClientCredit> _creditosClientes = [];
+
+  /// Historial de saldos a favor y compensaciones de créditos de clientes (hoja "creditos_clientes")
+  List<ClientCredit> get creditosClientes => List.unmodifiable(_creditosClientes);
 
   /// Organización actualmente activa en la sesión (resuelta tras el login mediante
   /// la hoja de relación "usuario_organizacion"). Las 9 hojas de negocio (todas
@@ -382,7 +393,27 @@ class SheetsDataService extends ChangeNotifier {
           _parseMonedasOrganizacion,
           expectedHeaders: const ['id', 'organizacion_id', 'moneda', 'actualizado_en'],
         ),
+        safeFetch(
+          'creditos_clientes',
+          _parseCreditosClientes,
+          expectedHeaders: const [
+            'id',
+            'cliente_id',
+            'fecha',
+            'monto_usd',
+            'origen_venta_id',
+            'estado',
+            'organizacion_id',
+            'aplicado_a_venta_id',
+            'fecha_aplicacion',
+            'saldo_usd',
+            'usuario_email',
+            'hash_evidencia',
+          ],
+        ),
       ]);
+
+      _reconciliarVentasConAbonos();
 
       if (successCount > 0) {
         _lastSync = DateTime.now();
@@ -513,6 +544,41 @@ class SheetsDataService extends ChangeNotifier {
     _abonos = [...cloud, ...localPending];
   }
 
+  /// Reconcilia el abono acumulado y la deuda pendiente de cada factura
+  /// contra el libro mayor de abonos (_abonos), garantizando consistencia
+  /// matemática incluso si la hoja "ventas" en Google Sheets no calculó
+  /// el SUMIF o tiene valor estático desfasado.
+  void _reconciliarVentasConAbonos() {
+    for (var i = 0; i < _ventas.length; i++) {
+      final v = _ventas[i];
+      final abonosDeEstaVenta = _abonos.where((a) => a.ventaId == v.id).toList();
+      if (abonosDeEstaVenta.isNotEmpty) {
+        final totalAbonado = abonosDeEstaVenta.fold<double>(0.0, (sum, a) => sum + a.monto);
+        if (totalAbonado != v.abonoUsd) {
+          final deudaRecalculada = (v.totalPagarUsd - totalAbonado).clamp(0.0, double.infinity);
+          final estadoRecalculado = deudaRecalculada <= 0 ? EstadoVenta.pagada : EstadoVenta.pendiente;
+          _ventas[i] = Venta(
+            id: v.id,
+            fecha: v.fecha,
+            clienteId: v.clienteId,
+            tasaBcv: v.tasaBcv,
+            tasaUsd: v.tasaUsd,
+            metodoPagoId: v.metodoPagoId,
+            comisionPagoMovilBs: v.comisionPagoMovilBs,
+            montoBs: v.montoBs,
+            montoUsd: v.montoUsd,
+            abonoUsd: totalAbonado,
+            deudaUsd: deudaRecalculada,
+            totalPagarUsd: v.totalPagarUsd,
+            validacion: v.validacion,
+            estado: estadoRecalculado,
+            organizacionId: v.organizacionId,
+          );
+        }
+      }
+    }
+  }
+
   void _parseCompras(List<List<String>> rows) {
     if (rows.isEmpty) return;
     final cloud = rows
@@ -608,6 +674,32 @@ class SheetsDataService extends ChangeNotifier {
     _monedasOrganizacion = [...cloud, ...localPending];
   }
 
+  void _parseCreditosClientes(List<List<String>> rows) {
+    if (rows.isEmpty) return;
+    final cloud = rows
+        .where((r) => r.isNotEmpty && r.first.trim().isNotEmpty)
+        .map((r) => ClientCreditModel.fromRow(r))
+        .toList();
+    final localPending = _creditosClientes.where((local) => !cloud.any((c) => c.id == local.id)).toList();
+    _creditosClientes = [...cloud, ...localPending];
+  }
+
+  void addCreditoClienteLocal(ClientCredit credit) {
+    _creditosClientes.removeWhere((c) => c.id == credit.id);
+    _creditosClientes.insert(0, credit);
+    notifyListeners();
+  }
+
+  void updateCreditoClienteLocal(ClientCredit credit) {
+    final idx = _creditosClientes.indexWhere((c) => c.id == credit.id);
+    if (idx != -1) {
+      _creditosClientes[idx] = credit;
+    } else {
+      _creditosClientes.add(credit);
+    }
+    notifyListeners();
+  }
+
   // ===========================================================================
   // AUDIT LOG HELPER (ISO 27001 §8.13 / ISO 8000)
   // ===========================================================================
@@ -648,8 +740,8 @@ class SheetsDataService extends ChangeNotifier {
   /// reportar un fallo falso en acciones donde no hace falta leer el body.
   Future<({bool huboRedirect, Map<String, dynamic>? data})> _postAppsScriptJson(
     Map<String, dynamic> payload, {
-    Duration sendTimeout = const Duration(seconds: 15),
-    Duration receiveTimeout = const Duration(seconds: 15),
+    Duration sendTimeout = const Duration(seconds: 30),
+    Duration receiveTimeout = const Duration(seconds: 60),
     List<Duration> reintentosEco = const [
       Duration(milliseconds: 500),
       Duration(milliseconds: 1000),
@@ -748,6 +840,41 @@ class SheetsDataService extends ChangeNotifier {
       Logger.error('SheetsDataService: Excepción al conectar con Apps Script', e, stackTrace);
       return false;
     }
+  }
+
+  /// Ejecutor transaccional de lotes atómicos (All-or-Nothing)
+  late final SheetsBatchExecutor _batchExecutor = SheetsBatchExecutor(
+    postJson: _postAppsScriptJson,
+  );
+
+  /// Ejecuta una transacción por lotes atómica (All-or-Nothing) en Google Apps Script.
+  Future<BatchTransactionResult> executeBatchTransaction(BatchTransaction transaction) {
+    return _batchExecutor.execute(transaction);
+  }
+
+  /// Como [_postToAppsScript], pero para creaciones: devuelve el ID real que
+  /// asignó el servidor (ver `_siguienteIdServidor`/`ID_PREFIXES` en
+  /// google_apps_script.js), que puede diferir del ID que se calculó acá en
+  /// el cliente si otra sesión ya había avanzado la secuencia — ver
+  /// docs/google/red-http.md. `null` si el servidor rechazó la creación
+  /// (por ejemplo, una FK inválida) o si no se pudo confirmar la respuesta.
+  Future<String?> _crearEnServidor(String sheet, Map<String, dynamic> data) async {
+    final url = appsScriptUrl;
+    if (url == null || url.trim().isEmpty) {
+      Logger.warning('SheetsDataService: APPS_SCRIPT_URL no configurada. "$sheet" se guardó solo localmente.');
+      return null;
+    }
+    final resultado = await _postAppsScriptJson({'action': 'create', 'sheet': sheet, 'data': data});
+    final body = resultado.data;
+    if (body == null) {
+      Logger.error('SheetsDataService: no se pudo confirmar la creación en "$sheet".');
+      return null;
+    }
+    if (body['status'] != 'success') {
+      Logger.error('SheetsDataService: el servidor rechazó la creación en "$sheet": ${body['message']}');
+      return null;
+    }
+    return body['id']?.toString();
   }
 
   String get nextGaleriaId {
@@ -856,15 +983,28 @@ class SheetsDataService extends ChangeNotifier {
     _galeria.insert(0, nuevo);
     notifyListeners();
 
-    final sincronizado = await _postToAppsScript({
-      'action': 'create',
-      'sheet': 'galeria',
-      'data': nuevo.toMap(),
-    });
-    if (!sincronizado) {
+    final idReal = await _crearEnServidor('galeria', nuevo.toMap());
+    if (idReal == null) {
       Logger.warning('SheetsDataService: foto subida a Drive pero no se pudo registrar en "galeria" (${nuevo.id}).');
+      return nuevo.id;
     }
-    return nuevo.id;
+    if (idReal != nuevo.id) {
+      // Colisión de ID resuelta por el servidor — hay que devolver el ID
+      // real, si no `Producto.fotoId` termina apuntando a una fila de
+      // "galeria" que no existe.
+      final idx = _galeria.indexWhere((g) => g.id == nuevo.id);
+      if (idx != -1) {
+        _galeria[idx] = GaleriaItem(
+          id: idReal,
+          url: nuevo.url,
+          driveFileId: nuevo.driveFileId,
+          nombreArchivo: nuevo.nombreArchivo,
+          fechaSubida: nuevo.fechaSubida,
+        );
+        notifyListeners();
+      }
+    }
+    return idReal;
   }
 
   // ===========================================================================
@@ -903,11 +1043,26 @@ class SheetsDataService extends ChangeNotifier {
     );
     notifyListeners();
     Logger.info('SheetsDataService: Despachando inserción a Google Sheets para cliente ${stamped.id}...');
-    final synced = await _postToAppsScript({
-      'action': 'create',
-      'sheet': 'clientes',
-      'data': stamped.toMap(),
-    });
+    final idReal = await _crearEnServidor('clientes', stamped.toMap());
+    final synced = idReal != null;
+    if (synced && idReal != stamped.id) {
+      // El servidor asignó un ID distinto al que se calculó acá (otra sesión
+      // ya había avanzado la secuencia) — corregir la copia local para que
+      // coincida con lo que realmente quedó guardado.
+      final idx = _clientes.indexWhere((c) => c.id == stamped.id);
+      if (idx != -1) {
+        _clientes[idx] = Cliente(
+          id: idReal,
+          nombre: stamped.nombre,
+          telefono: stamped.telefono,
+          email: stamped.email,
+          saldoDeudaUsd: stamped.saldoDeudaUsd,
+          fechaRegistro: stamped.fechaRegistro,
+          organizacionId: stamped.organizacionId,
+        );
+        notifyListeners();
+      }
+    }
     if (synced) {
       Logger.success('SheetsDataService: Cliente ${stamped.id} sincronizado exitosamente en Google Sheets.');
     } else {
@@ -977,7 +1132,7 @@ class SheetsDataService extends ChangeNotifier {
     return 'p${(maxId + 1).toString().padLeft(8, '0')}';
   }
 
-  void addProducto(Producto producto) {
+  Future<bool> addProducto(Producto producto) async {
     final stamped = Producto(
       id: producto.id,
       cantidad: producto.cantidad,
@@ -999,12 +1154,27 @@ class SheetsDataService extends ChangeNotifier {
       norma: 'ISO 8000 §4.2',
       observaciones: 'Nuevo producto en inventario. Stock inicial: ${stamped.cantidad}',
     );
-    _postToAppsScript({
-      'action': 'create',
-      'sheet': 'inventario',
-      'data': stamped.toMap(),
-    });
     notifyListeners();
+    final idReal = await _crearEnServidor('inventario', stamped.toMap());
+    if (idReal != null && idReal != stamped.id) {
+      // Mismo caso que addCliente: el servidor corrigió una colisión de ID.
+      final idx = _productos.indexWhere((p) => p.id == stamped.id);
+      if (idx != -1) {
+        _productos[idx] = Producto(
+          id: idReal,
+          cantidad: stamped.cantidad,
+          nombre: stamped.nombre,
+          marca: stamped.marca,
+          modelo: stamped.modelo,
+          talla: stamped.talla,
+          precioUsd: stamped.precioUsd,
+          fotoId: stamped.fotoId,
+          organizacionId: stamped.organizacionId,
+        );
+        notifyListeners();
+      }
+    }
+    return idReal != null;
   }
 
   void updateProducto(Producto producto) {
@@ -1221,18 +1391,290 @@ class SheetsDataService extends ChangeNotifier {
       _abonos.insert(0, abonoInicial);
     }
 
-    // Header + ítems + abono inicial se sincronizan en paralelo (no
-    // secuencialmente): con varios ítems, esperar cada POST uno tras otro
-    // sumaría varios segundos de latencia real innecesarios.
-    final resultados = await Future.wait([
-      _postToAppsScript({'action': 'create', 'sheet': 'ventas', 'data': venta.toMap()}),
-      for (final vi in nuevosItems)
-        _postToAppsScript({'action': 'create', 'sheet': 'venta_items', 'data': vi.toMap()}),
-      if (abonoInicial != null)
-        _postToAppsScript({'action': 'create', 'sheet': 'abonos', 'data': abonoInicial.toMap()}),
+    // El header se sincroniza PRIMERO y solo, no en paralelo con los ítems:
+    // el servidor puede reasignarle un ID distinto si hubo una colisión con
+    // otra sesión (ver ID_PREFIXES en google_apps_script.js), y venta_items/
+    // abonos referencian ese ID por FK — si se mandaran en paralelo con un
+    // ID todavía no confirmado, la validación de integridad referencial del
+    // servidor los rechazaría en cuanto el ID real no coincidiera.
+    final ventaIdReal = await _crearEnServidor('ventas', venta.toMap());
+    if (ventaIdReal == null) {
+      notifyListeners();
+      return false;
+    }
+
+    if (ventaIdReal != ventaId) {
+      final idx = _ventas.indexWhere((v) => v.id == ventaId);
+      if (idx != -1) {
+        final v = _ventas[idx];
+        _ventas[idx] = Venta(
+          id: ventaIdReal,
+          fecha: v.fecha,
+          clienteId: v.clienteId,
+          tasaBcv: v.tasaBcv,
+          tasaUsd: v.tasaUsd,
+          metodoPagoId: v.metodoPagoId,
+          comisionPagoMovilBs: v.comisionPagoMovilBs,
+          montoBs: v.montoBs,
+          montoUsd: v.montoUsd,
+          abonoUsd: v.abonoUsd,
+          deudaUsd: v.deudaUsd,
+          totalPagarUsd: v.totalPagarUsd,
+          validacion: v.validacion,
+          estado: v.estado,
+          organizacionId: v.organizacionId,
+        );
+      }
+      for (var i = 0; i < nuevosItems.length; i++) {
+        final vi = nuevosItems[i];
+        final corregido = VentaItem(
+          id: vi.id,
+          ventaId: ventaIdReal,
+          itemId: vi.itemId,
+          cantidad: vi.cantidad,
+          precioUsd: vi.precioUsd,
+          subtotalUsd: vi.subtotalUsd,
+        );
+        nuevosItems[i] = corregido;
+        final idxVi = _ventaItems.indexWhere((x) => x.id == vi.id);
+        if (idxVi != -1) _ventaItems[idxVi] = corregido;
+      }
+      if (abonoInicial != null) {
+        final corregido = Abono(
+          id: abonoInicial.id,
+          ventaId: ventaIdReal,
+          fecha: abonoInicial.fecha,
+          monto: abonoInicial.monto,
+          metodoPagoId: abonoInicial.metodoPagoId,
+          tasaId: abonoInicial.tasaId,
+        );
+        final idxAb = _abonos.indexWhere((a) => a.id == abonoInicial!.id);
+        if (idxAb != -1) _abonos[idxAb] = corregido;
+        abonoInicial = corregido;
+      }
+    }
+
+    // Ítems y abono sí se mandan en paralelo entre sí — no hay FKs cruzadas
+    // entre ellos, solo dependen de la venta ya confirmada arriba.
+    final idsReales = await Future.wait([
+      for (final vi in nuevosItems) _crearEnServidor('venta_items', vi.toMap()),
+      if (abonoInicial != null) _crearEnServidor('abonos', abonoInicial.toMap()),
     ]);
+
+    for (var i = 0; i < nuevosItems.length; i++) {
+      final real = idsReales[i];
+      if (real != null && real != nuevosItems[i].id) {
+        final vi = nuevosItems[i];
+        final idxVi = _ventaItems.indexWhere((x) => x.id == vi.id);
+        if (idxVi != -1) {
+          _ventaItems[idxVi] = VentaItem(
+            id: real,
+            ventaId: vi.ventaId,
+            itemId: vi.itemId,
+            cantidad: vi.cantidad,
+            precioUsd: vi.precioUsd,
+            subtotalUsd: vi.subtotalUsd,
+          );
+        }
+      }
+    }
+    if (abonoInicial != null) {
+      final real = idsReales.last;
+      if (real != null && real != abonoInicial.id) {
+        final idxAb = _abonos.indexWhere((a) => a.id == abonoInicial!.id);
+        if (idxAb != -1) {
+          _abonos[idxAb] = Abono(
+            id: real,
+            ventaId: abonoInicial.ventaId,
+            fecha: abonoInicial.fecha,
+            monto: abonoInicial.monto,
+            metodoPagoId: abonoInicial.metodoPagoId,
+            tasaId: abonoInicial.tasaId,
+          );
+        }
+      }
+    }
+
     notifyListeners();
-    return resultados.every((ok) => ok);
+    return idsReales.every((id) => id != null);
+  }
+
+  /// Registra una venta completa con sus ítems, ajuste de inventario y abono inicial
+  /// en un único lote atómico transaccional (All-or-Nothing).
+  /// Si falla la red o el backend rechaza la transacción, la memoria local queda intacta.
+  Future<bool> addVentaAtomica({
+    required String clienteId,
+    required List<({String productoId, int cantidad, double precioUsd})> items,
+    required String metodoPagoId,
+    double comisionPagoMovilBs = 0.0,
+    required double abonoUsd,
+    bool usarTasaManual = false,
+  }) async {
+    assert(items.isNotEmpty, 'Una factura necesita al menos un ítem');
+
+    final tasaBcv = tasaPorId(_resolverTasaAplicada(usarTasaManual))?.valor ?? 0.0;
+    final ventaId = nextVentaId;
+    final montoUsd = items.fold<double>(0.0, (sum, it) => sum + it.cantidad * it.precioUsd);
+    final montoBs = montoUsd * tasaBcv;
+    final deudaUsd = (montoUsd - abonoUsd).clamp(0.0, double.infinity);
+    final estado = deudaUsd <= 0 ? EstadoVenta.pagada : EstadoVenta.pendiente;
+
+    final venta = Venta(
+      id: ventaId,
+      fecha: DateTime.now(),
+      clienteId: clienteId,
+      tasaBcv: tasaBcv,
+      tasaUsd: tasaBcv,
+      metodoPagoId: metodoPagoId,
+      comisionPagoMovilBs: comisionPagoMovilBs,
+      montoBs: montoBs,
+      montoUsd: montoUsd,
+      abonoUsd: abonoUsd,
+      deudaUsd: deudaUsd,
+      totalPagarUsd: montoUsd,
+      validacion: 'OK',
+      estado: estado,
+      organizacionId: _currentOrganizacionId ?? '67774411-6aa1-4aa3-a4b2-d3fc6913b768',
+    );
+
+    final nuevosItems = <VentaItem>[];
+    final stockUpdates = <String, int>{};
+    for (final it in items) {
+      nuevosItems.add(VentaItem(
+        id: nextVentaItemId,
+        ventaId: ventaId,
+        itemId: it.productoId,
+        cantidad: it.cantidad,
+        precioUsd: it.precioUsd,
+        subtotalUsd: it.cantidad * it.precioUsd,
+      ));
+      final pIdx = _productos.indexWhere((p) => p.id == it.productoId);
+      final stockActual = pIdx != -1 ? _productos[pIdx].cantidad : 0;
+      stockUpdates[it.productoId] = (stockActual - it.cantidad).clamp(0, 999999);
+    }
+
+    double? nuevoSaldoDeuda;
+    if (deudaUsd > 0) {
+      final cIdx = _clientes.indexWhere((c) => c.id == clienteId);
+      if (cIdx != -1) {
+        nuevoSaldoDeuda = _clientes[cIdx].saldoDeudaUsd + deudaUsd;
+      }
+    }
+
+    Abono? abonoInicial;
+    if (abonoUsd > 0) {
+      abonoInicial = Abono(
+        id: nextAbonoId,
+        ventaId: ventaId,
+        fecha: venta.fecha,
+        monto: abonoUsd,
+        metodoPagoId: metodoPagoId,
+        tasaId: _resolverTasaAplicada(usarTasaManual),
+      );
+    }
+
+    final auditLog = AuditLog(
+      timestampIso8601: DateTime.now(),
+      usuario: 'Operador App (Transacción Atómica)',
+      hoja: 'ventas',
+      celda: 'A${_ventas.length + 1}',
+      valorAnterior: 'null',
+      valorNuevo: '${venta.id} por USD ${venta.totalPagarUsd.toStringAsFixed(2)} (${items.length} ítems)',
+      accion: 'creacion_venta_atomica',
+      normaAplicada: 'ISO 8000 §5.3 / ACID',
+      observaciones: 'Factura registrada en lote atómico a cliente $clienteId',
+      organizacionId: _currentOrganizacionId ?? '67774411-6aa1-4aa3-a4b2-d3fc6913b768',
+    );
+
+    final transaction = SheetsBatchExecutor.buildVentaBatch(
+      venta: venta,
+      items: nuevosItems,
+      stockUpdates: stockUpdates,
+      nuevoSaldoDeudaCliente: nuevoSaldoDeuda,
+      abonoInicial: abonoInicial,
+      auditLog: auditLog,
+    );
+
+    // 1. Ejecutar contra Apps Script
+    final res = await executeBatchTransaction(transaction);
+    if (!res.isSuccess) {
+      Logger.error('SheetsDataService: Falló lote atómico de venta (${res.transactionId}): ${res.message}');
+      return false;
+    }
+
+    // 2. ÉXITO: Asentar de forma atómica en memoria local en un solo ciclo
+    final idVentaServidor = res.generatedIds['ventas'] as String? ?? ventaId;
+    final ventaFinal = idVentaServidor != ventaId
+        ? Venta(
+            id: idVentaServidor,
+            fecha: venta.fecha,
+            clienteId: venta.clienteId,
+            tasaBcv: venta.tasaBcv,
+            tasaUsd: venta.tasaUsd,
+            metodoPagoId: venta.metodoPagoId,
+            comisionPagoMovilBs: venta.comisionPagoMovilBs,
+            montoBs: venta.montoBs,
+            montoUsd: venta.montoUsd,
+            abonoUsd: venta.abonoUsd,
+            deudaUsd: venta.deudaUsd,
+            totalPagarUsd: venta.totalPagarUsd,
+            validacion: venta.validacion,
+            estado: venta.estado,
+            organizacionId: venta.organizacionId,
+          )
+        : venta;
+
+    _ventas.insert(0, ventaFinal);
+
+    for (final it in nuevosItems) {
+      final viFinal = idVentaServidor != ventaId
+          ? VentaItem(
+              id: it.id,
+              ventaId: idVentaServidor,
+              itemId: it.itemId,
+              cantidad: it.cantidad,
+              precioUsd: it.precioUsd,
+              subtotalUsd: it.subtotalUsd,
+            )
+          : it;
+      _ventaItems.insert(0, viFinal);
+      adjustStock(it.itemId, -it.cantidad);
+    }
+
+    if (nuevoSaldoDeuda != null) {
+      final cIdx = _clientes.indexWhere((c) => c.id == clienteId);
+      if (cIdx != -1) {
+        final c = _clientes[cIdx];
+        _clientes[cIdx] = Cliente(
+          id: c.id,
+          nombre: c.nombre,
+          telefono: c.telefono,
+          email: c.email,
+          saldoDeudaUsd: nuevoSaldoDeuda,
+          fechaRegistro: c.fechaRegistro,
+          organizacionId: c.organizacionId,
+        );
+      }
+    }
+
+    if (abonoInicial != null) {
+      final abonoFinal = idVentaServidor != ventaId
+          ? Abono(
+              id: abonoInicial.id,
+              ventaId: idVentaServidor,
+              fecha: abonoInicial.fecha,
+              monto: abonoInicial.monto,
+              metodoPagoId: abonoInicial.metodoPagoId,
+              tasaId: abonoInicial.tasaId,
+            )
+          : abonoInicial;
+      _abonos.insert(0, abonoFinal);
+    }
+
+    _auditLogs.insert(0, auditLog);
+
+    notifyListeners();
+    return true;
   }
 
   /// Registra un abono (pago parcial) a una factura: crea una fila propia en
@@ -1308,7 +1750,25 @@ class SheetsDataService extends ChangeNotifier {
       observaciones: 'Abono de USD $montoAbono vía $nombreMetodo a venta $ventaId. Estado: ${nuevoEstado.name}',
     );
 
-    final resultados = await Future.wait([
+    ClientCredit? nuevoCredito;
+    if (nuevoAbono > old.totalPagarUsd) {
+      final excedenteMonto = nuevoAbono - old.totalPagarUsd;
+      final creditNum = (_creditosClientes.length + 1).toString().padLeft(8, '0');
+      nuevoCredito = ClientCredit(
+        id: CreditId('cr$creditNum'),
+        clienteId: old.clienteId,
+        fecha: DateTime.now(),
+        montoUsd: CreditAmount(excedenteMonto),
+        origenVentaId: ventaId,
+        estado: CreditStatus.disponible,
+        organizacionId: old.organizacionId,
+        saldoUsd: excedenteMonto,
+        usuarioEmail: _currentUsuarioEmail ?? 'Antigravity Senior Agent',
+      );
+      addCreditoClienteLocal(nuevoCredito);
+    }
+
+    final postFutures = <Future<bool>>[
       _postToAppsScript({
         'action': 'update',
         'sheet': 'ventas',
@@ -1316,7 +1776,19 @@ class SheetsDataService extends ChangeNotifier {
         'data': _ventas[index].toMap(),
       }),
       _postToAppsScript({'action': 'create', 'sheet': 'abonos', 'data': abono.toMap()}),
-    ]);
+    ];
+
+    if (nuevoCredito != null) {
+      postFutures.add(
+        _postToAppsScript({
+          'action': 'create',
+          'sheet': 'creditos_clientes',
+          'data': ClientCreditModel.toMap(nuevoCredito),
+        }),
+      );
+    }
+
+    final resultados = await Future.wait(postFutures);
     notifyListeners();
     return resultados.every((ok) => ok);
   }
@@ -1368,7 +1840,7 @@ class SheetsDataService extends ChangeNotifier {
     return 'd${(maxId + 1).toString().padLeft(8, '0')}';
   }
 
-  void addCompraDivisa(CompraDivisa compra) {
+  Future<bool> addCompraDivisa(CompraDivisa compra) async {
     final stamped = CompraDivisa(
       id: compra.id,
       fechaCompra: compra.fechaCompra,
@@ -1393,12 +1865,29 @@ class SheetsDataService extends ChangeNotifier {
       norma: 'ISO 8000 §4.2',
       observaciones: 'Compra cambiaria en ${stamped.plataforma} por ${stamped.vendedor}',
     );
-    _postToAppsScript({
-      'action': 'create',
-      'sheet': 'compras_divisas',
-      'data': stamped.toMap(),
-    });
     notifyListeners();
+    final idReal = await _crearEnServidor('compras_divisas', stamped.toMap());
+    if (idReal != null && idReal != stamped.id) {
+      final idx = _comprasDivisas.indexWhere((c) => c.id == stamped.id);
+      if (idx != -1) {
+        _comprasDivisas[idx] = CompraDivisa(
+          id: idReal,
+          fechaCompra: stamped.fechaCompra,
+          fechaEntrega: stamped.fechaEntrega,
+          capitalUsd: stamped.capitalUsd,
+          comisionBinanceUsd: stamped.comisionBinanceUsd,
+          numeroOrden: stamped.numeroOrden,
+          plataforma: stamped.plataforma,
+          vendedor: stamped.vendedor,
+          tasaBcv: stamped.tasaBcv,
+          tasaUsd: stamped.tasaUsd,
+          validacion: stamped.validacion,
+          organizacionId: stamped.organizacionId,
+        );
+        notifyListeners();
+      }
+    }
+    return idReal != null;
   }
 
   void updateCompraDivisa(CompraDivisa compra) {
@@ -1790,6 +2279,15 @@ class SheetsDataService extends ChangeNotifier {
         fechaRegistro: DateTime(2026, 4, 3),
         organizacionId: '67774411-6aa1-4aa3-a4b2-d3fc6913b768',
       ),
+      Cliente(
+        id: 'c00000002',
+        nombre: 'Neyza Chourio',
+        telefono: '+584120000002',
+        email: 'neyza.chourio@ejemplo.com',
+        saldoDeudaUsd: 100.0,
+        fechaRegistro: DateTime(2026, 4, 3),
+        organizacionId: '67774411-6aa1-4aa3-a4b2-d3fc6913b768',
+      ),
     ];
 
     _productos = [
@@ -1832,6 +2330,40 @@ class SheetsDataService extends ChangeNotifier {
         totalPagarUsd: 20.0,
         validacion: 'OK',
         estado: EstadoVenta.pagada,
+        organizacionId: '67774411-6aa1-4aa3-a4b2-d3fc6913b768',
+      ),
+      Venta(
+        id: 'v00000002',
+        fecha: DateTime(2026, 4, 2),
+        clienteId: 'c00000002',
+        tasaBcv: 474.0,
+        tasaUsd: 30.0,
+        metodoPagoId: 'mp00000001',
+        comisionPagoMovilBs: 0.0,
+        montoBs: 85320.0,
+        montoUsd: 180.0,
+        abonoUsd: 180.0,
+        deudaUsd: 0.0,
+        totalPagarUsd: 180.0,
+        validacion: 'OK',
+        estado: EstadoVenta.pagada,
+        organizacionId: '67774411-6aa1-4aa3-a4b2-d3fc6913b768',
+      ),
+      Venta(
+        id: 'v00000005',
+        fecha: DateTime(2026, 4, 4),
+        clienteId: 'c00000002',
+        tasaBcv: 474.0,
+        tasaUsd: 30.0,
+        metodoPagoId: 'mp00000001',
+        comisionPagoMovilBs: 0.0,
+        montoBs: 47400.0,
+        montoUsd: 100.0,
+        abonoUsd: 0.0,
+        deudaUsd: 100.0,
+        totalPagarUsd: 100.0,
+        validacion: 'OK',
+        estado: EstadoVenta.pendiente,
         organizacionId: '67774411-6aa1-4aa3-a4b2-d3fc6913b768',
       ),
     ];
@@ -2066,6 +2598,7 @@ class SheetsDataService extends ChangeNotifier {
       const MetodoPago(id: 'mp00000004', nombre: 'Zelle', status: true),
       const MetodoPago(id: 'mp00000005', nombre: 'Binance', status: true),
       const MetodoPago(id: 'mp00000006', nombre: 'Otro', status: true),
+      const MetodoPago(id: 'mp00000009', nombre: 'Saldo a Favor', status: true),
     ];
   }
 
@@ -2173,10 +2706,22 @@ class SheetsDataService extends ChangeNotifier {
     notifyListeners();
 
     final resultados = await Future.wait([
-      _postToAppsScript({'action': 'create', 'sheet': 'usuarios', 'data': usuario.toMap()}),
+      _crearEnServidor('usuarios', usuario.toMap()),
       _postToAppsScript({'action': 'create', 'sheet': 'usuario_organizacion', 'data': membresia.toMap()}),
     ]);
-    return resultados.every((ok) => ok);
+    final idReal = resultados[0] as String?;
+    if (idReal != null && idReal != usuario.id) {
+      final idx = _usuarios.indexWhere((u) => u.id == usuario.id);
+      if (idx != -1) {
+        _usuarios[idx] = Usuario(
+          id: idReal,
+          nombre: usuario.nombre,
+          email: usuario.email,
+        );
+        notifyListeners();
+      }
+    }
+    return idReal != null && (resultados[1] as bool);
   }
 
   /// Actualiza nombre y organización de un usuario existente. El email es
@@ -2560,11 +3105,22 @@ class SheetsDataService extends ChangeNotifier {
     );
     _tasas.insert(0, nueva);
     notifyListeners();
-    return _postToAppsScript({
-      'action': 'create',
-      'sheet': 'tasas',
-      'data': nueva.toMap(),
-    });
+    final idReal = await _crearEnServidor('tasas', nueva.toMap());
+    if (idReal != null && idReal != nueva.id) {
+      final idx = _tasas.indexWhere((t) => t.id == nueva.id);
+      if (idx != -1) {
+        _tasas[idx] = TasaRegistro(
+          id: idReal,
+          fecha: nueva.fecha,
+          moneda: nueva.moneda,
+          valor: nueva.valor,
+          fuente: nueva.fuente,
+          organizacionId: nueva.organizacionId,
+        );
+        notifyListeners();
+      }
+    }
+    return idReal != null;
   }
 
   /// Quita la tasa manual de [organizacionId] (si tenía una configurada).
@@ -2622,11 +3178,20 @@ class SheetsDataService extends ChangeNotifier {
     );
     _monedasOrganizacion.insert(0, nueva);
     notifyListeners();
-    return _postToAppsScript({
-      'action': 'create',
-      'sheet': 'moneda_organizacion',
-      'data': nueva.toMap(),
-    });
+    final idReal = await _crearEnServidor('moneda_organizacion', nueva.toMap());
+    if (idReal != null && idReal != nueva.id) {
+      final idx = _monedasOrganizacion.indexWhere((m) => m.id == nueva.id);
+      if (idx != -1) {
+        _monedasOrganizacion[idx] = MonedaOrganizacion(
+          id: idReal,
+          organizacionId: nueva.organizacionId,
+          moneda: nueva.moneda,
+          actualizadoEn: nueva.actualizadoEn,
+        );
+        notifyListeners();
+      }
+    }
+    return idReal != null;
   }
 }
 

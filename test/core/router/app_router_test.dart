@@ -5,7 +5,7 @@ import 'package:estilo_neutral/core/design_system/theme/app_theme.dart';
 import 'package:estilo_neutral/core/router/app_router.dart';
 import 'package:estilo_neutral/core/router/pages/not_found_page.dart';
 import 'package:estilo_neutral/core/router/route_paths.dart';
-import 'package:estilo_neutral/features/auth/application/auth_notifier.dart';
+import 'package:estilo_neutral/features/auth/application/auth_cubit.dart';
 import 'package:estilo_neutral/presentation/pages/clientes_page.dart';
 import 'package:estilo_neutral/presentation/pages/factura_detalle_page.dart';
 import 'package:estilo_neutral/presentation/pages/inventario_page.dart';
@@ -48,9 +48,9 @@ void main() {
   group('AppRouter Widget Tests', () {
     testWidgets('navigates to initialLocation /ventas by default', (tester) async {
       await _initServiceLocator(tester);
-      final authNotifier = AuthNotifier();
+      final authCubit = AuthCubit();
       final appRouter = AppRouter(
-        authNotifier: authNotifier,
+        authCubit: authCubit,
         dataService: ServiceLocator().sheetsDataService,
         sheetsAuth: ServiceLocator().sheetsAuth,
         initialLocation: RoutePaths.ventas,
@@ -70,9 +70,9 @@ void main() {
 
     testWidgets('renders NotFoundPage when navigating to an unknown route', (tester) async {
       await _initServiceLocator(tester);
-      final authNotifier = AuthNotifier();
+      final authCubit = AuthCubit();
       final appRouter = AppRouter(
-        authNotifier: authNotifier,
+        authCubit: authCubit,
         dataService: ServiceLocator().sheetsDataService,
         sheetsAuth: ServiceLocator().sheetsAuth,
         initialLocation: '/ruta-desconocida-xyz',
@@ -92,9 +92,9 @@ void main() {
 
     testWidgets('supports deep linking to /ventas/:id with FacturaDetallePage', (tester) async {
       await _initServiceLocator(tester);
-      final authNotifier = AuthNotifier();
+      final authCubit = AuthCubit();
       final appRouter = AppRouter(
-        authNotifier: authNotifier,
+        authCubit: authCubit,
         dataService: ServiceLocator().sheetsDataService,
         sheetsAuth: ServiceLocator().sheetsAuth,
         initialLocation: RoutePaths.buildSaleDetailPath('v00000001'),
@@ -114,9 +114,9 @@ void main() {
 
     testWidgets('supports deep linking with query parameters on /inventario?q=Pantalon', (tester) async {
       await _initServiceLocator(tester);
-      final authNotifier = AuthNotifier();
+      final authCubit = AuthCubit();
       final appRouter = AppRouter(
-        authNotifier: authNotifier,
+        authCubit: authCubit,
         dataService: ServiceLocator().sheetsDataService,
         sheetsAuth: ServiceLocator().sheetsAuth,
         initialLocation: '${RoutePaths.inventario}?q=Pantalon',
@@ -135,9 +135,9 @@ void main() {
 
     testWidgets('persists StatefulShellRoute across tab navigation', (tester) async {
       await _initServiceLocator(tester);
-      final authNotifier = AuthNotifier();
+      final authCubit = AuthCubit();
       final appRouter = AppRouter(
-        authNotifier: authNotifier,
+        authCubit: authCubit,
         dataService: ServiceLocator().sheetsDataService,
         sheetsAuth: ServiceLocator().sheetsAuth,
         initialLocation: RoutePaths.ventas,

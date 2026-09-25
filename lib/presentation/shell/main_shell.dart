@@ -4,7 +4,7 @@ import '../../core/config/environment_config.dart';
 import '../../core/design_system/design_system.dart';
 import '../../core/router/route_paths.dart';
 import '../../core/utils/logger.dart';
-import '../../features/auth/application/auth_notifier.dart';
+import '../../features/auth/application/auth_cubit.dart';
 import '../../features/reporting/reporting.dart';
 import '../../features/treasury/treasury.dart';
 import '../../shared/shared.dart';
@@ -16,14 +16,14 @@ import 'package:go_router/go_router.dart';
 /// de la base de datos Google Sheets "Estilo Neutral".
 class MainShell extends StatefulWidget {
   final SheetsDataService dataService;
-  final AuthNotifier authNotifier;
+  final AuthCubit authCubit;
   final SheetsAuth sheetsAuth;
   final StatefulNavigationShell? navigationShell;
 
   const MainShell({
     super.key,
     required this.dataService,
-    required this.authNotifier,
+    required this.authCubit,
     required this.sheetsAuth,
     this.navigationShell,
   });
@@ -143,7 +143,7 @@ class _MainShellState extends State<MainShell> {
       }
     }
 
-    widget.authNotifier.logout();
+    widget.authCubit.logout();
     widget.dataService.setCurrentOrganizacion(null);
     widget.dataService.setCurrentUsuario(null);
     if (context.mounted) {
@@ -368,7 +368,7 @@ class _MainShellState extends State<MainShell> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    if (widget.authNotifier.userEmail != null)
+                    if (widget.authCubit.userEmail != null)
                       Padding(
                         padding: const EdgeInsets.fromLTRB(
                           AppSpacing.lg,
@@ -377,7 +377,7 @@ class _MainShellState extends State<MainShell> {
                           0,
                         ),
                         child: Text(
-                          widget.authNotifier.userEmail!,
+                          widget.authCubit.userEmail!,
                           style: AppTypography.labelSmall.copyWith(
                             color: AppPalette.textSecondary,
                           ),

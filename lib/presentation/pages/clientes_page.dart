@@ -2,10 +2,12 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
+import '../../app/di/injection.dart';
 import '../../core/config/environment_config.dart';
 import '../../core/design_system/design_system.dart';
 import '../../core/router/route_paths.dart';
 import '../../core/utils/logger.dart';
+import '../../features/credits/credits.dart';
 import '../../models/models.dart';
 import '../../shared/shared.dart';
 import '../cubits/clientes/clientes_cubit.dart';
@@ -165,7 +167,10 @@ class _ClientesView extends StatelessWidget {
                           // sus facturas (ver Venta.excedenteUsd) — solo se
                           // muestra si de verdad existe, no es un estado
                           // normal de un cliente.
+                          final clientCredits = ServiceLocator().creditsDataSource.credits.where((c) => c.clienteId == cliente.id && c.isAvailable).toList();
+                          final totalCredito = clientCredits.fold<double>(0.0, (sum, c) => sum + c.saldoUsd);
                           final excedente = ventasDelCliente.fold<double>(0.0, (sum, v) => sum + v.excedenteUsd);
+                          final saldoAFavor = totalCredito > 0 ? totalCredito : excedente;
 
                           return Padding(
                             padding: const EdgeInsets.only(bottom: AppSpacing.sm),
@@ -250,30 +255,39 @@ class _ClientesView extends StatelessWidget {
                                                 fontSize: 13,
                                                 fontWeight: FontWeight.w600,
                                               ),
+                                              if (saldoAFavor > 0)
+                                                CreditChip(
+                                                  amount: saldoAFavor,
+                                                  isCredit: true,
+                                                  onTap: () {
+                                                    final pendingVentas = ventasDelCliente.where((v) => v.deudaUsd > 0).toList();
+                                                    if (pendingVentas.isNotEmpty) {
+                                                      final targetVenta = pendingVentas.first;
+                                                      final applyCubit = ApplyCreditCubit(
+                                                        repository: ServiceLocator().creditRepository,
+                                                        dataService: cubit.dataService,
+                                                      );
+                                                      ApplyCreditSheet.show(
+                                                        context,
+                                                        cubit: applyCubit,
+                                                        clienteId: cliente.id,
+                                                        clienteNombre: cliente.nombre,
+                                                        ventaId: targetVenta.id,
+                                                        deudaVenta: targetVenta.deudaUsd,
+                                                        totalCreditoDisponible: saldoAFavor,
+                                                        origenVentaId: clientCredits.firstOrNull?.origenVentaId,
+                                                        userEmail: cubit.dataService.currentUsuarioEmail ?? 'Antigravity Senior Agent',
+                                                      );
+                                                    }
+                                                  },
+                                                ),
                                               Text(
                                                 '• Reg: ${cliente.fechaRegistro.toIso8601String().split('T').first}',
-                                                style: AppTypography.labelSmall
-                                                    .copyWith(
+                                                style: AppTypography.labelSmall.copyWith(
                                                   fontSize: 11,
                                                   color: AppPalette.textSecondary,
                                                 ),
                                               ),
-                                              if (excedente > 0) ...[
-                                                Text(
-                                                  '• Excedente: ',
-                                                  style: AppTypography.labelSmall.copyWith(
-                                                    color: AppPalette.success,
-                                                    fontWeight: FontWeight.w600,
-                                                  ),
-                                                ),
-                                                AppMoneyText(
-                                                  amount: excedente,
-                                                  currency: MoneyCurrency.usd,
-                                                  nature: MoneyNature.credit,
-                                                  fontSize: 13,
-                                                  fontWeight: FontWeight.w600,
-                                                ),
-                                              ],
                                             ],
                                           ),
                                         ],
@@ -506,7 +520,12 @@ class _ClientesView extends StatelessWidget {
           ),
         );
       },
-    );
+    ).whenComplete(() {
+      nombreController.dispose();
+      telefonoController.dispose();
+      emailController.dispose();
+      deudaController.dispose();
+    });
   }
 
   void _confirmDelete(BuildContext context, Cliente cliente) {

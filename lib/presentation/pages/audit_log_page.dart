@@ -1,46 +1,71 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../core/config/environment_config.dart';
 import '../../core/design_system/design_system.dart';
 import '../../models/models.dart';
 import '../../shared/shared.dart';
+import '../cubits/audit_log/audit_log_cubit.dart';
+import '../cubits/audit_log/audit_log_state.dart';
 
 /// Vista de Registro de Auditoría Forense (hoja: audit_log)
 /// Cumplimiento estricto ISO/IEC 27001 §8.13, COBIT 2019 e inmutabilidad.
-class AuditLogPage extends StatefulWidget {
+class AuditLogPage extends StatelessWidget {
   final SheetsDataService dataService;
 
   const AuditLogPage({super.key, required this.dataService});
 
   @override
-  State<AuditLogPage> createState() => _AuditLogPageState();
+  Widget build(BuildContext context) {
+    return BlocProvider(
+      create: (_) => AuditLogCubit(dataService: dataService),
+      child: _AuditLogView(dataService: dataService),
+    );
+  }
 }
 
-class _AuditLogPageState extends State<AuditLogPage> {
-  String _selectedHoja = 'Todas';
+class _AuditLogView extends StatefulWidget {
+  final SheetsDataService dataService;
+
+  const _AuditLogView({required this.dataService});
 
   @override
-  Widget build(BuildContext context) {
-    return ListenableBuilder(
-      listenable: widget.dataService,
-      builder: (context, _) {
-        final logs = widget.dataService.auditLogs.where((l) {
-          if (_selectedHoja == 'Todas') return true;
-          return l.hoja.toLowerCase() == _selectedHoja.toLowerCase();
-        }).toList();
+  State<_AuditLogView> createState() => _AuditLogViewState();
+}
 
+class _AuditLogViewState extends State<_AuditLogView> {
+  @override
+  Widget build(BuildContext context) {
+    return BlocConsumer<AuditLogCubit, AuditLogState>(
+      listenWhen: (prev, curr) =>
+          curr.actionSuccessMessage != null &&
+          prev.actionSuccessMessage != curr.actionSuccessMessage,
+      listener: (context, state) {
+        if (state.actionSuccessMessage != null) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              backgroundColor: AppPalette.success,
+              content: Text(state.actionSuccessMessage!),
+              duration: const Duration(seconds: 2),
+            ),
+          );
+        }
+      },
+      builder: (context, state) {
+        final cubit = context.read<AuditLogCubit>();
+        final logs = state.filteredLogs;
         final hojas = ['Todas', 'global', 'clientes', 'inventario', 'ventas', 'compras_divisas', 'resumen_diario', 'cuarentena'];
 
         return AppScaffold(
           title: 'Bitácora de Auditoría',
           subtitle: EnvironmentConfig.formatSubtitle(
             sheetName: 'audit_log',
-            userFriendlyText: '${widget.dataService.auditLogs.length} eventos inmutables',
+            userFriendlyText: '${state.logs.length} eventos inmutables',
           ),
           actions: [
             AppRefreshButton(
-              onRefresh: () => widget.dataService.fetchAllSheets(),
-              isLoading: widget.dataService.isLoading,
+              onRefresh: () => cubit.refresh(),
+              isLoading: state.status == AuditLogStatus.loading,
             ),
           ],
           floatingActionButton: FloatingActionButton.extended(
@@ -53,7 +78,7 @@ class _AuditLogPageState extends State<AuditLogPage> {
           ),
           body: AnimatedSwitcher(
             duration: const Duration(milliseconds: 300),
-            child: widget.dataService.isLoading
+            child: (state.status == AuditLogStatus.loading && state.logs.isEmpty)
                 ? const AuditLogSkeleton(key: ValueKey('audit_log_skeleton'))
                 : Column(
                     key: const ValueKey('audit_log_content'),
@@ -65,7 +90,7 @@ class _AuditLogPageState extends State<AuditLogPage> {
                   scrollDirection: Axis.horizontal,
                   padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg, vertical: AppSpacing.xs),
                   children: hojas.map((h) {
-                    final isSel = _selectedHoja == h;
+                    final isSel = state.selectedHoja == h;
                     return Padding(
                       padding: const EdgeInsets.only(right: AppSpacing.sm),
                       child: ChoiceChip(
@@ -77,7 +102,7 @@ class _AuditLogPageState extends State<AuditLogPage> {
                           fontWeight: isSel ? FontWeight.w600 : FontWeight.w400,
                         ),
                         onSelected: (val) {
-                          if (val) setState(() => _selectedHoja = h);
+                          if (val) cubit.selectHoja(h);
                         },
                       ),
                     );

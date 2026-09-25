@@ -1,6 +1,7 @@
 import 'package:dio/dio.dart';
 import '../../core/router/router.dart';
 import '../../features/auth/auth.dart';
+import '../../features/credits/credits.dart';
 import '../../shared/shared.dart';
 
 class ServiceLocator {
@@ -12,8 +13,33 @@ class ServiceLocator {
   late final SheetsAuth sheetsAuth;
   late final SheetsClient sheetsClient;
   late final SheetsDataService sheetsDataService;
+  SheetsCreditsDataSource? _creditsDataSource;
+  ClientCreditRepository? _creditRepository;
 
-  late final AuthNotifier authNotifier;
+  SheetsCreditsDataSource get creditsDataSource {
+    if (_creditsDataSource != null) return _creditsDataSource!;
+    if (_initialized) {
+      return _creditsDataSource ??= SheetsCreditsDataSource(dataService: sheetsDataService);
+    }
+    return _creditsDataSource ??= SheetsCreditsDataSource(
+      dataService: SheetsDataService(spreadsheetId: SheetsConfig.defaultSpreadsheetId),
+    );
+  }
+
+  set creditsDataSource(SheetsCreditsDataSource value) {
+    _creditsDataSource = value;
+  }
+
+  ClientCreditRepository get creditRepository {
+    if (_creditRepository != null) return _creditRepository!;
+    return _creditRepository ??= ClientCreditRepositoryImpl(dataSource: creditsDataSource);
+  }
+
+  set creditRepository(ClientCreditRepository value) {
+    _creditRepository = value;
+  }
+
+  late final AuthCubit authCubit;
   late final AppRouter appRouter;
 
   bool _initialized = false;
@@ -38,11 +64,14 @@ class ServiceLocator {
       dio: dio,
     )..initialize();
 
-    authNotifier = AuthNotifier(
+    _creditsDataSource = SheetsCreditsDataSource(dataService: sheetsDataService);
+    _creditRepository = ClientCreditRepositoryImpl(dataSource: _creditsDataSource!);
+
+    authCubit = AuthCubit(
       initialState: const AuthState(isAuthenticated: false),
     );
     appRouter = AppRouter(
-      authNotifier: authNotifier,
+      authCubit: authCubit,
       dataService: sheetsDataService,
       sheetsAuth: sheetsAuth,
     );

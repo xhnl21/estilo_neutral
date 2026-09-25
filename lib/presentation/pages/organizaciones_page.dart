@@ -1,12 +1,15 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../core/config/environment_config.dart';
 import '../../core/design_system/design_system.dart';
 import '../../models/models.dart';
 import '../../shared/shared.dart';
+import '../cubits/organizaciones/organizaciones_cubit.dart';
+import '../cubits/organizaciones/organizaciones_state.dart';
 
 /// Vista de Organizaciones (hoja: organizaciones)
-/// Fuente de verdad de qué organizaciones existen (multi-organización).
+/// BLoC/Cubit: OrganizacionesCubit / OrganizacionesState
 class OrganizacionesPage extends StatelessWidget {
   final SheetsDataService dataService;
 
@@ -14,13 +17,40 @@ class OrganizacionesPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ListenableBuilder(
-      listenable: dataService,
-      builder: (context, _) {
-        final organizaciones = dataService.organizaciones;
-        // Ver el mismo chequeo en UsuariosPage: si el Sheet real todavía no
-        // tiene el esquema nuevo, se bloquea crear/editar/eliminar.
-        final esquemaListo = dataService.schemaMultiOrgListo;
+    return BlocProvider(
+      create: (_) => OrganizacionesCubit(dataService: dataService),
+      child: const _OrganizacionesView(),
+    );
+  }
+}
+
+class _OrganizacionesView extends StatelessWidget {
+  const _OrganizacionesView();
+
+  @override
+  Widget build(BuildContext context) {
+    return BlocConsumer<OrganizacionesCubit, OrganizacionesState>(
+      listener: (context, state) {
+        if (state.errorMessage != null) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(state.errorMessage!),
+              backgroundColor: AppPalette.error,
+            ),
+          );
+        } else if (state.actionSuccessMessage != null) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(state.actionSuccessMessage!),
+              backgroundColor: AppPalette.success,
+            ),
+          );
+        }
+      },
+      builder: (context, state) {
+        final cubit = context.read<OrganizacionesCubit>();
+        final organizaciones = state.organizaciones;
+        final esquemaListo = state.schemaMultiOrgListo;
 
         return AppScaffold(
           title: 'Organizaciones',
@@ -30,8 +60,8 @@ class OrganizacionesPage extends StatelessWidget {
           ),
           actions: [
             AppRefreshButton(
-              onRefresh: () => dataService.fetchAllSheets(),
-              isLoading: dataService.isLoading,
+              onRefresh: () => cubit.refresh(),
+              isLoading: state.isRefreshing,
             ),
           ],
           floatingActionButton: FloatingActionButton.extended(
@@ -40,7 +70,9 @@ class OrganizacionesPage extends StatelessWidget {
             foregroundColor: Colors.white,
             icon: const Icon(CupertinoIcons.building_2_fill, size: 20),
             label: const Text('Nueva Organización', style: TextStyle(fontWeight: FontWeight.w600)),
-            onPressed: () => esquemaListo ? _showOrganizacionDialog(context) : _showEsquemaPendienteDialog(context),
+            onPressed: () => esquemaListo
+                ? _showOrganizacionDialog(context)
+                : _showEsquemaPendienteDialog(context),
           ),
           body: Column(
             children: [
@@ -66,105 +98,105 @@ class OrganizacionesPage extends StatelessWidget {
                 ),
               Expanded(
                 child: organizaciones.isEmpty
-              ? const AppEmptyState(
-                  title: 'No hay organizaciones registradas',
-                  description: 'Usa el botón "Nueva Organización" para crear la primera.',
-                  icon: CupertinoIcons.building_2_fill,
-                )
-              : ListView.builder(
-                  padding: const EdgeInsets.fromLTRB(AppSpacing.lg, AppSpacing.sm, AppSpacing.lg, 80),
-                  itemCount: organizaciones.length,
-                  itemBuilder: (context, index) {
-                    final organizacion = organizaciones[index];
-                    final cantidadUsuarios = dataService.usuariosEnOrganizacion(organizacion.id);
+                    ? const AppEmptyState(
+                        title: 'No hay organizaciones registradas',
+                        description: 'Usa el botón "Nueva Organización" para crear la primera.',
+                        icon: CupertinoIcons.building_2_fill,
+                      )
+                    : ListView.builder(
+                        padding: const EdgeInsets.fromLTRB(AppSpacing.lg, AppSpacing.sm, AppSpacing.lg, 80),
+                        itemCount: organizaciones.length,
+                        itemBuilder: (context, index) {
+                          final organizacion = organizaciones[index];
+                          final cantidadUsuarios = cubit.usuariosEnOrganizacion(organizacion.id);
 
-                    return Padding(
-                      padding: const EdgeInsets.only(bottom: AppSpacing.sm),
-                      child: AppCard(
-                        padding: AppSpacing.pMd,
-                        child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const ExcludeSemantics(
-                              child: CircleAvatar(
-                                radius: 20,
-                                backgroundColor: AppPalette.blue100,
-                                child: Icon(CupertinoIcons.building_2_fill, color: AppPalette.blue700, size: 20),
+                          return Padding(
+                            padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+                            child: AppCard(
+                              padding: AppSpacing.pMd,
+                              child: Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const ExcludeSemantics(
+                                    child: CircleAvatar(
+                                      radius: 20,
+                                      backgroundColor: AppPalette.blue100,
+                                      child: Icon(CupertinoIcons.building_2_fill, color: AppPalette.blue700, size: 20),
+                                    ),
+                                  ),
+                                  const SizedBox(width: AppSpacing.md),
+                                  Expanded(
+                                    child: MergeSemantics(
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            organizacion.nombre,
+                                            style: AppTypography.titleLarge.copyWith(fontSize: 15),
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                          const SizedBox(height: 2),
+                                          Text(
+                                            organizacion.id,
+                                            style: AppTypography.bodyMedium.copyWith(fontSize: 12),
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                          const SizedBox(height: 4),
+                                          AppChip(
+                                            label: '$cantidadUsuarios usuario${cantidadUsuarios == 1 ? '' : 's'}',
+                                            variant: AppChipVariant.info,
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                  Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Semantics(
+                                        button: true,
+                                        label: 'Ver y asignar usuarios de ${organizacion.nombre}',
+                                        child: IconButton(
+                                          visualDensity: VisualDensity.compact,
+                                          icon: const Icon(CupertinoIcons.person_2, size: 18, color: AppPalette.blue700),
+                                          tooltip: 'Ver / Asignar Usuarios',
+                                          onPressed: () => esquemaListo
+                                              ? _showMiembrosDialog(context, organizacion)
+                                              : _showEsquemaPendienteDialog(context),
+                                        ),
+                                      ),
+                                      Semantics(
+                                        button: true,
+                                        label: 'Editar organización ${organizacion.nombre}',
+                                        child: IconButton(
+                                          visualDensity: VisualDensity.compact,
+                                          icon: const Icon(CupertinoIcons.pencil, size: 18, color: AppPalette.blue700),
+                                          tooltip: 'Editar Organización',
+                                          onPressed: () => esquemaListo
+                                              ? _showOrganizacionDialog(context, organizacion: organizacion)
+                                              : _showEsquemaPendienteDialog(context),
+                                        ),
+                                      ),
+                                      Semantics(
+                                        button: true,
+                                        label: 'Eliminar organización ${organizacion.nombre}',
+                                        child: IconButton(
+                                          visualDensity: VisualDensity.compact,
+                                          icon: const Icon(CupertinoIcons.trash, size: 18, color: AppPalette.error),
+                                          tooltip: 'Eliminar Organización',
+                                          onPressed: () => esquemaListo
+                                              ? _confirmDelete(context, organizacion, cantidadUsuarios)
+                                              : _showEsquemaPendienteDialog(context),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ],
                               ),
                             ),
-                            const SizedBox(width: AppSpacing.md),
-                            Expanded(
-                              child: MergeSemantics(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      organizacion.nombre,
-                                      style: AppTypography.titleLarge.copyWith(fontSize: 15),
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                    const SizedBox(height: 2),
-                                    Text(
-                                      organizacion.id,
-                                      style: AppTypography.bodyMedium.copyWith(fontSize: 12),
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                    const SizedBox(height: 4),
-                                    AppChip(
-                                      label: '$cantidadUsuarios usuario${cantidadUsuarios == 1 ? '' : 's'}',
-                                      variant: AppChipVariant.info,
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                            Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Semantics(
-                                  button: true,
-                                  label: 'Ver y asignar usuarios de ${organizacion.nombre}',
-                                  child: IconButton(
-                                    visualDensity: VisualDensity.compact,
-                                    icon: const Icon(CupertinoIcons.person_2, size: 18, color: AppPalette.blue700),
-                                    tooltip: 'Ver / Asignar Usuarios',
-                                    onPressed: () => esquemaListo
-                                        ? _showMiembrosDialog(context, organizacion)
-                                        : _showEsquemaPendienteDialog(context),
-                                  ),
-                                ),
-                                Semantics(
-                                  button: true,
-                                  label: 'Editar organización ${organizacion.nombre}',
-                                  child: IconButton(
-                                    visualDensity: VisualDensity.compact,
-                                    icon: const Icon(CupertinoIcons.pencil, size: 18, color: AppPalette.blue700),
-                                    tooltip: 'Editar Organización',
-                                    onPressed: () => esquemaListo
-                                        ? _showOrganizacionDialog(context, organizacion: organizacion)
-                                        : _showEsquemaPendienteDialog(context),
-                                  ),
-                                ),
-                                Semantics(
-                                  button: true,
-                                  label: 'Eliminar organización ${organizacion.nombre}',
-                                  child: IconButton(
-                                    visualDensity: VisualDensity.compact,
-                                    icon: const Icon(CupertinoIcons.trash, size: 18, color: AppPalette.error),
-                                    tooltip: 'Eliminar Organización',
-                                    onPressed: () => esquemaListo
-                                        ? _confirmDelete(context, organizacion, cantidadUsuarios)
-                                        : _showEsquemaPendienteDialog(context),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ],
-                        ),
+                          );
+                        },
                       ),
-                    );
-                  },
-                ),
               ),
             ],
           ),
@@ -174,17 +206,18 @@ class OrganizacionesPage extends StatelessWidget {
   }
 
   void _showMiembrosDialog(BuildContext context, Organizacion organizacion) {
+    final cubit = context.read<OrganizacionesCubit>();
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
       builder: (ctx) => StatefulBuilder(
         builder: (context, setModalState) {
-          final miembros = dataService.usuarios
-              .where((u) => dataService.organizacionIdForUsuario(u.email) == organizacion.id)
+          final miembros = cubit.state.usuarios
+              .where((u) => cubit.organizacionIdForUsuario(u.email) == organizacion.id)
               .toList();
-          final disponibles = dataService.usuarios
-              .where((u) => dataService.organizacionIdForUsuario(u.email) != organizacion.id)
+          final disponibles = cubit.state.usuarios
+              .where((u) => cubit.organizacionIdForUsuario(u.email) != organizacion.id)
               .toList();
           Usuario? seleccionado = disponibles.isNotEmpty ? disponibles.first : null;
 
@@ -242,7 +275,7 @@ class OrganizacionesPage extends StatelessWidget {
                                     visualDensity: VisualDensity.compact,
                                     icon: const Icon(CupertinoIcons.arrow_right_arrow_left, size: 18, color: AppPalette.blue700),
                                     tooltip: 'Mover a otra organización',
-                                    onPressed: () => _showMoverUsuarioDialog(context, usuario, organizacion, () {
+                                    onPressed: () => _showMoverUsuarioDialog(context, cubit, usuario, organizacion, () {
                                       Navigator.pop(ctx);
                                     }),
                                   ),
@@ -290,7 +323,7 @@ class OrganizacionesPage extends StatelessWidget {
                             onPressed: () async {
                               final usuario = seleccionado;
                               if (usuario == null) return;
-                              await dataService.updateUsuario(usuario, organizacionId: organizacion.id);
+                              await cubit.updateUsuario(usuario, organizacionId: organizacion.id);
                               setModalState(() {});
                             },
                             child: const Text('Agregar'),
@@ -309,11 +342,12 @@ class OrganizacionesPage extends StatelessWidget {
 
   void _showMoverUsuarioDialog(
     BuildContext context,
+    OrganizacionesCubit cubit,
     Usuario usuario,
     Organizacion organizacionActual,
     VoidCallback onMoved,
   ) {
-    final otras = dataService.organizaciones.where((o) => o.id != organizacionActual.id).toList();
+    final otras = cubit.state.organizaciones.where((o) => o.id != organizacionActual.id).toList();
     if (otras.isEmpty) {
       showDialog(
         context: context,
@@ -344,7 +378,7 @@ class OrganizacionesPage extends StatelessWidget {
             FilledButton(
               onPressed: () async {
                 Navigator.pop(ctx);
-                await dataService.updateUsuario(usuario, organizacionId: destino.id);
+                await cubit.updateUsuario(usuario, organizacionId: destino.id);
                 onMoved();
               },
               child: const Text('Mover'),
@@ -356,13 +390,14 @@ class OrganizacionesPage extends StatelessWidget {
   }
 
   void _showOrganizacionDialog(BuildContext context, {Organizacion? organizacion}) {
+    final cubit = context.read<OrganizacionesCubit>();
     final isEditing = organizacion != null;
     final nombreController = TextEditingController(text: organizacion?.nombre ?? '');
-    final tasaManualExistente = organizacion != null ? dataService.tasaManualOrganizacion(organizacion.id) : null;
+    final tasaManualExistente = organizacion != null ? cubit.tasaManualOrganizacion(organizacion.id) : null;
     final tasaManualController = TextEditingController(
       text: tasaManualExistente != null ? tasaManualExistente.valor.toStringAsFixed(2) : '',
     );
-    var monedaBase = organizacion != null ? dataService.monedaOrganizacion(organizacion.id) : 'USD';
+    var monedaBase = organizacion != null ? cubit.monedaOrganizacion(organizacion.id) : 'USD';
 
     showModalBottomSheet(
       context: context,
@@ -439,19 +474,19 @@ class OrganizacionesPage extends StatelessWidget {
                           Navigator.pop(ctx);
 
                           if (isEditing) {
-                            await dataService.updateOrganizacion(
+                            await cubit.updateOrganizacion(
                               Organizacion(id: organizacion.id, nombre: nombre),
                             );
-                            await dataService.setMonedaOrganizacion(organizacion.id, monedaBase);
+                            await cubit.setMonedaOrganizacion(organizacion.id, monedaBase);
 
                             final tasaManual = double.tryParse(tasaManualController.text.trim().replaceAll(',', '.'));
                             if (tasaManual != null && tasaManual > 0) {
-                              await dataService.setTasaManualOrganizacion(organizacion.id, monedaBase, tasaManual);
+                              await cubit.setTasaManualOrganizacion(organizacion.id, monedaBase, tasaManual);
                             } else if (tasaManualExistente != null) {
-                              await dataService.quitarTasaManualOrganizacion(organizacion.id);
+                              await cubit.quitarTasaManualOrganizacion(organizacion.id);
                             }
                           } else {
-                            await dataService.addOrganizacion(nombre);
+                            await cubit.addOrganizacion(nombre);
                           }
                         },
                       ),
@@ -467,6 +502,7 @@ class OrganizacionesPage extends StatelessWidget {
   }
 
   void _confirmDelete(BuildContext context, Organizacion organizacion, int cantidadUsuarios) {
+    final cubit = context.read<OrganizacionesCubit>();
     if (cantidadUsuarios > 0) {
       showDialog(
         context: context,
@@ -496,7 +532,7 @@ class OrganizacionesPage extends StatelessWidget {
             child: const Text('Eliminar'),
             onPressed: () async {
               Navigator.pop(ctx);
-              await dataService.deleteOrganizacion(organizacion.id);
+              await cubit.deleteOrganizacion(organizacion.id);
             },
           ),
         ],
@@ -522,4 +558,3 @@ class OrganizacionesPage extends StatelessWidget {
     );
   }
 }
-

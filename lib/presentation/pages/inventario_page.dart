@@ -4,6 +4,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_image_compress/flutter_image_compress.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:gal/gal.dart';
 import 'package:image_picker/image_picker.dart';
 import '../../core/config/environment_config.dart';
@@ -11,12 +12,14 @@ import '../../core/design_system/design_system.dart';
 import '../../core/network/dio_client.dart';
 import '../../models/models.dart';
 import '../../shared/shared.dart';
+import '../cubits/inventario/inventario_cubit.dart';
+import '../cubits/inventario/inventario_state.dart';
 
 /// Vista de Inventario / Catálogo de Productos (hoja: inventario)
 /// La foto de cada producto se toma con la cámara o se elige de la
 /// galería del teléfono — el usuario nunca ve rutas ni IDs de Google
 /// Drive (ver [_FotoPicker] y [SheetsDataService.subirFotoGaleria]).
-class InventarioPage extends StatefulWidget {
+class InventarioPage extends StatelessWidget {
   final SheetsDataService dataService;
   final String? initialSearchQuery;
 
@@ -27,36 +30,58 @@ class InventarioPage extends StatefulWidget {
   });
 
   @override
-  State<InventarioPage> createState() => _InventarioPageState();
+  Widget build(BuildContext context) {
+    return BlocProvider(
+      create: (_) => InventarioCubit(
+        dataService: dataService,
+        initialSearchQuery: initialSearchQuery,
+      ),
+      child: _InventarioView(dataService: dataService),
+    );
+  }
 }
 
-class _InventarioPageState extends State<InventarioPage> {
-  late String _searchQuery = widget.initialSearchQuery ?? '';
+class _InventarioView extends StatefulWidget {
+  final SheetsDataService dataService;
+
+  const _InventarioView({required this.dataService});
 
   @override
+  State<_InventarioView> createState() => _InventarioViewState();
+}
+
+class _InventarioViewState extends State<_InventarioView> {
+  @override
   Widget build(BuildContext context) {
-    return ListenableBuilder(
-      listenable: widget.dataService,
-      builder: (context, _) {
-        final productos = widget.dataService.productos.where((p) {
-          final q = _searchQuery.toLowerCase();
-          return p.nombre.toLowerCase().contains(q) ||
-              p.marca.toLowerCase().contains(q) ||
-              p.modelo.toLowerCase().contains(q) ||
-              p.talla.toLowerCase().contains(q) ||
-              p.id.toLowerCase().contains(q);
-        }).toList();
+    return BlocConsumer<InventarioCubit, InventarioState>(
+      listenWhen: (prev, curr) =>
+          curr.actionSuccessMessage != null &&
+          prev.actionSuccessMessage != curr.actionSuccessMessage,
+      listener: (context, state) {
+        if (state.actionSuccessMessage != null) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              backgroundColor: AppPalette.success,
+              content: Text(state.actionSuccessMessage!),
+              duration: const Duration(seconds: 2),
+            ),
+          );
+        }
+      },
+      builder: (context, state) {
+        final cubit = context.read<InventarioCubit>();
+        final productos = state.filteredProductos;
 
         return AppScaffold(
           title: 'Inventario',
           subtitle: EnvironmentConfig.formatSubtitle(
             sheetName: 'inventario',
-            userFriendlyText: '${widget.dataService.productos.length} productos registrados',
+            userFriendlyText: '${state.productos.length} productos registrados',
           ),
           actions: [
             AppRefreshButton(
-              onRefresh: () => widget.dataService.fetchAllSheets(),
-              isLoading: widget.dataService.isLoading,
+              onRefresh: () => cubit.refresh(),
+              isLoading: state.status == InventarioStatus.loading,
             ),
           ],
           floatingActionButton: FloatingActionButton.extended(
@@ -76,7 +101,7 @@ class _InventarioPageState extends State<InventarioPage> {
                   label: 'Buscar producto',
                   hint: 'Prenda, marca, modelo, talla o ID...',
                   prefixIcon: CupertinoIcons.search,
-                  onChanged: (val) => setState(() => _searchQuery = val),
+                  onChanged: (val) => cubit.search(val),
                 ),
               ),
 
@@ -84,7 +109,7 @@ class _InventarioPageState extends State<InventarioPage> {
               Expanded(
                 child: AnimatedSwitcher(
                   duration: const Duration(milliseconds: 300),
-                  child: widget.dataService.isLoading
+                  child: (state.status == InventarioStatus.loading && state.productos.isEmpty)
                       ? const InventarioSkeleton(
                           key: ValueKey('inventario_skeleton'),
                         )

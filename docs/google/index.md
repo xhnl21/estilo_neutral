@@ -41,3 +41,4 @@ Estos son los identificadores reales del proyecto — útiles para no tener que 
 - **Apps Script — Deployment ID:** `AKfycby6Jg1oaFa2yJAlEuDThxZhmDvI-LPu80KDedz-qMFn9h1rbvJoTANwG3ufbOYBjDq7ZA`
 - **Proyecto de Google Cloud:** "Maps Platform Demo Project" (`gmp-demo-project-093718520`) — el nombre es engañoso, es el proyecto real que usa la app, no lo confundas con otros proyectos viejos que puedan aparecer en tu cuenta.
 - **UUID de la organización "Estilo Neutral":** `67774411-6aa1-4aa3-a4b2-d3fc6913b768`
+- **Videos e imágenes del proyecto (Google Vids):** [docs.google.com/videos/u/0/](https://docs.google.com/videos/u/0/) — requiere estar logueado con la cuenta de Google del proyecto; es el panel personal de esa cuenta, no un enlace a un video puntual compartido.

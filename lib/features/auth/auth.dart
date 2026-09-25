@@ -1,4 +1,4 @@
-export 'application/auth_notifier.dart';
+export 'application/auth_cubit.dart';
 export 'domain/auth_state.dart';
 export 'presentation/pages/login_page.dart';
 export 'presentation/pages/onboarding_page.dart';

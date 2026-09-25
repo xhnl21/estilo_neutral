@@ -1,49 +1,71 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../core/config/environment_config.dart';
 import '../../core/design_system/design_system.dart';
 import '../../models/models.dart';
 import '../../shared/shared.dart';
+import '../cubits/usuarios/usuarios_cubit.dart';
+import '../cubits/usuarios/usuarios_state.dart';
 
 /// Vista de Usuarios autorizados (hoja: usuarios + relación usuario_organizacion)
 /// Administra quién puede iniciar sesión y a qué organización pertenece.
-class UsuariosPage extends StatefulWidget {
+class UsuariosPage extends StatelessWidget {
   final SheetsDataService dataService;
 
   const UsuariosPage({super.key, required this.dataService});
 
   @override
-  State<UsuariosPage> createState() => _UsuariosPageState();
+  Widget build(BuildContext context) {
+    return BlocProvider(
+      create: (_) => UsuariosCubit(dataService: dataService),
+      child: _UsuariosView(dataService: dataService),
+    );
+  }
 }
 
-class _UsuariosPageState extends State<UsuariosPage> {
-  String _busqueda = '';
+class _UsuariosView extends StatefulWidget {
+  final SheetsDataService dataService;
+
+  const _UsuariosView({required this.dataService});
 
   @override
+  State<_UsuariosView> createState() => _UsuariosViewState();
+}
+
+class _UsuariosViewState extends State<_UsuariosView> {
+  @override
   Widget build(BuildContext context) {
-    return ListenableBuilder(
-      listenable: widget.dataService,
-      builder: (context, _) {
-        final query = _busqueda.trim().toLowerCase();
-        final usuarios = widget.dataService.usuarios.where((u) {
-          if (query.isEmpty) return true;
-          return u.email.contains(query) || u.nombre.toLowerCase().contains(query);
-        }).toList();
-        // Si el Sheet real todavía no tiene el esquema nuevo (ver
-        // docs/google/multi-organizacion.md), se bloquea crear/editar para no
-        // repetir el bug de escribir usuario_email/organizacion_id corridos.
-        final esquemaListo = widget.dataService.schemaMultiOrgListo;
+    return BlocConsumer<UsuariosCubit, UsuariosState>(
+      listenWhen: (prev, curr) =>
+          curr.actionSuccessMessage != null &&
+          prev.actionSuccessMessage != curr.actionSuccessMessage,
+      listener: (context, state) {
+        if (state.actionSuccessMessage != null) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              backgroundColor: AppPalette.success,
+              content: Text(state.actionSuccessMessage!),
+              duration: const Duration(seconds: 2),
+            ),
+          );
+        }
+      },
+      builder: (context, state) {
+        final cubit = context.read<UsuariosCubit>();
+        final usuarios = state.filteredUsuarios;
+        final esquemaListo = state.schemaMultiOrgListo;
 
         return AppScaffold(
           title: 'Usuarios',
           subtitle: EnvironmentConfig.formatSubtitle(
             sheetName: 'usuarios',
-            userFriendlyText: '${widget.dataService.usuarios.length} usuarios autorizados',
+            userFriendlyText: '${state.usuarios.length} usuarios autorizados',
           ),
           actions: [
             AppRefreshButton(
-              onRefresh: () => widget.dataService.fetchAllSheets(),
-              isLoading: widget.dataService.isLoading,
+              onRefresh: () => cubit.refresh(),
+              isLoading: state.status == UsuariosStatus.loading,
             ),
           ],
           floatingActionButton: FloatingActionButton.extended(
@@ -82,7 +104,7 @@ class _UsuariosPageState extends State<UsuariosPage> {
                   label: 'Buscar usuario',
                   hint: 'Email o nombre...',
                   prefixIcon: CupertinoIcons.search,
-                  onChanged: (val) => setState(() => _busqueda = val),
+                  onChanged: (val) => cubit.search(val),
                 ),
               ),
               Expanded(

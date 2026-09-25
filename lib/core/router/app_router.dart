@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../../features/audit/presentation/routes/audit_routes.dart';
-import '../../features/auth/application/auth_notifier.dart';
+import '../../features/auth/application/auth_cubit.dart';
 import '../../features/auth/presentation/routes/auth_routes.dart';
 import '../../features/reporting/presentation/routes/reporting_routes.dart';
 import '../../features/treasury/presentation/routes/treasury_routes.dart';
@@ -9,6 +9,7 @@ import '../../presentation/routes/operations_routes.dart';
 import '../../presentation/shell/main_shell.dart';
 import '../../shared/google_sheets/sheets_auth.dart';
 import '../../shared/google_sheets/sheets_data_service.dart';
+import 'go_router_refresh_stream.dart';
 import 'guards/auth_guard.dart';
 import 'guards/onboarding_guard.dart';
 import 'pages/not_found_page.dart';
@@ -18,7 +19,7 @@ import 'route_paths.dart';
 /// Configuración centralizada de enrutamiento con go_router para Estilo Neutral.
 /// Implementa StatefulShellRoute.indexedStack para preservar el estado de las 14 vistas.
 class AppRouter {
-  final AuthNotifier authNotifier;
+  final AuthCubit authCubit;
   final SheetsDataService dataService;
   final SheetsAuth sheetsAuth;
   final String initialLocation;
@@ -31,15 +32,15 @@ class AppRouter {
       GlobalKey<NavigatorState>(debugLabel: 'root');
 
   AppRouter({
-    required this.authNotifier,
+    required this.authCubit,
     required this.dataService,
     required this.sheetsAuth,
     this.initialLocation = RoutePaths.splash,
   }) {
-    _authGuard = AuthGuard(authNotifier: authNotifier);
-    _onboardingGuard = OnboardingGuard(authNotifier: authNotifier);
+    _authGuard = AuthGuard(authCubit: authCubit);
+    _onboardingGuard = OnboardingGuard(authCubit: authCubit);
 
-    final authRoutes = AuthRoutes(authNotifier: authNotifier, sheetsAuth: sheetsAuth, dataService: dataService);
+    final authRoutes = AuthRoutes(authCubit: authCubit, sheetsAuth: sheetsAuth, dataService: dataService);
     final treasuryRoutes = TreasuryRoutes(dataService: dataService);
     final reportingRoutes = ReportingRoutes(dataService: dataService);
     final operationsRoutes = OperationsRoutes(dataService: dataService);
@@ -51,7 +52,9 @@ class AppRouter {
     router = GoRouter(
       navigatorKey: rootNavigatorKey,
       initialLocation: initialLocation,
-      refreshListenable: authNotifier,
+      // go_router necesita un `Listenable`, no un `Cubit` — `GoRouterRefreshStream`
+      // (utilidad oficial de go_router) adapta el `stream` del Cubit a eso.
+      refreshListenable: GoRouterRefreshStream(authCubit.stream),
       redirect: (context, state) {
         final authRedirect = _authGuard.redirect(context, state);
         if (authRedirect != null) return authRedirect;
@@ -74,7 +77,7 @@ class AppRouter {
           builder: (context, state, navigationShell) {
             return MainShell(
               dataService: dataService,
-              authNotifier: authNotifier,
+              authCubit: authCubit,
               sheetsAuth: sheetsAuth,
               navigationShell: navigationShell,
             );

@@ -112,6 +112,7 @@
     "guardar",
     "historial",
     "hojas",
+    "identificador",
     "Inicial",
     "Inicializa",
     "Inicializar",
@@ -174,5 +175,8 @@
     "veces",
     "venta",
     "WCAG"
+  ],
+  "cSpell.ignorePaths": [
+    "**/.agents/**"
   ]
 }

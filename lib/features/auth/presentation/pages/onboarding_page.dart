@@ -3,13 +3,13 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../../../../core/design_system/design_system.dart';
 import '../../../../core/router/route_paths.dart';
-import '../../application/auth_notifier.dart';
+import '../../application/auth_cubit.dart';
 
 /// Pantalla de bienvenida / inducción inicial.
 class OnboardingPage extends StatelessWidget {
-  final AuthNotifier authNotifier;
+  final AuthCubit authCubit;
 
-  const OnboardingPage({super.key, required this.authNotifier});
+  const OnboardingPage({super.key, required this.authCubit});
 
   @override
   Widget build(BuildContext context) {
@@ -85,7 +85,7 @@ class OnboardingPage extends StatelessWidget {
                   label: 'Comenzar a Trabajar',
                   icon: CupertinoIcons.check_mark,
                   onPressed: () {
-                    authNotifier.completeOnboarding();
+                    authCubit.completeOnboarding();
                     context.go(RoutePaths.ventas);
                   },
                 ),

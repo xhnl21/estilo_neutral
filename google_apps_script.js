@@ -13,6 +13,45 @@
 
 const DRIVE_FOLDER_ID = "1hgdY89REZHD0xWfojjIgnbfhmJ0JluYD";
 const DEFAULT_SPREADSHEET_ID = "1V8xBnRVtZUyz4liGW59BU6mkgCjjreEOEWzySjcZLvI";
+const ORGANIZACION_ID_DEFAULT = "67774411-6aa1-4aa3-a4b2-d3fc6913b768";
+
+// Prefijo de ID por hoja, para las que siguen el patrón "prefijo + 8 dígitos"
+// (ver los getters `nextXxxId` en sheets_data_service.dart — deben coincidir
+// exactamente con este mapa). El ID que mande el cliente en `data.id` para
+// estas hojas se IGNORA y se recalcula acá, porque el cliente lo arma a
+// partir de una caché local que puede estar desactualizada frente a otra
+// sesión — dos clientes calculando "el próximo ID" en paralelo sin este
+// cambio terminan generando el mismo ID (fue exactamente lo que pasó con
+// clientes.c00000002 y galeria.g00000002/g00000003, ver
+// docs/google/troubleshooting.md). Acá adentro, bajo el lock global de
+// doPost, calcularlo es atómico y no puede chocar.
+const ID_PREFIXES = {
+  clientes: "c",
+  inventario: "p",
+  galeria: "g",
+  ventas: "v",
+  venta_items: "vi",
+  abonos: "ab",
+  compras_divisas: "d",
+  usuarios: "u",
+  tasas: "t",
+  moneda_organizacion: "mo",
+  creditos_clientes: "cr"
+};
+
+function _siguienteIdServidor(sheet, prefijo) {
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) return prefijo + "00000001";
+  const ids = sheet.getRange(2, 1, lastRow - 1, 1).getValues();
+  let maxN = 0;
+  for (let i = 0; i < ids.length; i++) {
+    const s = String(ids[i][0] || "");
+    if (s.slice(0, prefijo.length) !== prefijo) continue;
+    const num = parseInt(s.replace(/[^0-9]/g, ""), 10);
+    if (!isNaN(num) && num > maxN) maxN = num;
+  }
+  return prefijo + String(maxN + 1).padStart(8, "0");
+}
 
 function getSpreadsheet() {
   try {
@@ -105,9 +144,25 @@ function doPost(e) {
     }
 
     // =========================================================================
+    // ACCIÓN ESPECIAL: EJECUCIÓN ATÓMICA POR LOTES (ALL-OR-NOTHING BATCH)
+    // =========================================================================
+    if (action === "batch") {
+      const batchResult = _handleBatch(ss, payload);
+      return respond(batchResult, batchResult.status === "error" ? 400 : 200);
+    }
+
+    // =========================================================================
     // CRUD DE HOJAS
     // =========================================================================
-    const sheet = ss.getSheetByName(sheetName);
+    let sheet = ss.getSheetByName(sheetName);
+    if (!sheet && sheetName === "creditos_clientes") {
+      sheet = ss.insertSheet("creditos_clientes");
+      sheet.appendRow([
+        "id", "cliente_id", "fecha", "monto_usd", "origen_venta_id",
+        "estado", "organizacion_id", "aplicado_a_venta_id", "fecha_aplicacion",
+        "saldo_usd", "usuario_email", "hash_evidencia"
+      ]);
+    }
     if (!sheet) {
       return respond({ status: "error", message: "Hoja '" + sheetName + "' no encontrada" }, 404);
     }
@@ -169,12 +224,316 @@ function doPost(e) {
 }
 
 // =============================================================================
+// HANDLER DE TRANSACCIONES ATÓMICAS POR LOTES (ALL-OR-NOTHING BATCH)
+// =============================================================================
+
+function _handleBatch(ss, payload) {
+  const operations = payload.operations;
+  const transactionId = payload.transactionId || ("tx_" + new Date().getTime());
+
+  if (!operations || !Array.isArray(operations) || operations.length === 0) {
+    return {
+      status: "error",
+      message: "Falta arreglo 'operations' válido en la transacción por lotes",
+      transactionId: transactionId
+    };
+  }
+
+  const rollbackTasks = [];
+  const results = [];
+  const generatedIds = {};
+  let lastGeneratedId = null;
+
+  try {
+    // 1. Pre-validación: asegurar que todas las hojas referenciadas existan
+    for (let i = 0; i < operations.length; i++) {
+      const op = operations[i];
+      if (!op || !op.sheet) {
+        throw new Error("Operación #" + (i + 1) + " no especifica 'sheet'");
+      }
+      let sh = ss.getSheetByName(op.sheet);
+      if (!sh && op.sheet === "creditos_clientes") {
+        sh = ss.insertSheet("creditos_clientes");
+        sh.appendRow([
+          "id", "cliente_id", "fecha", "monto_usd", "origen_venta_id",
+          "estado", "organizacion_id", "aplicado_a_venta_id", "fecha_aplicacion",
+          "saldo_usd", "usuario_email", "hash_evidencia"
+        ]);
+      }
+      if (!sh) {
+        throw new Error("Hoja '" + op.sheet + "' no encontrada en operación #" + (i + 1));
+      }
+    }
+
+    // 2. Ejecutar cada operación en orden secuencial registrando puntos de rollback
+    for (let i = 0; i < operations.length; i++) {
+      const op = operations[i];
+      const targetSheet = ss.getSheetByName(op.sheet);
+      const opAction = op.action;
+
+      if (opAction === "create") {
+        const rowData = _sanitizarContraFormulas(op.data || {});
+
+        // Resolver referencias a IDs previos (ej. venta_id: "$last_id" o "$ventas.id")
+        for (const k in rowData) {
+          if (rowData[k] === "$last_id" && lastGeneratedId) {
+            rowData[k] = lastGeneratedId;
+          } else if (typeof rowData[k] === "string" && rowData[k].startsWith("$") && rowData[k].endsWith(".id")) {
+            const refSheet = rowData[k].slice(1, -3);
+            if (generatedIds[refSheet]) {
+              rowData[k] = generatedIds[refSheet];
+            }
+          }
+        }
+
+        const createRes = _handleCreate(ss, targetSheet, op.sheet, rowData, true);
+        if (createRes.status === "error") {
+          throw new Error("Fallo en create (" + op.sheet + "): " + createRes.message);
+        }
+
+        const createdId = createRes.id;
+        if (createdId) {
+          generatedIds[op.sheet] = createdId;
+          lastGeneratedId = createdId;
+        }
+
+        rollbackTasks.push({
+          type: "delete_row",
+          sheet: targetSheet,
+          row: createRes.row
+        });
+
+        results.push({ opIndex: i, action: "create", sheet: op.sheet, id: createdId, row: createRes.row });
+
+      } else if (opAction === "batch_create") {
+        const dataList = op.dataList || [];
+        for (let j = 0; j < dataList.length; j++) {
+          const itemData = _sanitizarContraFormulas(dataList[j] || {});
+          for (const k in itemData) {
+            if (itemData[k] === "$last_id" && lastGeneratedId) {
+              itemData[k] = lastGeneratedId;
+            } else if (typeof itemData[k] === "string" && itemData[k].startsWith("$") && itemData[k].endsWith(".id")) {
+              const refSheet = itemData[k].slice(1, -3);
+              if (generatedIds[refSheet]) {
+                itemData[k] = generatedIds[refSheet];
+              }
+            }
+          }
+
+          const itemRes = _handleCreate(ss, targetSheet, op.sheet, itemData, true);
+          if (itemRes.status === "error") {
+            throw new Error("Fallo en batch_create (" + op.sheet + ", item " + j + "): " + itemRes.message);
+          }
+
+          rollbackTasks.push({
+            type: "delete_row",
+            sheet: targetSheet,
+            row: itemRes.row
+          });
+
+          results.push({ opIndex: i, itemIndex: j, action: "batch_create", sheet: op.sheet, id: itemRes.id, row: itemRes.row });
+        }
+
+      } else if (opAction === "update" || opAction === "update_cell") {
+        const targetId = op.id;
+        if (!targetId) {
+          throw new Error("Operación de actualización #" + (i + 1) + " en " + op.sheet + " requiere 'id'");
+        }
+
+        let rowIndex = _findRowById(targetSheet, targetId);
+        if (rowIndex === -1 && op.sheet === "creditos_clientes") {
+          const createData = Object.assign({ id: targetId }, _sanitizarContraFormulas(op.data || {}));
+          const createRes = _handleCreate(ss, targetSheet, op.sheet, createData, true);
+          if (createRes && createRes.status === "error") {
+            throw new Error(createRes.message);
+          }
+          rowIndex = createRes.row;
+          rollbackTasks.push({
+            type: "delete_row",
+            sheet: targetSheet,
+            row: rowIndex
+          });
+          results.push({ opIndex: i, action: "upsert_create", sheet: op.sheet, id: targetId, row: rowIndex });
+          continue;
+        }
+
+        if (rowIndex === -1) {
+          throw new Error("Registro con ID '" + targetId + "' no encontrado en " + op.sheet);
+        }
+
+        const lastCol = Math.max(targetSheet.getLastColumn(), 1);
+        const prevRowValues = targetSheet.getRange(rowIndex, 1, 1, lastCol).getValues()[0];
+
+        rollbackTasks.push({
+          type: "restore_row",
+          sheet: targetSheet,
+          row: rowIndex,
+          values: prevRowValues
+        });
+
+        if (opAction === "update_cell") {
+          const updateData = {};
+          updateData[op.field] = op.newValue;
+          const sanitizedUpdate = _sanitizarContraFormulas(updateData);
+          const updateRes = _handleUpdate(ss, targetSheet, op.sheet, targetId, sanitizedUpdate, true);
+          if (updateRes && updateRes.status === "error") {
+            throw new Error(updateRes.message);
+          }
+        } else {
+          const updateData = _sanitizarContraFormulas(op.data || {});
+          const updateRes = _handleUpdate(ss, targetSheet, op.sheet, targetId, updateData, true);
+          if (updateRes && updateRes.status === "error") {
+            throw new Error(updateRes.message);
+          }
+        }
+
+        results.push({ opIndex: i, action: opAction, sheet: op.sheet, id: targetId, row: rowIndex });
+
+      } else if (opAction === "delete") {
+        const targetId = op.id;
+        const rowIndex = _findRowById(targetSheet, targetId);
+        if (rowIndex === -1) {
+          throw new Error("Registro con ID '" + targetId + "' no encontrado para eliminar en " + op.sheet);
+        }
+
+        const lastCol = Math.max(targetSheet.getLastColumn(), 1);
+        const prevRowValues = targetSheet.getRange(rowIndex, 1, 1, lastCol).getValues()[0];
+
+        rollbackTasks.push({
+          type: "insert_row",
+          sheet: targetSheet,
+          row: rowIndex,
+          values: prevRowValues
+        });
+
+        const delRes = _handleDelete(ss, targetSheet, op.sheet, targetId);
+        if (delRes && delRes.status === "error") {
+          throw new Error(delRes.message);
+        }
+        results.push({ opIndex: i, action: "delete", sheet: op.sheet, id: targetId });
+
+      } else {
+        throw new Error("Acción desconocida en lote: " + opAction);
+      }
+    }
+
+    // 3. Si todo concluyó sin error, asentar en audit_log la transacción atómica
+    _appendAuditLog(ss, {
+      hoja: "batch_transactions",
+      celda: "A",
+      valorAnterior: "null",
+      valorNuevo: transactionId,
+      accion: "batch_atomic_commit",
+      norma: "ISO 8000 §5.3 / ACID",
+      observaciones: "Transacción atómica completada (" + operations.length + " operaciones)"
+    });
+
+    return {
+      status: "success",
+      transactionId: transactionId,
+      message: "Transacción atómica ejecutada con éxito",
+      operationsCount: operations.length,
+      generatedIds: generatedIds,
+      results: results
+    };
+
+  } catch (err) {
+    // 4. ATOMIC ROLLBACK: Revertir en orden inverso todas las operaciones aplicadas
+    for (let r = rollbackTasks.length - 1; r >= 0; r--) {
+      try {
+        const task = rollbackTasks[r];
+        if (task.type === "delete_row") {
+          task.sheet.deleteRow(task.row);
+        } else if (task.type === "restore_row") {
+          task.sheet.getRange(task.row, 1, 1, task.values.length).setValues([task.values]);
+        } else if (task.type === "insert_row") {
+          task.sheet.insertRowBefore(task.row);
+          task.sheet.getRange(task.row, 1, 1, task.values.length).setValues([task.values]);
+        }
+      } catch (rollbackErr) {
+        Logger.log("Error crítico durante rollback en tarea " + r + ": " + rollbackErr.toString());
+      }
+    }
+
+    _appendAuditLog(ss, {
+      hoja: "batch_transactions",
+      celda: "A",
+      valorAnterior: transactionId,
+      valorNuevo: "ROLLBACK_APPLIED",
+      accion: "batch_atomic_rollback",
+      norma: "ISO 8000 §5.3 / ACID",
+      observaciones: "Transacción abortada y revertida: " + err.toString()
+    });
+
+    return {
+      status: "error",
+      transactionId: transactionId,
+      message: "Transacción abortada (Rollback ejecutado): " + err.toString()
+    };
+  }
+}
+
+// =============================================================================
 // HANDLERS CRUD
 // =============================================================================
 
-function _handleCreate(ss, sheet, sheetName, data) {
+// Relaciones obligatorias a validar antes de crear una fila: sheetName ->
+// lista de [columna_en_data, hoja_destino]. Si el valor de esa columna no
+// existe como ID en la hoja destino, se rechaza la creación completa.
+const FK_OBLIGATORIAS = {
+  ventas: [["cliente_id", "clientes"]],
+  venta_items: [["venta_id", "ventas"], ["item_id", "inventario"]],
+  abonos: [["venta_id", "ventas"]],
+  creditos_clientes: [["cliente_id", "clientes"], ["origen_venta_id", "ventas"]]
+};
+
+function _existeId(sheet, id) {
+  if (!id) return false;
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) return false;
+  const ids = sheet.getRange(2, 1, lastRow - 1, 1).getValues();
+  for (let i = 0; i < ids.length; i++) {
+    if (String(ids[i][0]) === String(id)) return true;
+  }
+  return false;
+}
+
+function _validarForeignKeys(ss, sheetName, data) {
+  const reglas = FK_OBLIGATORIAS[sheetName];
+  if (!reglas) return null;
+  for (let i = 0; i < reglas.length; i++) {
+    const columna = reglas[i][0];
+    const hojaDestino = reglas[i][1];
+    const valor = data[columna];
+    if (!valor) continue; // los campos opcionales (ej. foto_id) se validan aparte si hace falta
+    const destino = ss.getSheetByName(hojaDestino);
+    if (!destino || !_existeId(destino, valor)) {
+      return "FK inválida: " + sheetName + "." + columna + " = '" + valor + "' no existe en " + hojaDestino + ".id";
+    }
+  }
+  return null;
+}
+
+function _handleCreate(ss, sheet, sheetName, data, skipAudit) {
   const nextRow = sheet.getLastRow() + 1;
   let rowValues = [];
+
+  // ID generado del lado del servidor (ver ID_PREFIXES) — pisa lo que haya
+  // mandado el cliente. Tiene que ir antes de cualquier validación de FK que
+  // dependa de él (ninguna acá lo necesita todavía, pero por orden).
+  if (ID_PREFIXES[sheetName] && !data.id) {
+    data.id = _siguienteIdServidor(sheet, ID_PREFIXES[sheetName]);
+  }
+
+  // Validación de integridad referencial: rechazar (sin escribir nada) si
+  // una FK obligatoria no existe todavía en su hoja maestra. Cubre las
+  // relaciones que aparecieron rotas en la auditoría de datos (ver
+  // docs/cumplimiento-normativo.md) — venta sin cliente real, ítem sin
+  // producto real, abono sin venta real.
+  const fkError = _validarForeignKeys(ss, sheetName, data);
+  if (fkError) {
+    throw new Error(fkError);
+  }
 
   if (sheetName === "clientes") {
     rowValues = [
@@ -184,7 +543,7 @@ function _handleCreate(ss, sheet, sheetName, data) {
       data.email || "",
       data.saldo_deuda_usd || 0.0,
       data.fecha_registro || Utilities.formatDate(new Date(), "GMT-4", "yyyy-MM-dd"),
-      data.organizacion_id || "67774411-6aa1-4aa3-a4b2-d3fc6913b768"
+      data.organizacion_id || ORGANIZACION_ID_DEFAULT
     ];
   } else if (sheetName === "inventario") {
     // foto_id es una FK a "galeria".id (nunca la URL directa) — la columna
@@ -204,7 +563,7 @@ function _handleCreate(ss, sheet, sheetName, data) {
       data.precio_usd || 0.0,
       fotoId,
       fotoFormula,
-      data.organizacion_id || "67774411-6aa1-4aa3-a4b2-d3fc6913b768"
+      data.organizacion_id || ORGANIZACION_ID_DEFAULT
     ];
   } else if (sheetName === "galeria") {
     rowValues = [
@@ -246,7 +605,7 @@ function _handleCreate(ss, sheet, sheetName, data) {
       '=I' + r,
       data.validacion || "OK",
       data.estado || "Pendiente",
-      data.organizacion_id || "67774411-6aa1-4aa3-a4b2-d3fc6913b768"
+      data.organizacion_id || ORGANIZACION_ID_DEFAULT
     ];
   } else if (sheetName === "venta_items") {
     const r = nextRow;
@@ -281,7 +640,9 @@ function _handleCreate(ss, sheet, sheetName, data) {
       data.moneda || "USD",
       data.valor || 0.0,
       data.fuente || "bcv",
-      data.organizacion_id || ""
+      // Antes caía en "" — por eso todas las filas de tasas tenían
+      // organizacion_id vacío (ver docs/cumplimiento-normativo.md).
+      data.organizacion_id || ORGANIZACION_ID_DEFAULT
     ];
   } else if (sheetName === "compras_divisas") {
     rowValues = [
@@ -296,7 +657,7 @@ function _handleCreate(ss, sheet, sheetName, data) {
       data.tasa_bcv || 0.0,
       data.tasa_usd || 0.0,
       data.validacion || "OK",
-      data.organizacion_id || "67774411-6aa1-4aa3-a4b2-d3fc6913b768"
+      data.organizacion_id || ORGANIZACION_ID_DEFAULT
     ];
   } else if (sheetName === "usuarios") {
     rowValues = [
@@ -327,6 +688,21 @@ function _handleCreate(ss, sheet, sheetName, data) {
       data.nombre || "",
       data.status !== undefined ? data.status : true
     ];
+  } else if (sheetName === "creditos_clientes") {
+    rowValues = [
+      data.id,
+      data.cliente_id || "",
+      data.fecha || Utilities.formatDate(new Date(), "GMT-4", "yyyy-MM-dd'T'HH:mm:ssXXX"),
+      data.monto_usd !== undefined ? data.monto_usd : 0.0,
+      data.origen_venta_id || "",
+      data.estado || "DISPONIBLE",
+      data.organizacion_id || ORGANIZACION_ID_DEFAULT,
+      data.aplicado_a_venta_id || "",
+      data.fecha_aplicacion || "",
+      data.saldo_usd !== undefined ? data.saldo_usd : (data.monto_usd || 0.0),
+      data.usuario_email || "",
+      data.hash_evidencia || ""
+    ];
   } else {
     // Genérico
     rowValues = Object.values(data);
@@ -334,21 +710,44 @@ function _handleCreate(ss, sheet, sheetName, data) {
 
   sheet.appendRow(rowValues);
 
-  _appendAuditLog(ss, {
-    hoja: sheetName,
-    celda: "A" + nextRow,
-    valorAnterior: "null",
-    valorNuevo: data.id || data.usuario_email || "nuevo_registro",
-    accion: "creacion_" + sheetName,
-    norma: "ISO 8000 §4.2",
-    observaciones: "Registro insertado vía App Móvil"
-  });
+  // Sincronizar abono acumulado en la cabecera de la factura si se creó un abono
+  if (sheetName === "abonos" && data.venta_id && data.monto !== undefined) {
+    const vSheet = ss.getSheetByName("ventas");
+    if (vSheet) {
+      const vRow = _findRowById(vSheet, data.venta_id);
+      if (vRow !== -1) {
+        const abonoPrev = Number(vSheet.getRange(vRow, 10).getValue()) || 0.0;
+        const nuevoAbono = abonoPrev + Number(data.monto);
+        vSheet.getRange(vRow, 10).setValue(nuevoAbono);
+        const totalPagar = Number(vSheet.getRange(vRow, 12).getValue()) || 0.0;
+        if (totalPagar > 0 && nuevoAbono >= totalPagar) {
+          vSheet.getRange(vRow, 14).setValue("Pagada");
+        }
+      }
+    }
+  }
+
+  if (!skipAudit) {
+    _appendAuditLog(ss, {
+      hoja: sheetName,
+      celda: "A" + nextRow,
+      valorAnterior: "null",
+      valorNuevo: data.id || data.usuario_email || "nuevo_registro",
+      accion: "creacion_" + sheetName,
+      norma: "ISO 8000 §4.2",
+      observaciones: "Registro insertado vía App Móvil"
+    });
+  }
 
   return { status: "success", message: "Registro creado exitosamente", row: nextRow, id: data.id || data.usuario_email };
 }
 
-function _handleUpdate(ss, sheet, sheetName, id, data) {
-  const rowIndex = _findRowById(sheet, id);
+function _handleUpdate(ss, sheet, sheetName, id, data, skipAudit) {
+  let rowIndex = _findRowById(sheet, id);
+  if (rowIndex === -1 && sheetName === "creditos_clientes") {
+    const createData = Object.assign({ id: id }, data);
+    return _handleCreate(ss, sheet, sheetName, createData, skipAudit);
+  }
   if (rowIndex === -1) {
     return { status: "error", message: "Registro con ID '" + id + "' no encontrado en " + sheetName };
   }
@@ -414,17 +813,29 @@ function _handleUpdate(ss, sheet, sheetName, id, data) {
   } else if (sheetName === "metodo pago") {
     if (data.nombre !== undefined) sheet.getRange(rowIndex, 2).setValue(data.nombre);
     if (data.status !== undefined) sheet.getRange(rowIndex, 3).setValue(data.status);
+  } else if (sheetName === "creditos_clientes") {
+    if (data.estado !== undefined) sheet.getRange(rowIndex, 6).setValue(data.estado);
+    if (data.aplicado_a_venta_id !== undefined) sheet.getRange(rowIndex, 8).setValue(data.aplicado_a_venta_id);
+    if (data.fecha_aplicacion !== undefined) sheet.getRange(rowIndex, 9).setValue(data.fecha_aplicacion);
+    if (data.saldo_usd !== undefined) sheet.getRange(rowIndex, 10).setValue(data.saldo_usd);
+    if (data.usuario_email !== undefined) sheet.getRange(rowIndex, 11).setValue(data.usuario_email);
+    if (data.hash_evidencia !== undefined) sheet.getRange(rowIndex, 12).setValue(data.hash_evidencia);
+  } else if (sheetName === "abonos") {
+    if (data.monto !== undefined) sheet.getRange(rowIndex, 4).setValue(data.monto);
+    if (data.metodo_pago !== undefined) sheet.getRange(rowIndex, 5).setValue(data.metodo_pago);
   }
 
-  _appendAuditLog(ss, {
-    hoja: sheetName,
-    celda: "A" + rowIndex,
-    valorAnterior: "registro_existente",
-    valorNuevo: id,
-    accion: "actualizacion_" + sheetName,
-    norma: "ISO 8000 §4.2",
-    observaciones: "Modificación de campos vía App Móvil"
-  });
+  if (!skipAudit) {
+    _appendAuditLog(ss, {
+      hoja: sheetName,
+      celda: "A" + rowIndex,
+      valorAnterior: "registro_existente",
+      valorNuevo: id,
+      accion: "actualizacion_" + sheetName,
+      norma: "ISO 8000 §4.2",
+      observaciones: "Modificación de campos vía App Móvil"
+    });
+  }
 
   return { status: "success", message: "Registro " + id + " actualizado correctamente" };
 }

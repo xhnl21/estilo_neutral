@@ -77,6 +77,15 @@ python3 upload_sheet.py /ruta/a/otro/archivo.xlsx
 
 ⚠️ Esto **reemplaza todo el contenido** del Sheet real. Los datos que no estén en el `.xlsx` local se pierden. Asegurate de que el `.xlsx` que estás subiendo sea el que realmente querés que quede.
 
+**Por eso, antes de editar el `.xlsx` a mano o de correr un script de migración, bajá primero el estado real:**
+
+```bash
+cd tools/sheets_sync
+python3 download_sheet.py
+```
+
+Sobreescribe la copia local con el contenido actual de Drive (la app y la gente que la usa escriben directo en el Sheet real todo el tiempo — la copia local se desactualiza sola, no hay sincronización automática). Mismas credenciales que `upload_sheet.py`, sin setup adicional. Acepta también una ruta de salida opcional.
+
 ---
 
 ## Archivos sensibles

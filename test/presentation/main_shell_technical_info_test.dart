@@ -22,7 +22,7 @@ void main() {
         theme: AppTheme.light,
         home: MainShell(
           dataService: ServiceLocator().sheetsDataService,
-          authNotifier: ServiceLocator().authNotifier,
+          authCubit: ServiceLocator().authCubit,
           sheetsAuth: ServiceLocator().sheetsAuth,
         ),
       ),
@@ -42,7 +42,7 @@ void main() {
         theme: AppTheme.light,
         home: MainShell(
           dataService: ServiceLocator().sheetsDataService,
-          authNotifier: ServiceLocator().authNotifier,
+          authCubit: ServiceLocator().authCubit,
           sheetsAuth: ServiceLocator().sheetsAuth,
         ),
       ),

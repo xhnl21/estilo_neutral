@@ -72,6 +72,17 @@ Por defecto usa `Estilo Neutral.xlsx` de la raíz del repo. La primera vez abre 
 
 ⚠️ **Esto reemplaza todo el contenido del Sheet real.** Los datos que no estén en el `.xlsx` local se pierden — verificá siempre el archivo antes de correrlo.
 
+### El paso inverso: bajar el estado real antes de editar
+
+No hay sincronización automática entre el `.xlsx` local y el Sheet real — la app y cualquier persona que la use escriben directo en Drive todo el tiempo, así que la copia local se desactualiza sola (se comprobó en vivo: llegó a faltarle 7 hojas enteras, creadas por migraciones posteriores a la última vez que se había bajado). **Antes de editar el `.xlsx` a mano o de correr un script de migración**, bajá primero el contenido real:
+
+```bash
+cd tools/sheets_sync
+python3 download_sheet.py
+```
+
+Mismas credenciales que `upload_sheet.py` (comparten `token.json`), sin setup adicional. Sobreescribe `Estilo Neutral.xlsx` con una exportación fresca del Sheet real vía `drive.files().export_media(...)`. Acepta una ruta de salida opcional, igual que `upload_sheet.py`.
+
 ## Archivos sensibles
 
 Nunca se commitean (ya están en `.gitignore`):

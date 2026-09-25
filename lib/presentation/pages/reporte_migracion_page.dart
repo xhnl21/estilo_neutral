@@ -1,28 +1,59 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../core/config/environment_config.dart';
 import '../../core/design_system/design_system.dart';
 import '../../models/models.dart';
 import '../../shared/shared.dart';
+import '../cubits/reporte_migracion/reporte_migracion_cubit.dart';
+import '../cubits/reporte_migracion/reporte_migracion_state.dart';
 
 /// Vista de Reporte de Migración y Calidad de Datos (hoja: reporte_migracion)
 /// Cumplimiento ISO 25010, ISO 8000 y CRUD de controles.
-class ReporteMigracionPage extends StatefulWidget {
+class ReporteMigracionPage extends StatelessWidget {
   final SheetsDataService dataService;
 
   const ReporteMigracionPage({super.key, required this.dataService});
 
   @override
-  State<ReporteMigracionPage> createState() => _ReporteMigracionPageState();
+  Widget build(BuildContext context) {
+    return BlocProvider(
+      create: (_) => ReporteMigracionCubit(dataService: dataService),
+      child: _ReporteMigracionView(dataService: dataService),
+    );
+  }
 }
 
-class _ReporteMigracionPageState extends State<ReporteMigracionPage> {
+class _ReporteMigracionView extends StatefulWidget {
+  final SheetsDataService dataService;
+
+  const _ReporteMigracionView({required this.dataService});
+
+  @override
+  State<_ReporteMigracionView> createState() => _ReporteMigracionViewState();
+}
+
+class _ReporteMigracionViewState extends State<_ReporteMigracionView> {
   @override
   Widget build(BuildContext context) {
-    return ListenableBuilder(
-      listenable: widget.dataService,
-      builder: (context, _) {
-        final reportes = widget.dataService.reportesMigracion;
+    return BlocConsumer<ReporteMigracionCubit, ReporteMigracionState>(
+      listenWhen: (prev, curr) =>
+          curr.actionSuccessMessage != null &&
+          prev.actionSuccessMessage != curr.actionSuccessMessage,
+      listener: (context, state) {
+        if (state.actionSuccessMessage != null) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              backgroundColor: AppPalette.success,
+              content: Text(state.actionSuccessMessage!),
+              duration: const Duration(seconds: 2),
+            ),
+          );
+        }
+      },
+      builder: (context, state) {
+        final cubit = context.read<ReporteMigracionCubit>();
+        final reportes = state.reportes;
 
         return AppScaffold(
           title: 'Reporte de Migración',
@@ -32,8 +63,8 @@ class _ReporteMigracionPageState extends State<ReporteMigracionPage> {
           ),
           actions: [
             AppRefreshButton(
-              onRefresh: () => widget.dataService.fetchAllSheets(),
-              isLoading: widget.dataService.isLoading,
+              onRefresh: () => cubit.refresh(),
+              isLoading: state.status == ReporteMigracionStatus.loading,
             ),
           ],
           floatingActionButton: FloatingActionButton.extended(
@@ -46,7 +77,7 @@ class _ReporteMigracionPageState extends State<ReporteMigracionPage> {
           ),
           body: AnimatedSwitcher(
             duration: const Duration(milliseconds: 300),
-            child: widget.dataService.isLoading
+            child: (state.status == ReporteMigracionStatus.loading && reportes.isEmpty)
                 ? const ReporteMigracionSkeleton(key: ValueKey('reporte_migracion_skeleton'))
                 : reportes.isEmpty
                     ? const AppEmptyState(

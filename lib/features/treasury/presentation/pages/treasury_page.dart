@@ -1,30 +1,57 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../../../core/config/environment_config.dart';
 import '../../../../core/design_system/design_system.dart';
 import '../../../../models/models.dart';
 import '../../../../shared/shared.dart';
+import '../cubit/treasury_cubit.dart';
+import '../cubit/treasury_state.dart';
 
 /// Vista de Tesorería — Compras de Divisas (hoja: compras_divisas)
-/// Operaciones CRUD completas y Cero Polling.
-class TreasuryPage extends StatefulWidget {
+/// Implementada con arquitectura BLoC/Cubit estricta (TreasuryCubit / TreasuryState).
+class TreasuryPage extends StatelessWidget {
   final SheetsDataService dataService;
 
   const TreasuryPage({super.key, required this.dataService});
 
   @override
-  State<TreasuryPage> createState() => _TreasuryPageState();
+  Widget build(BuildContext context) {
+    return BlocProvider(
+      create: (_) => TreasuryCubit(dataService: dataService),
+      child: const _TreasuryView(),
+    );
+  }
 }
 
-class _TreasuryPageState extends State<TreasuryPage> {
+class _TreasuryView extends StatelessWidget {
+  const _TreasuryView();
+
   @override
   Widget build(BuildContext context) {
-    return ListenableBuilder(
-      listenable: widget.dataService,
-      builder: (context, _) {
-        final compras = widget.dataService.comprasDivisas;
-        final totalUsd = compras.fold<double>(0.0, (s, c) => s + c.capitalUsd);
-        final totalComisiones = compras.fold<double>(0.0, (s, c) => s + c.comisionBinanceUsd);
+    return BlocConsumer<TreasuryCubit, TreasuryState>(
+      listener: (context, state) {
+        if (state.errorMessage != null) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(state.errorMessage!),
+              backgroundColor: AppPalette.error,
+            ),
+          );
+        } else if (state.actionSuccessMessage != null) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(state.actionSuccessMessage!),
+              backgroundColor: AppPalette.success,
+            ),
+          );
+        }
+      },
+      builder: (context, state) {
+        final cubit = context.read<TreasuryCubit>();
+        final compras = state.comprasDivisas;
+        final totalUsd = state.totalUsd;
+        final totalComisiones = state.totalComisiones;
 
         return AppScaffold(
           title: 'Tesorería',
@@ -34,8 +61,8 @@ class _TreasuryPageState extends State<TreasuryPage> {
           ),
           actions: [
             AppRefreshButton(
-              onRefresh: () => widget.dataService.fetchAllSheets(),
-              isLoading: widget.dataService.isLoading,
+              onRefresh: () => cubit.refresh(),
+              isLoading: state.isLoading,
             ),
           ],
           floatingActionButton: FloatingActionButton.extended(
@@ -48,167 +75,168 @@ class _TreasuryPageState extends State<TreasuryPage> {
           ),
           body: AnimatedSwitcher(
             duration: const Duration(milliseconds: 300),
-            child: widget.dataService.isLoading
+            child: state.isLoading && compras.isEmpty
                 ? const TreasurySkeleton(key: ValueKey('treasury_skeleton'))
                 : ListView(
                     key: const ValueKey('treasury_content'),
                     padding: const EdgeInsets.fromLTRB(AppSpacing.lg, AppSpacing.sm, AppSpacing.lg, 80),
-            children: [
-              // Tasas de referencia y resumen
-              AppCard(
-                padding: AppSpacing.pMd,
-                mergeSemantics: true,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text('CAPITAL ADQUIRIDO (USD)', style: AppTypography.labelSmall),
-                        const AppChip(
-                          label: 'BCV / Binance P2P',
-                          variant: AppChipVariant.info,
-                          icon: AppIcons.rate,
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: AppSpacing.sm),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text('Total Comprado', style: AppTypography.bodyMedium),
-                            AppMoneyText(
-                              amount: totalUsd,
-                              currency: MoneyCurrency.usd,
-                              fontSize: 18,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ],
-                        ),
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.end,
-                          children: [
-                            Text('Comisiones Totales', style: AppTypography.bodyMedium),
-                            AppMoneyText(
-                              amount: totalComisiones,
-                              currency: MoneyCurrency.usd,
-                              fontSize: 14,
-                              fontWeight: FontWeight.w600,
-                              nature: MoneyNature.neutral,
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: AppSpacing.md),
-
-              Semantics(
-                header: true,
-                headingLevel: 2,
-                child: Text('Historial de Compras de Divisas', style: AppTypography.titleLarge.copyWith(fontSize: 16)),
-              ),
-              const SizedBox(height: AppSpacing.sm),
-
-              if (compras.isEmpty)
-                const AppEmptyState(
-                  title: 'No hay compras de divisas registradas',
-                  description: 'Registra una compra usando el botón "Nueva Compra".',
-                  icon: CupertinoIcons.money_dollar,
-                )
-              else
-                ...compras.map((c) => Padding(
-                      padding: const EdgeInsets.only(bottom: AppSpacing.sm),
-                      child: AppCard(
+                    children: [
+                      // Tasas de referencia y resumen
+                      AppCard(
                         padding: AppSpacing.pMd,
+                        mergeSemantics: true,
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Wrap(
-                              alignment: WrapAlignment.spaceBetween,
-                              crossAxisAlignment: WrapCrossAlignment.center,
-                              spacing: AppSpacing.sm,
-                              runSpacing: 4,
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
                               children: [
-                                Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Flexible(
-                                      child: Text(
-                                        'Orden: ${c.numeroOrden.isNotEmpty ? c.numeroOrden : c.id}',
-                                        style: AppTypography.titleLarge.copyWith(fontSize: 15),
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
-                                    ),
-                                    const SizedBox(width: AppSpacing.xs),
-                                    AppChip(
-                                      label: c.plataforma,
-                                      variant: AppChipVariant.info,
-                                    ),
-                                  ],
-                                ),
-                                AppMoneyText(
-                                  amount: c.capitalUsd,
-                                  currency: MoneyCurrency.usd,
-                                  fontSize: 15,
-                                  fontWeight: FontWeight.w700,
+                                Text('CAPITAL ADQUIRIDO (USD)', style: AppTypography.labelSmall),
+                                const AppChip(
+                                  label: 'BCV / Binance P2P',
+                                  variant: AppChipVariant.info,
+                                  icon: AppIcons.rate,
                                 ),
                               ],
                             ),
-                            const SizedBox(height: 4),
-                            Text(
-                              'Vendedor: ${c.vendedor} • Tasa BCV: ${c.tasaBcv} • Paralelo: ${c.tasaUsd}',
-                              style: AppTypography.bodyMedium.copyWith(fontSize: 12),
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                            Text(
-                              'Fecha Compra: ${c.fechaCompra.toIso8601String().split('T').first} • Entrega: ${c.fechaEntrega.toIso8601String().split('T').first} • Com: USD ${c.comisionBinanceUsd.toStringAsFixed(2)}',
-                              style: AppTypography.labelSmall.copyWith(color: AppPalette.textSecondary),
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                            const SizedBox(height: 6),
+                            const SizedBox(height: AppSpacing.sm),
                             Row(
-                              mainAxisAlignment: MainAxisAlignment.end,
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
                               children: [
-                                IconButton(
-                                  visualDensity: VisualDensity.compact,
-                                  padding: EdgeInsets.zero,
-                                  constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-                                  icon: const Icon(CupertinoIcons.pencil, size: 18, color: AppPalette.blue700),
-                                  tooltip: 'Editar Compra',
-                                  onPressed: () => _showCompraDialog(context, compra: c),
+                                Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text('Total Comprado', style: AppTypography.bodyMedium),
+                                    AppMoneyText(
+                                      amount: totalUsd,
+                                      currency: MoneyCurrency.usd,
+                                      fontSize: 18,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ],
                                 ),
-                                const SizedBox(width: 4),
-                                IconButton(
-                                  visualDensity: VisualDensity.compact,
-                                  padding: EdgeInsets.zero,
-                                  constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-                                  icon: const Icon(CupertinoIcons.trash, size: 18, color: AppPalette.error),
-                                  tooltip: 'Eliminar Compra',
-                                  onPressed: () => _confirmDelete(context, c),
+                                Column(
+                                  crossAxisAlignment: CrossAxisAlignment.end,
+                                  children: [
+                                    Text('Comisiones Totales', style: AppTypography.bodyMedium),
+                                    AppMoneyText(
+                                      amount: totalComisiones,
+                                      currency: MoneyCurrency.usd,
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.w600,
+                                      nature: MoneyNature.neutral,
+                                    ),
+                                  ],
                                 ),
                               ],
                             ),
                           ],
                         ),
                       ),
-                    )),
-            ],
+                      const SizedBox(height: AppSpacing.md),
+
+                      Semantics(
+                        header: true,
+                        headingLevel: 2,
+                        child: Text('Historial de Compras de Divisas', style: AppTypography.titleLarge.copyWith(fontSize: 16)),
+                      ),
+                      const SizedBox(height: AppSpacing.sm),
+
+                      if (compras.isEmpty)
+                        const AppEmptyState(
+                          title: 'No hay compras de divisas registradas',
+                          description: 'Registra una compra usando el botón "Nueva Compra".',
+                          icon: CupertinoIcons.money_dollar,
+                        )
+                      else
+                        ...compras.map((c) => Padding(
+                              padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+                              child: AppCard(
+                                padding: AppSpacing.pMd,
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Wrap(
+                                      alignment: WrapAlignment.spaceBetween,
+                                      crossAxisAlignment: WrapCrossAlignment.center,
+                                      spacing: AppSpacing.sm,
+                                      runSpacing: 4,
+                                      children: [
+                                        Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            Flexible(
+                                              child: Text(
+                                                'Orden: ${c.numeroOrden.isNotEmpty ? c.numeroOrden : c.id}',
+                                                style: AppTypography.titleLarge.copyWith(fontSize: 15),
+                                                overflow: TextOverflow.ellipsis,
+                                              ),
+                                            ),
+                                            const SizedBox(width: AppSpacing.xs),
+                                            AppChip(
+                                              label: c.plataforma,
+                                              variant: AppChipVariant.info,
+                                            ),
+                                          ],
+                                        ),
+                                        AppMoneyText(
+                                          amount: c.capitalUsd,
+                                          currency: MoneyCurrency.usd,
+                                          fontSize: 15,
+                                          fontWeight: FontWeight.w700,
+                                        ),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      'Vendedor: ${c.vendedor} • Tasa BCV: ${c.tasaBcv} • Paralelo: ${c.tasaUsd}',
+                                      style: AppTypography.bodyMedium.copyWith(fontSize: 12),
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                    Text(
+                                      'Fecha Compra: ${c.fechaCompra.toIso8601String().split('T').first} • Entrega: ${c.fechaEntrega.toIso8601String().split('T').first} • Com: USD ${c.comisionBinanceUsd.toStringAsFixed(2)}',
+                                      style: AppTypography.labelSmall.copyWith(color: AppPalette.textSecondary),
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                    const SizedBox(height: 6),
+                                    Row(
+                                      mainAxisAlignment: MainAxisAlignment.end,
+                                      children: [
+                                        IconButton(
+                                          visualDensity: VisualDensity.compact,
+                                          padding: EdgeInsets.zero,
+                                          constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                                          icon: const Icon(CupertinoIcons.pencil, size: 18, color: AppPalette.blue700),
+                                          tooltip: 'Editar Compra',
+                                          onPressed: () => _showCompraDialog(context, compra: c),
+                                        ),
+                                        const SizedBox(width: 4),
+                                        IconButton(
+                                          visualDensity: VisualDensity.compact,
+                                          padding: EdgeInsets.zero,
+                                          constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                                          icon: const Icon(CupertinoIcons.trash, size: 18, color: AppPalette.error),
+                                          tooltip: 'Eliminar Compra',
+                                          onPressed: () => _confirmDelete(context, c),
+                                        ),
+                                      ],
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            )),
+                    ],
+                  ),
           ),
-        ),
-      );
+        );
       },
     );
   }
 
   void _showCompraDialog(BuildContext context, {CompraDivisa? compra}) {
+    final cubit = context.read<TreasuryCubit>();
     final isEditing = compra != null;
-    final id = isEditing ? compra.id : widget.dataService.nextCompraDivisaId;
+    final id = isEditing ? compra.id : cubit.nextCompraDivisaId;
     final ordenController = TextEditingController(text: compra?.numeroOrden ?? 'ORD-${DateTime.now().millisecondsSinceEpoch.toString().substring(7)}');
     final capitalController = TextEditingController(text: compra?.capitalUsd.toStringAsFixed(2) ?? '100.00');
     final comisionController = TextEditingController(text: compra?.comisionBinanceUsd.toStringAsFixed(2) ?? '1.00');
@@ -336,9 +364,9 @@ class _TreasuryPageState extends State<TreasuryPage> {
                         );
 
                         if (isEditing) {
-                          widget.dataService.updateCompraDivisa(c);
+                          cubit.updateCompra(c);
                         } else {
-                          widget.dataService.addCompraDivisa(c);
+                          cubit.addCompra(c);
                         }
                         Navigator.pop(ctx);
                       },
@@ -354,6 +382,7 @@ class _TreasuryPageState extends State<TreasuryPage> {
   }
 
   void _confirmDelete(BuildContext context, CompraDivisa c) {
+    final cubit = context.read<TreasuryCubit>();
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -365,7 +394,7 @@ class _TreasuryPageState extends State<TreasuryPage> {
             style: FilledButton.styleFrom(backgroundColor: AppPalette.error),
             child: const Text('Eliminar'),
             onPressed: () {
-              widget.dataService.deleteCompraDivisa(c.id);
+              cubit.deleteCompra(c.id);
               Navigator.pop(ctx);
             },
           ),

@@ -1,9 +1,12 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../core/config/environment_config.dart';
 import '../../core/design_system/design_system.dart';
 import '../../models/models.dart';
 import '../../shared/shared.dart';
+import '../cubits/tasas/tasas_cubit.dart';
+import '../cubits/tasas/tasas_state.dart';
 
 /// Vista de Tasas (hoja: "tasas")
 /// Historial de tasas — una fila por moneda/fecha/fuente (ver
@@ -12,45 +15,48 @@ import '../../shared/shared.dart';
 /// fuente='manual' las fija cada organización desde Organizaciones. Esta
 /// vista además puede pedirle al servidor que corra obtenerTasaBCV ahora
 /// mismo (botón "Actualizar tasa").
-class TasasPage extends StatefulWidget {
+class TasasPage extends StatelessWidget {
   final SheetsDataService dataService;
 
   const TasasPage({super.key, required this.dataService});
 
   @override
-  State<TasasPage> createState() => _TasasPageState();
-}
-
-class _TasasPageState extends State<TasasPage> {
-  bool _actualizando = false;
-
-  Future<void> _obtenerTasaDeHoy() async {
-    setState(() => _actualizando = true);
-    final ok = await widget.dataService.refrescarTasaHoy();
-    if (!mounted) return;
-    setState(() => _actualizando = false);
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          ok
-              ? 'Tasa de hoy obtenida correctamente.'
-              : 'No se pudo obtener la tasa de hoy. Probá de nuevo en un momento.',
-        ),
-        backgroundColor: ok ? null : AppPalette.error,
-      ),
+  Widget build(BuildContext context) {
+    return BlocProvider(
+      create: (_) => TasasCubit(dataService: dataService),
+      child: _TasasView(dataService: dataService),
     );
   }
+}
+
+class _TasasView extends StatelessWidget {
+  final SheetsDataService dataService;
+
+  const _TasasView({required this.dataService});
 
   @override
   Widget build(BuildContext context) {
-    return ListenableBuilder(
-      listenable: widget.dataService,
-      builder: (context, _) {
-        final tasas = widget.dataService.tasas.toList()..sort((a, b) => b.fecha.compareTo(a.fecha));
-        final usdVigente = widget.dataService.tasaBcvVigente('USD');
-        final eurVigente = widget.dataService.tasaBcvVigente('EUR');
-        final orgId = widget.dataService.currentOrganizacionId ?? '';
-        final monedaActual = widget.dataService.monedaOrganizacion(orgId);
+    return BlocConsumer<TasasCubit, TasasState>(
+      listenWhen: (prev, curr) =>
+          curr.actionMessage != null &&
+          prev.actionMessage != curr.actionMessage,
+      listener: (context, state) {
+        if (state.actionMessage != null) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(state.actionMessage!),
+              backgroundColor: state.actionSuccess ? null : AppPalette.error,
+            ),
+          );
+        }
+      },
+      builder: (context, state) {
+        final cubit = context.read<TasasCubit>();
+        final tasas = state.tasas;
+        final usdVigente = state.usdVigente;
+        final eurVigente = state.eurVigente;
+        final orgId = dataService.currentOrganizacionId ?? '';
+        final monedaActual = state.monedaActual;
 
         return AppScaffold(
           title: 'Tasas',
@@ -60,84 +66,86 @@ class _TasasPageState extends State<TasasPage> {
           ),
           actions: [
             AppRefreshButton(
-              onRefresh: () => widget.dataService.fetchAllSheets(),
-              isLoading: widget.dataService.isLoading,
+              onRefresh: () => cubit.refresh(),
+              isLoading: state.status == TasasStatus.loading,
             ),
           ],
-          body: tasas.isEmpty
-              ? AppEmptyState(
-                  title: 'Todavía no hay tasas registradas',
-                  description:
-                      'Usá el botón "Actualizar tasa" para traer la '
-                      'primera, o esperá al trigger diario del módulo Tasas '
-                      'en Apps Script.',
-                  icon: CupertinoIcons.money_dollar,
-                  actionLabel: _actualizando ? 'Obteniendo...' : 'Obtener tasa',
-                  onAction: _actualizando ? null : _obtenerTasaDeHoy,
-                )
-              : ListView(
-                  padding: const EdgeInsets.fromLTRB(AppSpacing.lg, AppSpacing.md, AppSpacing.lg, 80),
-                  children: [
-                    MonedaSelector(
-                      label: 'MONEDA BASE DEL SISTEMA',
-                      value: monedaActual,
-                      onChanged: orgId.isEmpty
-                          ? null
-                          : (val) => widget.dataService.setMonedaOrganizacion(orgId, val),
-                    ),
-                    const SizedBox(height: AppSpacing.md),
-                    if (usdVigente != null)
-                      _TasaVigenteCard(
-                        tasa: usdVigente,
-                        cambioPct: widget.dataService.cambioPctTasa(usdVigente),
-                        eurVigente: eurVigente,
-                        cambioPctEur: eurVigente != null ? widget.dataService.cambioPctTasa(eurVigente) : 0.0,
-                        lastSync: widget.dataService.lastSync,
-                        actualizando: _actualizando,
-                        onActualizar: _obtenerTasaDeHoy,
-                      ),
-                    const SizedBox(height: AppSpacing.md),
-                    Text('Historial', style: AppTypography.titleLarge.copyWith(fontSize: 16)),
-                    const SizedBox(height: AppSpacing.sm),
-                    ...tasas.map((t) => Padding(
-                          padding: const EdgeInsets.only(bottom: AppSpacing.sm),
-                          child: AppCard(
-                            padding: AppSpacing.pMd,
-                            child: Row(
-                              children: [
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Row(
+          body: (state.status == TasasStatus.loading && tasas.isEmpty)
+              ? const Center(child: CircularProgressIndicator())
+              : tasas.isEmpty
+                  ? AppEmptyState(
+                      title: 'Todavía no hay tasas registradas',
+                      description:
+                          'Usá el botón "Actualizar tasa" para traer la '
+                          'primera, o esperá al trigger diario del módulo Tasas '
+                          'en Apps Script.',
+                      icon: CupertinoIcons.money_dollar,
+                      actionLabel: state.isActualizandoTasaHoy ? 'Obteniendo...' : 'Obtener tasa',
+                      onAction: state.isActualizandoTasaHoy ? null : () => cubit.obtenerTasaDeHoy(),
+                    )
+                  : ListView(
+                      padding: const EdgeInsets.fromLTRB(AppSpacing.lg, AppSpacing.md, AppSpacing.lg, 80),
+                      children: [
+                        MonedaSelector(
+                          label: 'MONEDA BASE DEL SISTEMA',
+                          value: monedaActual ?? 'USD',
+                          onChanged: orgId.isEmpty
+                              ? null
+                              : (val) => dataService.setMonedaOrganizacion(orgId, val),
+                        ),
+                        const SizedBox(height: AppSpacing.md),
+                        if (usdVigente != null)
+                          _TasaVigenteCard(
+                            tasa: usdVigente,
+                            cambioPct: dataService.cambioPctTasa(usdVigente),
+                            eurVigente: eurVigente,
+                            cambioPctEur: eurVigente != null ? dataService.cambioPctTasa(eurVigente) : 0.0,
+                            lastSync: dataService.lastSync,
+                            actualizando: state.isActualizandoTasaHoy,
+                            onActualizar: () => cubit.obtenerTasaDeHoy(),
+                          ),
+                        const SizedBox(height: AppSpacing.md),
+                        Text('Historial', style: AppTypography.titleLarge.copyWith(fontSize: 16)),
+                        const SizedBox(height: AppSpacing.sm),
+                        ...tasas.map((t) => Padding(
+                              padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+                              child: AppCard(
+                                padding: AppSpacing.pMd,
+                                child: Row(
+                                  children: [
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
                                         children: [
-                                          Text(
-                                            '${t.moneda} • ${t.fecha.toIso8601String().split('T').first}',
-                                            style: AppTypography.bodyMedium.copyWith(fontWeight: FontWeight.w600),
+                                          Row(
+                                            children: [
+                                              Text(
+                                                '${t.moneda} • ${t.fecha.toIso8601String().split('T').first}',
+                                                style: AppTypography.bodyMedium.copyWith(fontWeight: FontWeight.w600),
+                                              ),
+                                              if (t.fuente == 'manual') ...[
+                                                const SizedBox(width: 6),
+                                                AppChip(
+                                                  label: 'Manual · ${dataService.organizaciones.where((o) => o.id == t.organizacionId).firstOrNull?.nombre ?? t.organizacionId}',
+                                                  variant: AppChipVariant.info,
+                                                ),
+                                              ],
+                                            ],
                                           ),
-                                          if (t.fuente == 'manual') ...[
-                                            const SizedBox(width: 6),
-                                            AppChip(
-                                              label: 'Manual · ${widget.dataService.organizaciones.where((o) => o.id == t.organizacionId).firstOrNull?.nombre ?? t.organizacionId}',
-                                              variant: AppChipVariant.info,
-                                            ),
-                                          ],
+                                          Text(
+                                            'Valor: ${t.valor.toStringAsFixed(4)} Bs.',
+                                            style: AppTypography.labelSmall.copyWith(color: AppPalette.textSecondary),
+                                          ),
                                         ],
                                       ),
-                                      Text(
-                                        'Valor: ${t.valor.toStringAsFixed(4)} Bs.',
-                                        style: AppTypography.labelSmall.copyWith(color: AppPalette.textSecondary),
-                                      ),
-                                    ],
-                                  ),
+                                    ),
+                                    if (t.fuente == 'bcv') _CambioPctChip(pct: dataService.cambioPctTasa(t)),
+                                  ],
                                 ),
-                                if (t.fuente == 'bcv') _CambioPctChip(pct: widget.dataService.cambioPctTasa(t)),
-                              ],
-                            ),
-                          ),
-                        )),
-                  ],
-                ),
+                              ),
+                            )),
+                      ],
+                    ),
         );
       },
     );

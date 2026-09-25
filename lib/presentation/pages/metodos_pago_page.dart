@@ -1,49 +1,72 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../core/config/environment_config.dart';
 import '../../core/design_system/design_system.dart';
 import '../../models/models.dart';
 import '../../shared/shared.dart';
+import '../cubits/metodos_pago/metodos_pago_cubit.dart';
+import '../cubits/metodos_pago/metodos_pago_state.dart';
 
 /// Vista de Métodos de Pago (hoja: "metodo pago")
 /// Administra los métodos de pago disponibles en el sistema y su estado activo/inactivo.
-class MetodosPagoPage extends StatefulWidget {
+class MetodosPagoPage extends StatelessWidget {
   final SheetsDataService dataService;
 
   const MetodosPagoPage({super.key, required this.dataService});
 
   @override
-  State<MetodosPagoPage> createState() => _MetodosPagoPageState();
+  Widget build(BuildContext context) {
+    return BlocProvider(
+      create: (_) => MetodosPagoCubit(dataService: dataService),
+      child: _MetodosPagoView(dataService: dataService),
+    );
+  }
 }
 
-class _MetodosPagoPageState extends State<MetodosPagoPage> {
-  String _busqueda = '';
+class _MetodosPagoView extends StatefulWidget {
+  final SheetsDataService dataService;
+
+  const _MetodosPagoView({required this.dataService});
 
   @override
-  Widget build(BuildContext context) {
-    return ListenableBuilder(
-      listenable: widget.dataService,
-      builder: (context, _) {
-        final query = _busqueda.trim().toLowerCase();
-        final metodos = widget.dataService.metodosPago.where((m) {
-          if (query.isEmpty) return true;
-          return m.nombre.toLowerCase().contains(query) ||
-              m.id.toLowerCase().contains(query);
-        }).toList();
+  State<_MetodosPagoView> createState() => _MetodosPagoViewState();
+}
 
-        final totalActivos = widget.dataService.metodosPagoActivos.length;
+class _MetodosPagoViewState extends State<_MetodosPagoView> {
+  @override
+  Widget build(BuildContext context) {
+    return BlocConsumer<MetodosPagoCubit, MetodosPagoState>(
+      listenWhen: (prev, curr) =>
+          curr.actionSuccessMessage != null &&
+          prev.actionSuccessMessage != curr.actionSuccessMessage,
+      listener: (context, state) {
+        if (state.actionSuccessMessage != null) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              backgroundColor: AppPalette.success,
+              content: Text(state.actionSuccessMessage!),
+              duration: const Duration(seconds: 2),
+            ),
+          );
+        }
+      },
+      builder: (context, state) {
+        final cubit = context.read<MetodosPagoCubit>();
+        final metodos = state.filteredMetodos;
+        final totalActivos = state.totalActivos;
 
         return AppScaffold(
           title: 'Métodos de Pago',
           subtitle: EnvironmentConfig.formatSubtitle(
             sheetName: 'metodo pago',
             userFriendlyText:
-                '$totalActivos activos de ${widget.dataService.metodosPago.length}',
+                '$totalActivos activos de ${state.metodos.length}',
           ),
           actions: [
             AppRefreshButton(
-              onRefresh: () => widget.dataService.fetchAllSheets(),
-              isLoading: widget.dataService.isLoading,
+              onRefresh: () => cubit.refresh(),
+              isLoading: state.status == MetodosPagoStatus.loading,
             ),
           ],
           floatingActionButton: FloatingActionButton.extended(
@@ -64,7 +87,7 @@ class _MetodosPagoPageState extends State<MetodosPagoPage> {
                   label: 'Buscar método de pago',
                   hint: 'Nombre o código...',
                   prefixIcon: CupertinoIcons.search,
-                  onChanged: (val) => setState(() => _busqueda = val),
+                  onChanged: (val) => cubit.search(val),
                 ),
               ),
               Expanded(

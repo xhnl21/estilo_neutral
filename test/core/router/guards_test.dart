@@ -4,7 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'package:estilo_neutral/core/router/guards/auth_guard.dart';
 import 'package:estilo_neutral/core/router/guards/onboarding_guard.dart';
 import 'package:estilo_neutral/core/router/route_paths.dart';
-import 'package:estilo_neutral/features/auth/application/auth_notifier.dart';
+import 'package:estilo_neutral/features/auth/application/auth_cubit.dart';
 import 'package:estilo_neutral/features/auth/domain/auth_state.dart';
 
 class _FakeBuildContext extends Fake implements BuildContext {}
@@ -25,17 +25,17 @@ GoRouterState _createFakeState({required String matchedLocation, Map<String, Str
 
 void main() {
   group('AuthGuard Tests', () {
-    late AuthNotifier authNotifier;
+    late AuthCubit authCubit;
     late AuthGuard authGuard;
     final context = _FakeBuildContext();
 
     setUp(() {
-      authNotifier = AuthNotifier();
-      authGuard = AuthGuard(authNotifier: authNotifier);
+      authCubit = AuthCubit();
+      authGuard = AuthGuard(authCubit: authCubit);
     });
 
     test('permits access to /login when unauthenticated', () {
-      authNotifier.setState(const AuthState(isAuthenticated: false));
+      authCubit.setState(const AuthState(isAuthenticated: false));
       final state = _createFakeState(matchedLocation: RoutePaths.login);
 
       final redirect = authGuard.redirect(context, state);
@@ -43,7 +43,7 @@ void main() {
     });
 
     test('permits access to /onboarding when unauthenticated', () {
-      authNotifier.setState(const AuthState(isAuthenticated: false));
+      authCubit.setState(const AuthState(isAuthenticated: false));
       final state = _createFakeState(matchedLocation: RoutePaths.onboarding);
 
       final redirect = authGuard.redirect(context, state);
@@ -51,7 +51,7 @@ void main() {
     });
 
     test('redirects to /login?from=/clientes when unauthenticated accessing private route', () {
-      authNotifier.setState(const AuthState(isAuthenticated: false));
+      authCubit.setState(const AuthState(isAuthenticated: false));
       final state = _createFakeState(matchedLocation: RoutePaths.clientes);
 
       final redirect = authGuard.redirect(context, state);
@@ -59,7 +59,7 @@ void main() {
     });
 
     test('redirects from /login to /ventas when already authenticated', () {
-      authNotifier.setState(const AuthState(isAuthenticated: true));
+      authCubit.setState(const AuthState(isAuthenticated: true));
       final state = _createFakeState(matchedLocation: RoutePaths.login);
 
       final redirect = authGuard.redirect(context, state);
@@ -67,7 +67,7 @@ void main() {
     });
 
     test('redirects from /login to custom previous path via ?from= param', () {
-      authNotifier.setState(const AuthState(isAuthenticated: true));
+      authCubit.setState(const AuthState(isAuthenticated: true));
       final state = _createFakeState(
         matchedLocation: RoutePaths.login,
         queryParams: {'from': RoutePaths.inventario},
@@ -78,7 +78,7 @@ void main() {
     });
 
     test('permits access to private route when authenticated', () {
-      authNotifier.setState(const AuthState(isAuthenticated: true));
+      authCubit.setState(const AuthState(isAuthenticated: true));
       final state = _createFakeState(matchedLocation: RoutePaths.ventas);
 
       final redirect = authGuard.redirect(context, state);
@@ -87,17 +87,17 @@ void main() {
   });
 
   group('OnboardingGuard Tests', () {
-    late AuthNotifier authNotifier;
+    late AuthCubit authCubit;
     late OnboardingGuard onboardingGuard;
     final context = _FakeBuildContext();
 
     setUp(() {
-      authNotifier = AuthNotifier();
-      onboardingGuard = OnboardingGuard(authNotifier: authNotifier);
+      authCubit = AuthCubit();
+      onboardingGuard = OnboardingGuard(authCubit: authCubit);
     });
 
     test('does not redirect unauthenticated users (delegates to AuthGuard)', () {
-      authNotifier.setState(const AuthState(isAuthenticated: false, isOnboarded: false));
+      authCubit.setState(const AuthState(isAuthenticated: false, isOnboarded: false));
       final state = _createFakeState(matchedLocation: RoutePaths.ventas);
 
       final redirect = onboardingGuard.redirect(context, state);
@@ -105,7 +105,7 @@ void main() {
     });
 
     test('redirects authenticated user to /onboarding if not onboarded', () {
-      authNotifier.setState(const AuthState(isAuthenticated: true, isOnboarded: false));
+      authCubit.setState(const AuthState(isAuthenticated: true, isOnboarded: false));
       final state = _createFakeState(matchedLocation: RoutePaths.ventas);
 
       final redirect = onboardingGuard.redirect(context, state);
@@ -113,7 +113,7 @@ void main() {
     });
 
     test('permits access to /onboarding when authenticated and not onboarded', () {
-      authNotifier.setState(const AuthState(isAuthenticated: true, isOnboarded: false));
+      authCubit.setState(const AuthState(isAuthenticated: true, isOnboarded: false));
       final state = _createFakeState(matchedLocation: RoutePaths.onboarding);
 
       final redirect = onboardingGuard.redirect(context, state);
@@ -121,7 +121,7 @@ void main() {
     });
 
     test('redirects from /onboarding to /ventas when already onboarded', () {
-      authNotifier.setState(const AuthState(isAuthenticated: true, isOnboarded: true));
+      authCubit.setState(const AuthState(isAuthenticated: true, isOnboarded: true));
       final state = _createFakeState(matchedLocation: RoutePaths.onboarding);
 
       final redirect = onboardingGuard.redirect(context, state);
@@ -129,7 +129,7 @@ void main() {
     });
 
     test('permits access to regular routes when authenticated and onboarded', () {
-      authNotifier.setState(const AuthState(isAuthenticated: true, isOnboarded: true));
+      authCubit.setState(const AuthState(isAuthenticated: true, isOnboarded: true));
       final state = _createFakeState(matchedLocation: RoutePaths.ventas);
 
       final redirect = onboardingGuard.redirect(context, state);

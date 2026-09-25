@@ -1,28 +1,59 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../core/config/environment_config.dart';
 import '../../core/design_system/design_system.dart';
 import '../../models/models.dart';
 import '../../shared/shared.dart';
+import '../cubits/cuarentena/cuarentena_cubit.dart';
+import '../cubits/cuarentena/cuarentena_state.dart';
 
 /// Vista de Bandeja de Cuarentena (hoja: cuarentena)
 /// Operaciones CRUD completas y análisis de anomalías forenses.
-class CuarentenaPage extends StatefulWidget {
+class CuarentenaPage extends StatelessWidget {
   final SheetsDataService dataService;
 
   const CuarentenaPage({super.key, required this.dataService});
 
   @override
-  State<CuarentenaPage> createState() => _CuarentenaPageState();
+  Widget build(BuildContext context) {
+    return BlocProvider(
+      create: (_) => CuarentenaCubit(dataService: dataService),
+      child: _CuarentenaView(dataService: dataService),
+    );
+  }
 }
 
-class _CuarentenaPageState extends State<CuarentenaPage> {
+class _CuarentenaView extends StatefulWidget {
+  final SheetsDataService dataService;
+
+  const _CuarentenaView({required this.dataService});
+
+  @override
+  State<_CuarentenaView> createState() => _CuarentenaViewState();
+}
+
+class _CuarentenaViewState extends State<_CuarentenaView> {
   @override
   Widget build(BuildContext context) {
-    return ListenableBuilder(
-      listenable: widget.dataService,
-      builder: (context, _) {
-        final items = widget.dataService.cuarentenas;
+    return BlocConsumer<CuarentenaCubit, CuarentenaState>(
+      listenWhen: (prev, curr) =>
+          curr.actionSuccessMessage != null &&
+          prev.actionSuccessMessage != curr.actionSuccessMessage,
+      listener: (context, state) {
+        if (state.actionSuccessMessage != null) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              backgroundColor: AppPalette.success,
+              content: Text(state.actionSuccessMessage!),
+              duration: const Duration(seconds: 2),
+            ),
+          );
+        }
+      },
+      builder: (context, state) {
+        final cubit = context.read<CuarentenaCubit>();
+        final items = state.items;
 
         return AppScaffold(
           title: 'Cuarentena',
@@ -32,8 +63,8 @@ class _CuarentenaPageState extends State<CuarentenaPage> {
           ),
           actions: [
             AppRefreshButton(
-              onRefresh: () => widget.dataService.fetchAllSheets(),
-              isLoading: widget.dataService.isLoading,
+              onRefresh: () => cubit.refresh(),
+              isLoading: state.status == CuarentenaStatus.loading,
             ),
           ],
           floatingActionButton: FloatingActionButton.extended(
@@ -46,7 +77,7 @@ class _CuarentenaPageState extends State<CuarentenaPage> {
           ),
           body: AnimatedSwitcher(
             duration: const Duration(milliseconds: 300),
-            child: widget.dataService.isLoading
+            child: (state.status == CuarentenaStatus.loading && items.isEmpty)
                 ? const CuarentenaSkeleton(key: ValueKey('cuarentena_skeleton'))
                 : items.isEmpty
                     ? const AppEmptyState(

@@ -9,7 +9,7 @@ import '../../../../core/utils/logger.dart';
 import '../../../../shared/auth/biometric_auth_service.dart';
 import '../../../../shared/google_sheets/sheets_auth.dart';
 import '../../../../shared/google_sheets/sheets_data_service.dart';
-import '../../application/auth_notifier.dart';
+import '../../application/auth_cubit.dart';
 
 const String _kOrganizacionPorDefecto = '67774411-6aa1-4aa3-a4b2-d3fc6913b768';
 
@@ -35,14 +35,14 @@ class _AccionLogin {
 /// su ícono propio (Biométrico, Face ID o 2FA) para que quede claro qué va a
 /// pedir antes de tocarlo — sin volver a mostrar el selector de cuentas.
 class LoginPage extends StatefulWidget {
-  final AuthNotifier authNotifier;
+  final AuthCubit authCubit;
   final SheetsAuth sheetsAuth;
   final SheetsDataService dataService;
   final BiometricAuthService biometricAuthService;
 
   LoginPage({
     super.key,
-    required this.authNotifier,
+    required this.authCubit,
     required this.sheetsAuth,
     required this.dataService,
     BiometricAuthService? biometricAuthService,
@@ -256,7 +256,7 @@ class _LoginPageState extends State<LoginPage> {
   void _completeLogin(GoogleSignInAccount account, String organizacionId) {
     _pendingAccount = null;
     _pendingMetodo = null;
-    widget.authNotifier.login(email: account.email, organizacionId: organizacionId);
+    widget.authCubit.login(email: account.email, organizacionId: organizacionId);
     if (!mounted) return;
     final String? from = GoRouterState.of(context).uri.queryParameters['from'];
     if (from != null && from.isNotEmpty) {

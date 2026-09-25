@@ -1,30 +1,57 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../../../core/config/environment_config.dart';
 import '../../../../core/design_system/design_system.dart';
 import '../../../../models/models.dart';
 import '../../../../shared/shared.dart';
+import '../cubit/reporting_cubit.dart';
+import '../cubit/reporting_state.dart';
 
 /// Vista de Reportes y Resumen Diario (hoja: resumen_diario)
-/// CRUD completo con KPIs, cierres contables y Cero Polling.
-class ReportingPage extends StatefulWidget {
+/// Implementada con arquitectura BLoC/Cubit estricta (ReportingCubit / ReportingState).
+class ReportingPage extends StatelessWidget {
   final SheetsDataService dataService;
 
   const ReportingPage({super.key, required this.dataService});
 
   @override
-  State<ReportingPage> createState() => _ReportingPageState();
+  Widget build(BuildContext context) {
+    return BlocProvider(
+      create: (_) => ReportingCubit(dataService: dataService),
+      child: const _ReportingView(),
+    );
+  }
 }
 
-class _ReportingPageState extends State<ReportingPage> {
+class _ReportingView extends StatelessWidget {
+  const _ReportingView();
+
   @override
   Widget build(BuildContext context) {
-    return ListenableBuilder(
-      listenable: widget.dataService,
-      builder: (context, _) {
-        final resumenes = widget.dataService.resumenesDiarios;
-        final totalVentasUsd = resumenes.fold<double>(0.0, (s, r) => s + r.totalUsd);
-        final totalBs = resumenes.fold<double>(0.0, (s, r) => s + r.totalBs);
+    return BlocConsumer<ReportingCubit, ReportingState>(
+      listener: (context, state) {
+        if (state.errorMessage != null) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(state.errorMessage!),
+              backgroundColor: AppPalette.error,
+            ),
+          );
+        } else if (state.actionSuccessMessage != null) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(state.actionSuccessMessage!),
+              backgroundColor: AppPalette.success,
+            ),
+          );
+        }
+      },
+      builder: (context, state) {
+        final cubit = context.read<ReportingCubit>();
+        final resumenes = state.resumenesDiarios;
+        final totalVentasUsd = state.totalVentasUsd;
+        final totalBs = state.totalBs;
 
         return AppScaffold(
           title: 'Resumen Diario',
@@ -34,8 +61,8 @@ class _ReportingPageState extends State<ReportingPage> {
           ),
           actions: [
             AppRefreshButton(
-              onRefresh: () => widget.dataService.fetchAllSheets(),
-              isLoading: widget.dataService.isLoading,
+              onRefresh: () => cubit.refresh(),
+              isLoading: state.isLoading,
             ),
           ],
           floatingActionButton: FloatingActionButton.extended(
@@ -48,124 +75,124 @@ class _ReportingPageState extends State<ReportingPage> {
           ),
           body: AnimatedSwitcher(
             duration: const Duration(milliseconds: 300),
-            child: widget.dataService.isLoading
+            child: state.isLoading && resumenes.isEmpty
                 ? const ReportingSkeleton(key: ValueKey('reporting_skeleton'))
                 : ListView(
                     key: const ValueKey('reporting_content'),
                     padding: const EdgeInsets.fromLTRB(AppSpacing.lg, AppSpacing.sm, AppSpacing.lg, 80),
-            children: [
-              // Card Destacada: Resumen General Consolidado
-              AppCard(
-                padding: AppSpacing.pLg,
-                mergeSemantics: true,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text('CONSOLIDADO GENERAL DE CIERRES', style: AppTypography.labelSmall.copyWith(letterSpacing: 0.5)),
-                        const ExcludeSemantics(
-                          child: Icon(AppIcons.summary, size: 18, color: AppPalette.blue700),
+                    children: [
+                      // Card Destacada: Resumen General Consolidado
+                      AppCard(
+                        padding: AppSpacing.pLg,
+                        mergeSemantics: true,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Text('CONSOLIDADO GENERAL DE CIERRES', style: AppTypography.labelSmall.copyWith(letterSpacing: 0.5)),
+                                const ExcludeSemantics(
+                                  child: Icon(AppIcons.summary, size: 18, color: AppPalette.blue700),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: AppSpacing.md),
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                _buildMetricCol('Ventas Acumuladas', totalVentasUsd, MoneyCurrency.usd),
+                                _buildMetricCol('Monto en Bolívares', totalBs, MoneyCurrency.bs),
+                              ],
+                            ),
+                          ],
                         ),
-                      ],
-                    ),
-                    const SizedBox(height: AppSpacing.md),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        _buildMetricCol('Ventas Acumuladas', totalVentasUsd, MoneyCurrency.usd),
-                        _buildMetricCol('Monto en Bolívares', totalBs, MoneyCurrency.bs),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: AppSpacing.md),
-
-              Semantics(
-                header: true,
-                headingLevel: 2,
-                child: Text('Histórico de Cierres Diarios', style: AppTypography.titleLarge.copyWith(fontSize: 16)),
-              ),
-              const SizedBox(height: AppSpacing.sm),
-
-              if (resumenes.isEmpty)
-                const AppEmptyState(
-                  title: 'No hay cierres diarios registrados',
-                  description: 'Registra el primer cierre con "Nuevo Cierre".',
-                  icon: CupertinoIcons.doc_chart,
-                )
-              else
-                ...resumenes.map((r) {
-                  final fechaStr = r.fecha.toIso8601String().split('T').first;
-                  return Padding(
-                    padding: const EdgeInsets.only(bottom: AppSpacing.sm),
-                    child: AppCard(
-                      padding: AppSpacing.pMd,
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Wrap(
-                            alignment: WrapAlignment.spaceBetween,
-                            crossAxisAlignment: WrapCrossAlignment.center,
-                            spacing: AppSpacing.sm,
-                            runSpacing: 4,
-                            children: [
-                              Text(
-                                'Fecha: $fechaStr',
-                                style: AppTypography.titleLarge.copyWith(fontSize: 15),
-                              ),
-                              AppMoneyText(
-                                amount: r.totalUsd,
-                                currency: MoneyCurrency.usd,
-                                fontSize: 16,
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            'Nro. Ventas: ${r.nroVentas} • Total Bs: ${r.totalBs.toStringAsFixed(2)} Bs.',
-                            style: AppTypography.bodyMedium.copyWith(fontSize: 13),
-                          ),
-                          Text(
-                            'Tasa BCV: ${r.tasaBcv} • Paralelo: ${r.tasaUsd} • Comprados: USD ${r.usdComprados} • Vendidos: USD ${r.usdVendidos}',
-                            style: AppTypography.labelSmall.copyWith(color: AppPalette.textSecondary),
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                          const SizedBox(height: 6),
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.end,
-                            children: [
-                              IconButton(
-                                visualDensity: VisualDensity.compact,
-                                padding: EdgeInsets.zero,
-                                constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-                                icon: const Icon(CupertinoIcons.pencil, size: 18, color: AppPalette.blue700),
-                                tooltip: 'Editar Cierre',
-                                onPressed: () => _showCierreDialog(context, resumen: r),
-                              ),
-                              const SizedBox(width: 4),
-                              IconButton(
-                                visualDensity: VisualDensity.compact,
-                                padding: EdgeInsets.zero,
-                                constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-                                icon: const Icon(CupertinoIcons.trash, size: 18, color: AppPalette.error),
-                                tooltip: 'Eliminar Cierre',
-                                onPressed: () => _confirmDelete(context, r),
-                              ),
-                            ],
-                          ),
-                        ],
                       ),
-                    ),
-                  );
-                }),
-            ],
+                      const SizedBox(height: AppSpacing.md),
+
+                      Semantics(
+                        header: true,
+                        headingLevel: 2,
+                        child: Text('Histórico de Cierres Diarios', style: AppTypography.titleLarge.copyWith(fontSize: 16)),
+                      ),
+                      const SizedBox(height: AppSpacing.sm),
+
+                      if (resumenes.isEmpty)
+                        const AppEmptyState(
+                          title: 'No hay cierres diarios registrados',
+                          description: 'Registra el primer cierre con "Nuevo Cierre".',
+                          icon: CupertinoIcons.doc_chart,
+                        )
+                      else
+                        ...resumenes.map((r) {
+                          final fechaStr = r.fecha.toIso8601String().split('T').first;
+                          return Padding(
+                            padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+                            child: AppCard(
+                              padding: AppSpacing.pMd,
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Wrap(
+                                    alignment: WrapAlignment.spaceBetween,
+                                    crossAxisAlignment: WrapCrossAlignment.center,
+                                    spacing: AppSpacing.sm,
+                                    runSpacing: 4,
+                                    children: [
+                                      Text(
+                                        'Fecha: $fechaStr',
+                                        style: AppTypography.titleLarge.copyWith(fontSize: 15),
+                                      ),
+                                      AppMoneyText(
+                                        amount: r.totalUsd,
+                                        currency: MoneyCurrency.usd,
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    'Nro. Ventas: ${r.nroVentas} • Total Bs: ${r.totalBs.toStringAsFixed(2)} Bs.',
+                                    style: AppTypography.bodyMedium.copyWith(fontSize: 13),
+                                  ),
+                                  Text(
+                                    'Tasa BCV: ${r.tasaBcv} • Paralelo: ${r.tasaUsd} • Comprados: USD ${r.usdComprados} • Vendidos: USD ${r.usdVendidos}',
+                                    style: AppTypography.labelSmall.copyWith(color: AppPalette.textSecondary),
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                  const SizedBox(height: 6),
+                                  Row(
+                                    mainAxisAlignment: MainAxisAlignment.end,
+                                    children: [
+                                      IconButton(
+                                        visualDensity: VisualDensity.compact,
+                                        padding: EdgeInsets.zero,
+                                        constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                                        icon: const Icon(CupertinoIcons.pencil, size: 18, color: AppPalette.blue700),
+                                        tooltip: 'Editar Cierre',
+                                        onPressed: () => _showCierreDialog(context, resumen: r),
+                                      ),
+                                      const SizedBox(width: 4),
+                                      IconButton(
+                                        visualDensity: VisualDensity.compact,
+                                        padding: EdgeInsets.zero,
+                                        constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                                        icon: const Icon(CupertinoIcons.trash, size: 18, color: AppPalette.error),
+                                        tooltip: 'Eliminar Cierre',
+                                        onPressed: () => _confirmDelete(context, r),
+                                      ),
+                                    ],
+                                  ),
+                                ],
+                              ),
+                            ),
+                          );
+                        }),
+                    ],
+                  ),
           ),
-        ),
-      );
+        );
       },
     );
   }
@@ -187,6 +214,7 @@ class _ReportingPageState extends State<ReportingPage> {
   }
 
   void _showCierreDialog(BuildContext context, {ResumenDiario? resumen}) {
+    final cubit = context.read<ReportingCubit>();
     final isEditing = resumen != null;
     final fechaStr = resumen != null ? resumen.fecha.toIso8601String().split('T').first : DateTime.now().toIso8601String().split('T').first;
     final fechaController = TextEditingController(text: fechaStr);
@@ -323,9 +351,9 @@ class _ReportingPageState extends State<ReportingPage> {
                         );
 
                         if (isEditing) {
-                          widget.dataService.updateResumenDiario(r);
+                          cubit.updateResumen(r);
                         } else {
-                          widget.dataService.addResumenDiario(r);
+                          cubit.addResumen(r);
                         }
                         Navigator.pop(ctx);
                       },
@@ -341,6 +369,7 @@ class _ReportingPageState extends State<ReportingPage> {
   }
 
   void _confirmDelete(BuildContext context, ResumenDiario r) {
+    final cubit = context.read<ReportingCubit>();
     final fechaStr = r.fecha.toIso8601String().split('T').first;
     showDialog(
       context: context,
@@ -353,7 +382,7 @@ class _ReportingPageState extends State<ReportingPage> {
             style: FilledButton.styleFrom(backgroundColor: AppPalette.error),
             child: const Text('Eliminar'),
             onPressed: () {
-              widget.dataService.deleteResumenDiario(r.fecha);
+              cubit.deleteResumen(r.fecha);
               Navigator.pop(ctx);
             },
           ),
