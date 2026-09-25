@@ -115,33 +115,6 @@ class _TasaOptionTile extends StatelessWidget {
   }
 }
 
-/// Diálogo de progreso mientras se registra un abono — no descartable
-/// (ni tocando afuera ni con el botón de retroceso), para que el usuario no
-/// lo cierre a mitad de camino pensando que quedó colgado.
-class _ProcesandoPagoDialog extends StatelessWidget {
-  const _ProcesandoPagoDialog();
-
-  @override
-  Widget build(BuildContext context) {
-    return PopScope(
-      canPop: false,
-      child: AlertDialog(
-        content: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const SizedBox(
-              width: 20,
-              height: 20,
-              child: CircularProgressIndicator(strokeWidth: 2.5),
-            ),
-            const SizedBox(width: AppSpacing.md),
-            Text('Procesando pago...', style: AppTypography.bodyMedium),
-          ],
-        ),
-      ),
-    );
-  }
-}
 
 /// Un renglón del carrito mientras se arma una factura nueva (estado local
 /// del formulario, no persistido hasta guardar la venta completa).
@@ -385,7 +358,7 @@ class _VentasViewState extends State<_VentasView> {
                                       saldoAFavorCliente: saldoAFavor,
                                       pagadaConSaldoAFavor: pagadaConCredito,
                                       onTap: () => context.push(RoutePaths.buildSaleDetailPath(v.id)),
-                                      onAbono: v.deudaUsd > 0 ? () => _showAbonoDialog(context, ds, v) : null,
+                                      onAbono: v.deudaUsd > 0 ? () => _showAbonoDialog(v) : null,
                                       onAplicarSaldo: () {
                                         final cubit = ApplyCreditCubit(
                                           repository: ServiceLocator().creditRepository,
@@ -425,347 +398,37 @@ class _VentasViewState extends State<_VentasView> {
       return;
     }
 
-    var selectedCliente = context.read<VentasCubit>().state.filtroClienteId ?? ds.clientes.first.id;
-    var selectedProducto = ds.productos.first.id;
-    final cantidadController = TextEditingController(text: '1');
-    final abonoController = TextEditingController(text: '0.00');
-    final metodosActivos = ds.metodosPagoActivos;
-    var selectedMetodoPago = metodosActivos.isNotEmpty ? metodosActivos.first.id : '';
-    var usarTasaManual = false;
-    final carrito = <_CartLine>[];
+    final initialClienteId = context.read<VentasCubit>().state.filtroClienteId ?? ds.clientes.first.id;
 
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
-      builder: (ctx) {
-        return StatefulBuilder(
-          builder: (context, setModalState) {
-            // Defensivo: si el Inventario real tiene productos con el mismo
-            // id duplicado (dato sucio, no debería pasar), un dropdown con
-            // dos ítems del mismo value revienta con un assertion error. Se
-            // deduplica por id, quedándose con la primera aparición.
-            final productosUnicos = <String, Producto>{};
-            for (final p in ds.productos) {
-              productosUnicos.putIfAbsent(p.id, () => p);
-            }
-            final productosParaElegir = productosUnicos.values.toList();
-            final producto = productosParaElegir.firstWhere((p) => p.id == selectedProducto);
-            final totalCarrito = carrito.fold<double>(0.0, (s, l) => s + l.subtotal);
-            final tasaSeleccionada = usarTasaManual
-                ? ds.tasaManualOrganizacion(ds.currentOrganizacionId ?? '')
-                : ds.tasaVigenteEnMonedaBase;
-            final totalBs = totalCarrito * (tasaSeleccionada?.valor ?? 0.0);
-
-            return Padding(
-              padding: EdgeInsets.only(
-                bottom: MediaQuery.of(ctx).viewInsets.bottom + AppSpacing.lg,
-                left: AppSpacing.lg,
-                right: AppSpacing.lg,
-                top: AppSpacing.lg,
-              ),
-              child: SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Expanded(
-                          child: Text(
-                            'Registrar Venta (${ds.nextVentaId})',
-                            style: AppTypography.titleLarge.copyWith(fontSize: 17),
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                        IconButton(
-                          icon: const Icon(CupertinoIcons.xmark_circle_fill, color: AppPalette.textSecondary),
-                          onPressed: () => Navigator.pop(ctx),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: AppSpacing.md),
-                    DropdownButtonFormField<String>(
-                      initialValue: selectedCliente,
-                      decoration: const InputDecoration(labelText: 'Cliente', border: OutlineInputBorder()),
-                      items: ds.clientes.map((c) => DropdownMenuItem(value: c.id, child: Text('${c.nombre} (${c.id})'))).toList(),
-                      onChanged: (val) => setModalState(() => selectedCliente = val!),
-                    ),
-                    const SizedBox(height: AppSpacing.md),
-                    Text('Agregar productos', style: AppTypography.bodyMedium.copyWith(fontWeight: FontWeight.w600)),
-                    const SizedBox(height: AppSpacing.sm),
-                    DropdownButtonFormField<String>(
-                      initialValue: selectedProducto,
-                      isExpanded: true,
-                      decoration: const InputDecoration(labelText: 'Producto / Prenda', border: OutlineInputBorder()),
-                      items: productosParaElegir
-                          .map((p) => DropdownMenuItem(
-                                value: p.id,
-                                child: Text(
-                                  '${p.nombre} - USD ${p.precioUsd.toStringAsFixed(2)} (Stock: ${p.cantidad})',
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ))
-                          .toList(),
-                      onChanged: (val) => setModalState(() => selectedProducto = val!),
-                    ),
-                    const SizedBox(height: AppSpacing.sm),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: AppTextField(
-                            label: 'Cantidad',
-                            controller: cantidadController,
-                            keyboardType: TextInputType.number,
-                          ),
-                        ),
-                        const SizedBox(width: AppSpacing.md),
-                        AppOutlinedButton(
-                          label: 'Agregar',
-                          onPressed: () {
-                            final cant = int.tryParse(cantidadController.text) ?? 0;
-                            if (cant < 1) return;
-                            if (cant > producto.cantidad) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(content: Text('Solo hay ${producto.cantidad} en stock de ${producto.nombre}.')),
-                              );
-                              return;
-                            }
-                            setModalState(() {
-                              carrito.add(_CartLine(
-                                productoId: producto.id,
-                                nombre: producto.nombre,
-                                cantidad: cant,
-                                precioUsd: producto.precioUsd,
-                              ));
-                              cantidadController.text = '1';
-                            });
-                          },
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: AppSpacing.md),
-                    if (carrito.isEmpty)
-                      Text(
-                        'Todavía no agregaste ningún producto.',
-                        style: AppTypography.labelSmall.copyWith(color: AppPalette.textSecondary),
-                      )
-                    else
-                      ...carrito.asMap().entries.map((entry) {
-                        final line = entry.value;
-                        return Padding(
-                          padding: const EdgeInsets.only(bottom: AppSpacing.xs),
-                          child: AppCard(
-                            padding: AppSpacing.pSm,
-                            child: Row(
-                              children: [
-                                Expanded(
-                                  child: Text(
-                                    '${line.nombre} × ${line.cantidad} — USD ${line.subtotal.toStringAsFixed(2)}',
-                                    style: AppTypography.bodyMedium,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                ),
-                                IconButton(
-                                  visualDensity: VisualDensity.compact,
-                                  icon: const Icon(CupertinoIcons.trash, size: 16, color: AppPalette.error),
-                                  onPressed: () => setModalState(() => carrito.removeAt(entry.key)),
-                                ),
-                              ],
-                            ),
-                          ),
-                        );
-                      }),
-                    const SizedBox(height: AppSpacing.md),
-                    DropdownButtonFormField<String>(
-                      initialValue: metodosActivos.any((m) => m.id == selectedMetodoPago)
-                          ? selectedMetodoPago
-                          : (metodosActivos.isNotEmpty ? metodosActivos.first.id : null),
-                      decoration: const InputDecoration(labelText: 'Método de Pago', border: OutlineInputBorder()),
-                      items: metodosActivos
-                          .map((mp) => DropdownMenuItem(value: mp.id, child: Text(mp.nombre)))
-                          .toList(),
-                      onChanged: (val) => setModalState(() => selectedMetodoPago = val ?? metodosActivos.first.id),
-                    ),
-                    _TasaSelector(
-                      tasaAutomatica: ds.tasaVigenteEnMonedaBase,
-                      tasaManual: ds.tasaManualOrganizacion(ds.currentOrganizacionId ?? ''),
-                      usarManual: usarTasaManual,
-                      onChanged: (val) => setModalState(() => usarTasaManual = val),
-                    ),
-                    const SizedBox(height: AppSpacing.sm),
-                    AppTextField(
-                      label: 'Abono Inicial en USD (Total: USD ${totalCarrito.toStringAsFixed(2)})',
-                      controller: abonoController,
-                      hint: '0.00 para crédito total',
-                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                    ),
-                    const SizedBox(height: AppSpacing.md),
-                    AppCard(
-                      padding: AppSpacing.pSm,
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Text('Total: USD ${totalCarrito.toStringAsFixed(2)}', style: AppTypography.titleLarge.copyWith(fontSize: 14)),
-                          Text('Equivalente: ${totalBs.toStringAsFixed(2)} Bs.', style: AppTypography.bodyMedium),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: AppSpacing.lg),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: AppOutlinedButton(label: 'Cancelar', onPressed: () => Navigator.pop(ctx)),
-                        ),
-                        const SizedBox(width: AppSpacing.md),
-                        Expanded(
-                          child: AppButton(
-                            label: 'Guardar Venta',
-                            icon: CupertinoIcons.cart_fill,
-                            onPressed: () async {
-                              if (carrito.isEmpty) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(content: Text('Agregá al menos un producto al carrito.')),
-                                );
-                                return;
-                              }
-                              final abono = double.tryParse(abonoController.text.replaceAll(',', '.')) ?? totalCarrito;
-                              Navigator.pop(ctx);
-                              await ds.addVenta(
-                                clienteId: selectedCliente,
-                                items: carrito
-                                    .map((l) => (productoId: l.productoId, cantidad: l.cantidad, precioUsd: l.precioUsd))
-                                    .toList(),
-                                metodoPagoId: selectedMetodoPago,
-                                abonoUsd: abono,
-                                usarTasaManual: usarTasaManual,
-                              );
-                            },
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-            );
-          },
-        );
-      },
-    ).whenComplete(() {
-      cantidadController.dispose();
-      abonoController.dispose();
-    });
+      builder: (_) => _NuevaVentaBottomSheet(
+        dataService: ds,
+        initialClienteId: initialClienteId,
+      ),
+    );
   }
 
-  void _showAbonoDialog(BuildContext context, SheetsDataService ds, Venta v) {
-    final abonoController = TextEditingController();
-    final metodosActivos = ds.metodosPagoActivos;
-    var selectedMetodoPago = metodosActivos.isNotEmpty ? metodosActivos.first.id : '';
-    var usarTasaManual = false;
-
+  void _showAbonoDialog(Venta v) {
     showDialog(
       context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setDialogState) => AlertDialog(
-          title: Text('Abono a Venta #${v.id}'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Deuda actual: USD ${v.deudaUsd.toStringAsFixed(2)}',
-                style: AppTypography.titleLarge.copyWith(color: AppPalette.error, fontSize: 14),
-              ),
-              const SizedBox(height: AppSpacing.md),
-              DropdownButtonFormField<String>(
-                initialValue: metodosActivos.any((m) => m.id == selectedMetodoPago)
-                    ? selectedMetodoPago
-                    : (metodosActivos.isNotEmpty ? metodosActivos.first.id : null),
-                decoration: const InputDecoration(
-                  labelText: 'Método de Pago para Abono',
-                  border: OutlineInputBorder(),
-                ),
-                items: metodosActivos
-                    .map((mp) => DropdownMenuItem(value: mp.id, child: Text(mp.nombre)))
-                    .toList(),
-                onChanged: (val) => setDialogState(() => selectedMetodoPago = val ?? metodosActivos.first.id),
-              ),
-              _TasaSelector(
-                tasaAutomatica: ds.tasaVigenteEnMonedaBase,
-                tasaManual: ds.tasaManualOrganizacion(ds.currentOrganizacionId ?? ''),
-                usarManual: usarTasaManual,
-                onChanged: (val) => setDialogState(() => usarTasaManual = val),
-              ),
-              const SizedBox(height: AppSpacing.sm),
-              AppTextField(
-                label: 'Monto a Abonar (USD)',
-                controller: abonoController,
-                hint: 'Ej: 10.00',
-                keyboardType: const TextInputType.numberWithOptions(decimal: true),
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(child: const Text('Cancelar'), onPressed: () => Navigator.pop(ctx)),
-            FilledButton(
-              child: const Text('Aplicar Abono'),
-              onPressed: () async {
-                final monto = double.tryParse(abonoController.text.replaceAll(',', '.')) ?? 0.0;
-                if (monto <= 0) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Ingresá un monto válido para abonar.')),
-                  );
-                  return;
-                }
-
-                Navigator.pop(ctx); // cierra el diálogo de abono
-
-                // Diálogo de progreso mientras se sincroniza con Google
-                // Sheets — no se puede cerrar tocando afuera ni con el
-                // botón de retroceso, para que el usuario no piense que
-                // falló y lo intente de nuevo mientras el pedido sigue en
-                // curso (evita abonos duplicados).
-                showDialog(
-                  context: context,
-                  barrierDismissible: false,
-                  useRootNavigator: true, // ver por qué en el pop de abajo
-                  builder: (_) => const _ProcesandoPagoDialog(),
-                );
-
-                final ok = await ds.registrarAbono(
-                  v.id,
-                  monto,
-                  metodoPagoId: selectedMetodoPago,
-                  usarTasaManual: usarTasaManual,
-                );
-
-                if (!context.mounted) return;
-                // showDialog empuja el diálogo de progreso al Navigator
-                // raíz (useRootNavigator: true, su default) — pero
-                // Navigator.pop(context) a secas resuelve el Navigator MÁS
-                // CERCANO, que acá adentro de un StatefulShellRoute es el
-                // Navigator de la propia rama "Ventas", no el raíz. Sin
-                // rootNavigator: true, esto no cerraba el diálogo sino que
-                // sacaba a Ventas de su propia rama (sin nada debajo),
-                // tumbando go_router con "no pages left to show".
-                Navigator.of(context, rootNavigator: true).pop(); // cierra "Procesando pago..."
-
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text(ok ? 'Pago registrado' : 'No se pudo registrar el pago. Probá de nuevo.'),
-                    backgroundColor: ok ? AppPalette.success : AppPalette.error,
-                  ),
-                );
-              },
+      barrierDismissible: false,
+      builder: (_) => _AbonoDialog(
+        venta: v,
+        dataService: widget.dataService,
+        onSuccess: (ok) {
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(ok ? 'Pago registrado' : 'No se pudo registrar el pago. Probá de nuevo.'),
+              backgroundColor: ok ? AppPalette.success : AppPalette.error,
             ),
-          ],
-        ),
+          );
+        },
       ),
-    ).whenComplete(() {
-      abonoController.dispose();
-    });
+    );
   }
 
   void _confirmDelete(BuildContext context, SheetsDataService ds, Venta v) {
@@ -933,6 +596,412 @@ class _VentaCard extends StatelessWidget {
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+class _AbonoDialog extends StatefulWidget {
+  final Venta venta;
+  final SheetsDataService dataService;
+  final void Function(bool ok) onSuccess;
+
+  const _AbonoDialog({
+    required this.venta,
+    required this.dataService,
+    required this.onSuccess,
+  });
+
+  @override
+  State<_AbonoDialog> createState() => _AbonoDialogState();
+}
+
+class _AbonoDialogState extends State<_AbonoDialog> {
+  late final TextEditingController _abonoController;
+  late String _selectedMetodoPago;
+  bool _usarTasaManual = false;
+  bool _isProcessing = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _abonoController = TextEditingController();
+    final metodosActivos = widget.dataService.metodosPagoActivos;
+    _selectedMetodoPago = metodosActivos.isNotEmpty ? metodosActivos.first.id : '';
+  }
+
+  @override
+  void dispose() {
+    _abonoController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _submitAbono() async {
+    final monto = double.tryParse(_abonoController.text.replaceAll(',', '.')) ?? 0.0;
+    if (monto <= 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Ingresá un monto válido para abonar.')),
+      );
+      return;
+    }
+
+    setState(() => _isProcessing = true);
+
+    try {
+      final ok = await widget.dataService.registrarAbono(
+        widget.venta.id,
+        monto,
+        metodoPagoId: _selectedMetodoPago,
+        usarTasaManual: _usarTasaManual,
+      );
+
+      if (!mounted) return;
+      Navigator.of(context).pop();
+      widget.onSuccess(ok);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _isProcessing = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error al procesar el abono: $e'),
+          backgroundColor: AppPalette.error,
+        ),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final ds = widget.dataService;
+    final v = widget.venta;
+    final metodosActivos = ds.metodosPagoActivos;
+
+    return PopScope(
+      canPop: !_isProcessing,
+      child: AlertDialog(
+        title: Text('Abono a Venta #${v.id}'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Deuda actual: USD ${v.deudaUsd.toStringAsFixed(2)}',
+              style: AppTypography.titleLarge.copyWith(color: AppPalette.error, fontSize: 14),
+            ),
+            const SizedBox(height: AppSpacing.md),
+            DropdownButtonFormField<String>(
+              initialValue: metodosActivos.any((m) => m.id == _selectedMetodoPago)
+                  ? _selectedMetodoPago
+                  : (metodosActivos.isNotEmpty ? metodosActivos.first.id : null),
+              decoration: const InputDecoration(
+                labelText: 'Método de Pago para Abono',
+                border: OutlineInputBorder(),
+              ),
+              items: metodosActivos
+                  .map((mp) => DropdownMenuItem(value: mp.id, child: Text(mp.nombre)))
+                  .toList(),
+              onChanged: _isProcessing
+                  ? null
+                  : (val) => setState(() => _selectedMetodoPago = val ?? metodosActivos.first.id),
+            ),
+            _TasaSelector(
+              tasaAutomatica: ds.tasaVigenteEnMonedaBase,
+              tasaManual: ds.tasaManualOrganizacion(ds.currentOrganizacionId ?? ''),
+              usarManual: _usarTasaManual,
+              onChanged: _isProcessing ? (_) {} : (val) => setState(() => _usarTasaManual = val),
+            ),
+            const SizedBox(height: AppSpacing.sm),
+            AppTextField(
+              label: 'Monto a Abonar (USD)',
+              controller: _abonoController,
+              hint: 'Ej: 10.00',
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              readOnly: _isProcessing,
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: _isProcessing ? null : () => Navigator.pop(context),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton(
+            onPressed: _isProcessing ? null : _submitAbono,
+            child: _isProcessing
+                ? const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                      ),
+                      SizedBox(width: AppSpacing.sm),
+                      Text('Procesando...'),
+                    ],
+                  )
+                : const Text('Aplicar Abono'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _NuevaVentaBottomSheet extends StatefulWidget {
+  final SheetsDataService dataService;
+  final String initialClienteId;
+
+  const _NuevaVentaBottomSheet({
+    required this.dataService,
+    required this.initialClienteId,
+  });
+
+  @override
+  State<_NuevaVentaBottomSheet> createState() => _NuevaVentaBottomSheetState();
+}
+
+class _NuevaVentaBottomSheetState extends State<_NuevaVentaBottomSheet> {
+  late String _selectedCliente;
+  late String _selectedProducto;
+  late final TextEditingController _cantidadController;
+  late final TextEditingController _abonoController;
+  late String _selectedMetodoPago;
+  bool _usarTasaManual = false;
+  final List<_CartLine> _carrito = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _selectedCliente = widget.initialClienteId;
+    _selectedProducto = widget.dataService.productos.isNotEmpty ? widget.dataService.productos.first.id : '';
+    _cantidadController = TextEditingController(text: '1');
+    _abonoController = TextEditingController(text: '0.00');
+    final metodosActivos = widget.dataService.metodosPagoActivos;
+    _selectedMetodoPago = metodosActivos.isNotEmpty ? metodosActivos.first.id : '';
+  }
+
+  @override
+  void dispose() {
+    _cantidadController.dispose();
+    _abonoController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final ds = widget.dataService;
+    final productosUnicos = <String, Producto>{};
+    for (final p in ds.productos) {
+      productosUnicos.putIfAbsent(p.id, () => p);
+    }
+    final productosParaElegir = productosUnicos.values.toList();
+    final producto = productosParaElegir.firstWhere(
+      (p) => p.id == _selectedProducto,
+      orElse: () => productosParaElegir.first,
+    );
+    final totalCarrito = _carrito.fold<double>(0.0, (s, l) => s + l.subtotal);
+    final tasaSeleccionada = _usarTasaManual
+        ? ds.tasaManualOrganizacion(ds.currentOrganizacionId ?? '')
+        : ds.tasaVigenteEnMonedaBase;
+    final totalBs = totalCarrito * (tasaSeleccionada?.valor ?? 0.0);
+    final metodosActivos = ds.metodosPagoActivos;
+
+    return Padding(
+      padding: EdgeInsets.only(
+        bottom: MediaQuery.of(context).viewInsets.bottom + AppSpacing.lg,
+        left: AppSpacing.lg,
+        right: AppSpacing.lg,
+        top: AppSpacing.lg,
+      ),
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Expanded(
+                  child: Text(
+                    'Registrar Venta (${ds.nextVentaId})',
+                    style: AppTypography.titleLarge.copyWith(fontSize: 17),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                IconButton(
+                  icon: const Icon(CupertinoIcons.xmark_circle_fill, color: AppPalette.textSecondary),
+                  onPressed: () => Navigator.pop(context),
+                ),
+              ],
+            ),
+            const SizedBox(height: AppSpacing.md),
+            DropdownButtonFormField<String>(
+              initialValue: ds.clientes.any((c) => c.id == _selectedCliente)
+                  ? _selectedCliente
+                  : (ds.clientes.isNotEmpty ? ds.clientes.first.id : null),
+              decoration: const InputDecoration(labelText: 'Cliente', border: OutlineInputBorder()),
+              items: ds.clientes.map((c) => DropdownMenuItem(value: c.id, child: Text('${c.nombre} (${c.id})'))).toList(),
+              onChanged: (val) => setState(() => _selectedCliente = val!),
+            ),
+            const SizedBox(height: AppSpacing.md),
+            Text('Agregar productos', style: AppTypography.bodyMedium.copyWith(fontWeight: FontWeight.w600)),
+            const SizedBox(height: AppSpacing.sm),
+            DropdownButtonFormField<String>(
+              initialValue: productosParaElegir.any((p) => p.id == _selectedProducto)
+                  ? _selectedProducto
+                  : (productosParaElegir.isNotEmpty ? productosParaElegir.first.id : null),
+              isExpanded: true,
+              decoration: const InputDecoration(labelText: 'Producto / Prenda', border: OutlineInputBorder()),
+              items: productosParaElegir
+                  .map((p) => DropdownMenuItem(
+                        value: p.id,
+                        child: Text(
+                          '${p.nombre} - USD ${p.precioUsd.toStringAsFixed(2)} (Stock: ${p.cantidad})',
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ))
+                  .toList(),
+              onChanged: (val) => setState(() => _selectedProducto = val ?? ''),
+            ),
+            const SizedBox(height: AppSpacing.sm),
+            Row(
+              children: [
+                Expanded(
+                  child: AppTextField(
+                    label: 'Cantidad',
+                    controller: _cantidadController,
+                    keyboardType: TextInputType.number,
+                  ),
+                ),
+                const SizedBox(width: AppSpacing.md),
+                AppOutlinedButton(
+                  label: 'Agregar',
+                  onPressed: () {
+                    final cant = int.tryParse(_cantidadController.text) ?? 0;
+                    if (cant < 1) return;
+                    if (cant > producto.cantidad) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text('Solo hay ${producto.cantidad} en stock de ${producto.nombre}.')),
+                      );
+                      return;
+                    }
+                    setState(() {
+                      _carrito.add(_CartLine(
+                        productoId: producto.id,
+                        nombre: producto.nombre,
+                        cantidad: cant,
+                        precioUsd: producto.precioUsd,
+                      ));
+                      _cantidadController.text = '1';
+                    });
+                  },
+                ),
+              ],
+            ),
+            const SizedBox(height: AppSpacing.md),
+            if (_carrito.isEmpty)
+              Text(
+                'Todavía no agregaste ningún producto.',
+                style: AppTypography.labelSmall.copyWith(color: AppPalette.textSecondary),
+              )
+            else
+              ..._carrito.asMap().entries.map((entry) {
+                final line = entry.value;
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: AppSpacing.xs),
+                  child: AppCard(
+                    padding: AppSpacing.pSm,
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            '${line.nombre} × ${line.cantidad} — USD ${line.subtotal.toStringAsFixed(2)}',
+                            style: AppTypography.bodyMedium,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        IconButton(
+                          visualDensity: VisualDensity.compact,
+                          icon: const Icon(CupertinoIcons.trash, size: 16, color: AppPalette.error),
+                          onPressed: () => setState(() => _carrito.removeAt(entry.key)),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              }),
+            const SizedBox(height: AppSpacing.md),
+            DropdownButtonFormField<String>(
+              initialValue: metodosActivos.any((m) => m.id == _selectedMetodoPago)
+                  ? _selectedMetodoPago
+                  : (metodosActivos.isNotEmpty ? metodosActivos.first.id : null),
+              decoration: const InputDecoration(labelText: 'Método de Pago', border: OutlineInputBorder()),
+              items: metodosActivos
+                  .map((mp) => DropdownMenuItem(value: mp.id, child: Text(mp.nombre)))
+                  .toList(),
+              onChanged: (val) => setState(() => _selectedMetodoPago = val ?? metodosActivos.first.id),
+            ),
+            _TasaSelector(
+              tasaAutomatica: ds.tasaVigenteEnMonedaBase,
+              tasaManual: ds.tasaManualOrganizacion(ds.currentOrganizacionId ?? ''),
+              usarManual: _usarTasaManual,
+              onChanged: (val) => setState(() => _usarTasaManual = val),
+            ),
+            const SizedBox(height: AppSpacing.sm),
+            AppTextField(
+              label: 'Abono Inicial en USD (Total: USD ${totalCarrito.toStringAsFixed(2)})',
+              controller: _abonoController,
+              hint: '0.00 para crédito total',
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            ),
+            const SizedBox(height: AppSpacing.md),
+            AppCard(
+              padding: AppSpacing.pSm,
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text('Total: USD ${totalCarrito.toStringAsFixed(2)}', style: AppTypography.titleLarge.copyWith(fontSize: 14)),
+                  Text('Equivalente: ${totalBs.toStringAsFixed(2)} Bs.', style: AppTypography.bodyMedium),
+                ],
+              ),
+            ),
+            const SizedBox(height: AppSpacing.lg),
+            Row(
+              children: [
+                Expanded(
+                  child: AppOutlinedButton(label: 'Cancelar', onPressed: () => Navigator.pop(context)),
+                ),
+                const SizedBox(width: AppSpacing.md),
+                Expanded(
+                  child: AppButton(
+                    label: 'Guardar Venta',
+                    icon: CupertinoIcons.cart_fill,
+                    onPressed: () async {
+                      if (_carrito.isEmpty) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('Agregá al menos un producto al carrito.')),
+                        );
+                        return;
+                      }
+                      final abono = double.tryParse(_abonoController.text.replaceAll(',', '.')) ?? totalCarrito;
+                      Navigator.pop(context);
+                      await ds.addVenta(
+                        clienteId: _selectedCliente,
+                        items: _carrito
+                            .map((l) => (productoId: l.productoId, cantidad: l.cantidad, precioUsd: l.precioUsd))
+                            .toList(),
+                        metodoPagoId: _selectedMetodoPago,
+                        abonoUsd: abono,
+                        usarTasaManual: _usarTasaManual,
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ],
         ),
       ),
     );

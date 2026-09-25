@@ -386,13 +386,6 @@ class _ClientesView extends StatelessWidget {
     final cubit = context.read<ClientesCubit>();
     final isEditing = cliente != null;
     final id = isEditing ? cliente.id : cubit.dataService.nextClienteId;
-    final nombreController = TextEditingController(text: cliente?.nombre ?? '');
-    final telefonoController =
-        TextEditingController(text: cliente?.telefono ?? '+58');
-    final emailController = TextEditingController(text: cliente?.email ?? '');
-    final deudaController = TextEditingController(
-      text: cliente?.saldoDeudaUsd.toStringAsFixed(2) ?? '0.00',
-    );
 
     Logger.info(
       'ClientesPage: Abriendo diálogo para ${isEditing ? "editar cliente ${cliente.id}" : "crear nuevo cliente ($id)"}',
@@ -404,128 +397,12 @@ class _ClientesView extends StatelessWidget {
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
       ),
-      builder: (ctx) {
-        return Padding(
-          padding: EdgeInsets.only(
-            bottom: MediaQuery.of(ctx).viewInsets.bottom + AppSpacing.lg,
-            left: AppSpacing.lg,
-            right: AppSpacing.lg,
-            top: AppSpacing.lg,
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    isEditing
-                        ? 'Editar Cliente ($id)'
-                        : 'Registrar Nuevo Cliente',
-                    style: AppTypography.titleLarge.copyWith(fontSize: 17),
-                  ),
-                  IconButton(
-                    icon: const Icon(
-                      CupertinoIcons.xmark_circle_fill,
-                      color: AppPalette.textSecondary,
-                    ),
-                    onPressed: () => Navigator.pop(ctx),
-                  ),
-                ],
-              ),
-              const SizedBox(height: AppSpacing.md),
-              AppTextField(
-                label: 'Nombre Completo',
-                controller: nombreController,
-                hint: 'Ej: Juan Pérez',
-              ),
-              const SizedBox(height: AppSpacing.sm),
-              AppTextField(
-                label: 'Teléfono (E.164)',
-                controller: telefonoController,
-                hint: '+584120000001',
-                keyboardType: TextInputType.phone,
-              ),
-              const SizedBox(height: AppSpacing.sm),
-              AppTextField(
-                label: 'Correo Electrónico',
-                controller: emailController,
-                hint: 'cliente@ejemplo.com',
-                keyboardType: TextInputType.emailAddress,
-              ),
-              const SizedBox(height: AppSpacing.sm),
-              AppTextField(
-                label: 'Saldo Deuda Inicial (USD)',
-                controller: deudaController,
-                keyboardType:
-                    const TextInputType.numberWithOptions(decimal: true),
-              ),
-              const SizedBox(height: AppSpacing.lg),
-              Row(
-                children: [
-                  Expanded(
-                    child: AppOutlinedButton(
-                      label: 'Cancelar',
-                      onPressed: () => Navigator.pop(ctx),
-                    ),
-                  ),
-                  const SizedBox(width: AppSpacing.md),
-                  Expanded(
-                    child: AppButton(
-                      label: isEditing ? 'Guardar Cambios' : 'Registrar',
-                      icon: isEditing
-                          ? CupertinoIcons.check_mark
-                          : CupertinoIcons.add,
-                      onPressed: () async {
-                        final nombre = nombreController.text.trim();
-                        if (nombre.isEmpty) {
-                          Logger.warning(
-                            'ClientesPage: Intento de guardar cliente con nombre vacío',
-                          );
-                          return;
-                        }
-
-                        final nuevoCliente = Cliente(
-                          id: id,
-                          nombre: nombre,
-                          telefono: telefonoController.text.trim(),
-                          email: emailController.text.trim(),
-                          saldoDeudaUsd: double.tryParse(
-                                deudaController.text.replaceAll(',', '.'),
-                              ) ??
-                              0.0,
-                          fechaRegistro:
-                              cliente?.fechaRegistro ?? DateTime.now(),
-                        );
-
-                        Logger.info(
-                          'ClientesPage: Guardando cliente: ${nuevoCliente.id} (${nuevoCliente.nombre})',
-                        );
-                        Logger.object('Cliente Datos', nuevoCliente.toMap());
-
-                        Navigator.pop(ctx);
-
-                        if (isEditing) {
-                          cubit.updateCliente(nuevoCliente);
-                        } else {
-                          await cubit.addCliente(nuevoCliente);
-                        }
-                      },
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
-        );
-      },
-    ).whenComplete(() {
-      nombreController.dispose();
-      telefonoController.dispose();
-      emailController.dispose();
-      deudaController.dispose();
-    });
+      builder: (_) => _ClienteModalSheet(
+        cliente: cliente,
+        nextId: id,
+        cubit: cubit,
+      ),
+    );
   }
 
   void _confirmDelete(BuildContext context, Cliente cliente) {
@@ -555,6 +432,170 @@ class _ClientesView extends StatelessWidget {
               cubit.deleteCliente(cliente.id);
               Navigator.pop(ctx);
             },
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ClienteModalSheet extends StatefulWidget {
+  final Cliente? cliente;
+  final String nextId;
+  final ClientesCubit cubit;
+
+  const _ClienteModalSheet({
+    this.cliente,
+    required this.nextId,
+    required this.cubit,
+  });
+
+  @override
+  State<_ClienteModalSheet> createState() => _ClienteModalSheetState();
+}
+
+class _ClienteModalSheetState extends State<_ClienteModalSheet> {
+  late final TextEditingController _nombreController;
+  late final TextEditingController _telefonoController;
+  late final TextEditingController _emailController;
+  late final TextEditingController _deudaController;
+
+  @override
+  void initState() {
+    super.initState();
+    _nombreController = TextEditingController(text: widget.cliente?.nombre ?? '');
+    _telefonoController =
+        TextEditingController(text: widget.cliente?.telefono ?? '+58');
+    _emailController = TextEditingController(text: widget.cliente?.email ?? '');
+    _deudaController = TextEditingController(
+      text: widget.cliente?.saldoDeudaUsd.toStringAsFixed(2) ?? '0.00',
+    );
+  }
+
+  @override
+  void dispose() {
+    _nombreController.dispose();
+    _telefonoController.dispose();
+    _emailController.dispose();
+    _deudaController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isEditing = widget.cliente != null;
+    final id = isEditing ? widget.cliente!.id : widget.nextId;
+
+    return Padding(
+      padding: EdgeInsets.only(
+        bottom: MediaQuery.of(context).viewInsets.bottom + AppSpacing.lg,
+        left: AppSpacing.lg,
+        right: AppSpacing.lg,
+        top: AppSpacing.lg,
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                isEditing
+                    ? 'Editar Cliente ($id)'
+                    : 'Registrar Nuevo Cliente',
+                style: AppTypography.titleLarge.copyWith(fontSize: 17),
+              ),
+              IconButton(
+                icon: const Icon(
+                  CupertinoIcons.xmark_circle_fill,
+                  color: AppPalette.textSecondary,
+                ),
+                onPressed: () => Navigator.pop(context),
+              ),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.md),
+          AppTextField(
+            label: 'Nombre Completo',
+            controller: _nombreController,
+            hint: 'Ej: Juan Pérez',
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          AppTextField(
+            label: 'Teléfono (E.164)',
+            controller: _telefonoController,
+            hint: '+584120000001',
+            keyboardType: TextInputType.phone,
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          AppTextField(
+            label: 'Correo Electrónico',
+            controller: _emailController,
+            hint: 'cliente@ejemplo.com',
+            keyboardType: TextInputType.emailAddress,
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          AppTextField(
+            label: 'Saldo Deuda Inicial (USD)',
+            controller: _deudaController,
+            keyboardType:
+                const TextInputType.numberWithOptions(decimal: true),
+          ),
+          const SizedBox(height: AppSpacing.lg),
+          Row(
+            children: [
+              Expanded(
+                child: AppOutlinedButton(
+                  label: 'Cancelar',
+                  onPressed: () => Navigator.pop(context),
+                ),
+              ),
+              const SizedBox(width: AppSpacing.md),
+              Expanded(
+                child: AppButton(
+                  label: isEditing ? 'Guardar Cambios' : 'Registrar',
+                  icon: isEditing
+                      ? CupertinoIcons.check_mark
+                      : CupertinoIcons.add,
+                  onPressed: () async {
+                    final nombre = _nombreController.text.trim();
+                    if (nombre.isEmpty) {
+                      Logger.warning(
+                        'ClientesPage: Intento de guardar cliente con nombre vacío',
+                      );
+                      return;
+                    }
+
+                    final nuevoCliente = Cliente(
+                      id: id,
+                      nombre: nombre,
+                      telefono: _telefonoController.text.trim(),
+                      email: _emailController.text.trim(),
+                      saldoDeudaUsd: double.tryParse(
+                            _deudaController.text.replaceAll(',', '.'),
+                          ) ??
+                          0.0,
+                      fechaRegistro:
+                          widget.cliente?.fechaRegistro ?? DateTime.now(),
+                    );
+
+                    Logger.info(
+                      'ClientesPage: Guardando cliente: ${nuevoCliente.id} (${nuevoCliente.nombre})',
+                    );
+                    Logger.object('Cliente Datos', nuevoCliente.toMap());
+
+                    Navigator.pop(context);
+
+                    if (isEditing) {
+                      widget.cubit.updateCliente(nuevoCliente);
+                    } else {
+                      await widget.cubit.addCliente(nuevoCliente);
+                    }
+                  },
+                ),
+              ),
+            ],
           ),
         ],
       ),

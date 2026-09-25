@@ -1768,29 +1768,35 @@ class SheetsDataService extends ChangeNotifier {
       addCreditoClienteLocal(nuevoCredito);
     }
 
-    final postFutures = <Future<bool>>[
-      _postToAppsScript({
-        'action': 'update',
-        'sheet': 'ventas',
-        'id': ventaId,
-        'data': _ventas[index].toMap(),
-      }),
-      _postToAppsScript({'action': 'create', 'sheet': 'abonos', 'data': abono.toMap()}),
+    final batchOps = <BatchOperation>[
+      BatchOperation.update(
+        sheet: 'ventas',
+        id: ventaId,
+        data: _ventas[index].toMap(),
+      ),
+      BatchOperation.create(
+        sheet: 'abonos',
+        data: abono.toMap(),
+      ),
     ];
 
     if (nuevoCredito != null) {
-      postFutures.add(
-        _postToAppsScript({
-          'action': 'create',
-          'sheet': 'creditos_clientes',
-          'data': ClientCreditModel.toMap(nuevoCredito),
-        }),
+      batchOps.add(
+        BatchOperation.create(
+          sheet: 'creditos_clientes',
+          data: ClientCreditModel.toMap(nuevoCredito),
+        ),
       );
     }
 
-    final resultados = await Future.wait(postFutures);
+    final tx = BatchTransaction(
+      transactionId: 'tx_abono_${DateTime.now().millisecondsSinceEpoch}',
+      operations: batchOps,
+    );
+
+    final txResult = await executeBatchTransaction(tx);
     notifyListeners();
-    return resultados.every((ok) => ok);
+    return txResult.isSuccess;
   }
 
   /// Anula una factura completa: elimina la venta (header), todos sus ítems,

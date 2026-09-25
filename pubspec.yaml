@@ -39,4 +39,5 @@ flutter:
   assets:
     - assets/icons.png
     - assets/splash_screen.jpeg
+    - assets/splash_screen.png
     - assets/estilo_neutral.mp4

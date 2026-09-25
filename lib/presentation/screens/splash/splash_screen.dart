@@ -151,19 +151,11 @@ class _SplashScreenState extends State<SplashScreen> {
       body: Stack(
         fit: StackFit.expand,
         children: [
-          // Fondo degradado continuo corporativo armonizado con el video
-          Container(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: [
-                  const Color(0xFFE8E0D2), // Tono superior del video
-                  effectiveBgColor, // Color institucional (#D4C7B4)
-                  const Color(0xFFBCAA96), // Tono inferior del video
-                ],
-                stops: const [0.0, 0.5, 1.0],
-              ),
+          // Imagen de splash corporativa a pantalla completa
+          Positioned.fill(
+            child: Image.asset(
+              'assets/splash_screen.jpeg',
+              fit: BoxFit.cover,
             ),
           ),
 
