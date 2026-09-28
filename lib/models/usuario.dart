@@ -14,17 +14,33 @@ class Usuario {
   /// Columna C: Nombre del usuario (opcional)
   final String nombre;
 
+  /// Columna D: Tipo de documento (V, E, J, G)
+  final String tipoDocumento;
+
+  /// Columna E: Cédula o número de documento
+  final String cedula;
+
   const Usuario({
     required this.id,
     required this.email,
     this.nombre = '',
+    this.tipoDocumento = 'V',
+    this.cedula = '',
   });
+
+  /// Helper que devuelve el documento formateado (ej. "V-12345678" o "" si no tiene)
+  String get documentoCompleto =>
+      cedula.trim().isEmpty ? '' : '${tipoDocumento.toUpperCase()}-${cedula.trim()}';
 
   factory Usuario.fromRow(List<dynamic> row) {
     return Usuario(
       id: row.isNotEmpty ? row[0].toString().trim() : '',
       email: row.length > 1 ? row[1].toString().trim().toLowerCase() : '',
       nombre: row.length > 2 ? row[2].toString().trim() : '',
+      tipoDocumento: row.length > 3 && row[3].toString().trim().isNotEmpty
+          ? row[3].toString().trim().toUpperCase()
+          : 'V',
+      cedula: row.length > 4 ? row[4].toString().trim() : '',
     );
   }
 
@@ -33,6 +49,24 @@ class Usuario {
       'id': id,
       'email': email,
       'nombre': nombre,
+      'tipo_documento': tipoDocumento,
+      'cedula': cedula,
     };
+  }
+
+  Usuario copyWith({
+    String? id,
+    String? email,
+    String? nombre,
+    String? tipoDocumento,
+    String? cedula,
+  }) {
+    return Usuario(
+      id: id ?? this.id,
+      email: email ?? this.email,
+      nombre: nombre ?? this.nombre,
+      tipoDocumento: tipoDocumento ?? this.tipoDocumento,
+      cedula: cedula ?? this.cedula,
+    );
   }
 }

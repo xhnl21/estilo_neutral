@@ -73,25 +73,31 @@ class _UsuariosViewState extends State<_UsuariosView> {
             backgroundColor: AppPalette.primary,
             foregroundColor: Colors.white,
             icon: const Icon(CupertinoIcons.person_add_solid, size: 20),
-            label: const Text('Nuevo Usuario', style: TextStyle(fontWeight: FontWeight.w600)),
-            onPressed: () => esquemaListo ? _showUsuarioDialog(context) : _showEsquemaPendienteDialog(context),
+            label: const Text('Nuevo Usuario',
+                style: TextStyle(fontWeight: FontWeight.w600)),
+            onPressed: () => esquemaListo
+                ? _showUsuarioDialog(context)
+                : _showEsquemaPendienteDialog(context),
           ),
           body: Column(
             children: [
               if (!esquemaListo)
                 Padding(
-                  padding: const EdgeInsets.fromLTRB(AppSpacing.lg, AppSpacing.sm, AppSpacing.lg, 0),
+                  padding: const EdgeInsets.fromLTRB(
+                      AppSpacing.lg, AppSpacing.sm, AppSpacing.lg, 0),
                   child: AppCard(
                     padding: AppSpacing.pSm,
                     child: Row(
                       children: [
-                        const Icon(CupertinoIcons.exclamationmark_triangle_fill, size: 16, color: AppPalette.warning),
+                        const Icon(CupertinoIcons.exclamationmark_triangle_fill,
+                            size: 16, color: AppPalette.warning),
                         const SizedBox(width: AppSpacing.sm),
                         Expanded(
                           child: Text(
                             'El Google Sheet todavía no tiene las hojas "organizaciones"/"usuario_organizacion" (ver Cumplimiento Normativo). '
                             'Crear/editar usuarios está deshabilitado hasta migrarlo.',
-                            style: AppTypography.labelSmall.copyWith(color: AppPalette.warning),
+                            style: AppTypography.labelSmall
+                                .copyWith(color: AppPalette.warning),
                           ),
                         ),
                       ],
@@ -99,7 +105,8 @@ class _UsuariosViewState extends State<_UsuariosView> {
                   ),
                 ),
               Padding(
-                padding: const EdgeInsets.fromLTRB(AppSpacing.lg, AppSpacing.sm, AppSpacing.lg, AppSpacing.md),
+                padding: const EdgeInsets.fromLTRB(
+                    AppSpacing.lg, AppSpacing.sm, AppSpacing.lg, AppSpacing.md),
                 child: AppTextField(
                   label: 'Buscar usuario',
                   hint: 'Email o nombre...',
@@ -111,28 +118,33 @@ class _UsuariosViewState extends State<_UsuariosView> {
                 child: usuarios.isEmpty
                     ? const AppEmptyState(
                         title: 'No hay usuarios autorizados',
-                        description: 'Usa el botón "Nuevo Usuario" para dar acceso a alguien.',
+                        description:
+                            'Usa el botón "Nuevo Usuario" para dar acceso a alguien.',
                         icon: CupertinoIcons.person_2,
                       )
                     : ListView(
                         key: const ValueKey('usuarios_list'),
-                        padding: const EdgeInsets.fromLTRB(AppSpacing.lg, 0, AppSpacing.lg, 80),
+                        padding: const EdgeInsets.fromLTRB(
+                            AppSpacing.lg, 0, AppSpacing.lg, 80),
                         children: [
                           ExpansionPanelList(
                             elevation: 1,
-                            expandedHeaderPadding: const EdgeInsets.symmetric(vertical: 4),
+                            expandedHeaderPadding:
+                                const EdgeInsets.symmetric(vertical: 4),
                             expansionCallback: (panelIndex, isExpanded) {
                               final usuario = usuarios[panelIndex];
                               cubit.toggleExpanded(usuario.id);
                             },
                             children: usuarios.map<ExpansionPanel>((usuario) {
-                              final organizacionId = widget.dataService.organizacionIdForUsuario(usuario.email);
+                              final organizacionId = widget.dataService
+                                  .organizacionIdForUsuario(usuario.email);
                               final organizacion = organizacionId == null
                                   ? null
                                   : widget.dataService.organizaciones
                                       .where((o) => o.id == organizacionId)
                                       .firstOrNull;
-                              final isExpanded = state.expandedUsuarioId == usuario.id;
+                              final isExpanded =
+                                  state.expandedUsuarioId == usuario.id;
 
                               return ExpansionPanel(
                                 isExpanded: isExpanded,
@@ -140,43 +152,96 @@ class _UsuariosViewState extends State<_UsuariosView> {
                                 backgroundColor: AppPalette.surface,
                                 headerBuilder: (context, isHeaderExpanded) {
                                   return Padding(
-                                    padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md, vertical: AppSpacing.sm),
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: AppSpacing.md,
+                                        vertical: AppSpacing.sm),
                                     child: Row(
                                       children: [
                                         const ExcludeSemantics(
                                           child: CircleAvatar(
                                             radius: 18,
                                             backgroundColor: AppPalette.blue100,
-                                            child: Icon(CupertinoIcons.person_fill, color: AppPalette.blue700, size: 18),
+                                            child: Icon(
+                                                CupertinoIcons.person_fill,
+                                                color: AppPalette.blue700,
+                                                size: 18),
                                           ),
                                         ),
                                         const SizedBox(width: AppSpacing.md),
                                         Expanded(
                                           child: Column(
-                                            crossAxisAlignment: CrossAxisAlignment.start,
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
                                             mainAxisSize: MainAxisSize.min,
                                             children: [
                                               Text(
-                                                usuario.nombre.isNotEmpty ? usuario.nombre : usuario.email,
-                                                style: AppTypography.titleLarge.copyWith(fontSize: 15),
-                                                maxLines: isHeaderExpanded ? null : 1,
-                                                overflow: isHeaderExpanded ? null : TextOverflow.ellipsis,
+                                                usuario.nombre.isNotEmpty
+                                                    ? usuario.nombre
+                                                    : usuario.email,
+                                                style: AppTypography.titleLarge
+                                                    .copyWith(fontSize: 15),
+                                                maxLines:
+                                                    isHeaderExpanded ? null : 1,
+                                                overflow: isHeaderExpanded
+                                                    ? null
+                                                    : TextOverflow.ellipsis,
                                               ),
                                               const SizedBox(height: 2),
                                               Wrap(
                                                 spacing: 6,
-                                                crossAxisAlignment: WrapCrossAlignment.center,
+                                                crossAxisAlignment:
+                                                    WrapCrossAlignment.center,
                                                 children: [
                                                   Text(
                                                     'ID: ${usuario.id}',
-                                                    style: AppTypography.labelSmall.copyWith(
-                                                      color: AppPalette.textSecondary,
+                                                    style: AppTypography
+                                                        .labelSmall
+                                                        .copyWith(
+                                                      color: AppPalette
+                                                          .textSecondary,
                                                       fontSize: 11,
                                                     ),
                                                   ),
+                                                  if (usuario.documentoCompleto
+                                                      .isNotEmpty)
+                                                    Container(
+                                                      padding: const EdgeInsets
+                                                          .symmetric(
+                                                          horizontal: 6,
+                                                          vertical: 1),
+                                                      decoration: BoxDecoration(
+                                                        color:
+                                                            AppPalette.surface,
+                                                        borderRadius:
+                                                            BorderRadius
+                                                                .circular(4),
+                                                        border: Border.all(
+                                                            color: AppPalette
+                                                                .divider),
+                                                      ),
+                                                      child: Text(
+                                                        usuario
+                                                            .documentoCompleto,
+                                                        style: AppTypography
+                                                            .labelSmall
+                                                            .copyWith(
+                                                          fontSize: 10,
+                                                          fontWeight:
+                                                              FontWeight.w600,
+                                                          color: AppPalette
+                                                              .textPrimary,
+                                                        ),
+                                                      ),
+                                                    ),
                                                   AppChip(
-                                                    label: organizacion?.nombre ?? 'Sin organización',
-                                                    variant: organizacion != null ? AppChipVariant.info : AppChipVariant.warning,
+                                                    label:
+                                                        organizacion?.nombre ??
+                                                            'Sin organización',
+                                                    variant: organizacion !=
+                                                            null
+                                                        ? AppChipVariant.info
+                                                        : AppChipVariant
+                                                            .warning,
                                                   ),
                                                 ],
                                               ),
@@ -189,56 +254,105 @@ class _UsuariosViewState extends State<_UsuariosView> {
                                 },
                                 body: Container(
                                   width: double.infinity,
-                                  padding: const EdgeInsets.fromLTRB(AppSpacing.md, 0, AppSpacing.md, AppSpacing.md),
+                                  padding: const EdgeInsets.fromLTRB(
+                                      AppSpacing.md,
+                                      0,
+                                      AppSpacing.md,
+                                      AppSpacing.md),
                                   child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
                                     children: [
                                       const Divider(color: AppPalette.divider),
                                       const SizedBox(height: 4),
                                       SelectableText.rich(
                                         TextSpan(
-                                          style: AppTypography.bodyMedium.copyWith(fontSize: 13, height: 1.5),
+                                          style: AppTypography.bodyMedium
+                                              .copyWith(
+                                                  fontSize: 13, height: 1.5),
                                           children: [
-                                            const TextSpan(text: '👤 Nombre: ', style: TextStyle(fontWeight: FontWeight.w600)),
-                                            TextSpan(text: usuario.nombre.isNotEmpty ? usuario.nombre : 'No especificado'),
-                                            const TextSpan(text: '\n✉️ Email: ', style: TextStyle(fontWeight: FontWeight.w600)),
+                                            const TextSpan(
+                                                text: '👤 Nombre: ',
+                                                style: TextStyle(
+                                                    fontWeight:
+                                                        FontWeight.w600)),
+                                            TextSpan(
+                                                text: usuario.nombre.isNotEmpty
+                                                    ? usuario.nombre
+                                                    : 'No especificado'),
+                                            const TextSpan(
+                                                text: '\n🆔 Cédula: ',
+                                                style: TextStyle(
+                                                    fontWeight:
+                                                        FontWeight.w600)),
+                                            TextSpan(
+                                                text: usuario.documentoCompleto
+                                                        .isNotEmpty
+                                                    ? usuario.documentoCompleto
+                                                    : 'No registrada'),
+                                            const TextSpan(
+                                                text: '\n✉️ Email: ',
+                                                style: TextStyle(
+                                                    fontWeight:
+                                                        FontWeight.w600)),
                                             TextSpan(text: usuario.email),
-                                            const TextSpan(text: '\n🏢 Organización: ', style: TextStyle(fontWeight: FontWeight.w600)),
-                                            TextSpan(text: organizacion != null ? '${organizacion.nombre} (${organizacion.id})' : 'Sin organización asignada'),
+                                            const TextSpan(
+                                                text: '\n🏢 Organización: ',
+                                                style: TextStyle(
+                                                    fontWeight:
+                                                        FontWeight.w600)),
+                                            TextSpan(
+                                                text: organizacion != null
+                                                    ? '${organizacion.nombre} (${organizacion.id})'
+                                                    : 'Sin organización asignada'),
                                           ],
                                         ),
                                       ),
                                       const SizedBox(height: 12),
                                       Wrap(
                                         alignment: WrapAlignment.end,
-                                        crossAxisAlignment: WrapCrossAlignment.center,
+                                        crossAxisAlignment:
+                                            WrapCrossAlignment.center,
                                         spacing: 8,
                                         runSpacing: 8,
                                         children: [
                                           OutlinedButton.icon(
                                             style: OutlinedButton.styleFrom(
-                                              visualDensity: VisualDensity.compact,
-                                              foregroundColor: AppPalette.blue700,
-                                              side: const BorderSide(color: AppPalette.border),
+                                              visualDensity:
+                                                  VisualDensity.compact,
+                                              foregroundColor:
+                                                  AppPalette.blue700,
+                                              side: const BorderSide(
+                                                  color: AppPalette.border),
                                             ),
-                                            icon: const Icon(CupertinoIcons.pencil, size: 16),
+                                            icon: const Icon(
+                                                CupertinoIcons.pencil,
+                                                size: 16),
                                             label: const Text('Editar'),
                                             onPressed: () => esquemaListo
-                                                ? _showUsuarioDialog(context, usuario: usuario)
-                                                : _showEsquemaPendienteDialog(context),
+                                                ? _showUsuarioDialog(context,
+                                                    usuario: usuario)
+                                                : _showEsquemaPendienteDialog(
+                                                    context),
                                           ),
                                           const SizedBox(width: 8),
                                           OutlinedButton.icon(
                                             style: OutlinedButton.styleFrom(
-                                              visualDensity: VisualDensity.compact,
+                                              visualDensity:
+                                                  VisualDensity.compact,
                                               foregroundColor: AppPalette.error,
-                                              side: const BorderSide(color: AppPalette.border),
+                                              side: const BorderSide(
+                                                  color: AppPalette.border),
                                             ),
-                                            icon: const Icon(CupertinoIcons.trash, size: 16),
+                                            icon: const Icon(
+                                                CupertinoIcons.trash,
+                                                size: 16),
                                             label: const Text('Eliminar'),
                                             onPressed: () => esquemaListo
-                                                ? _confirmDelete(context, usuario)
-                                                : _showEsquemaPendienteDialog(context),
+                                                ? _confirmDelete(
+                                                    context, usuario)
+                                                : _showEsquemaPendienteDialog(
+                                                    context),
                                           ),
                                         ],
                                       ),
@@ -263,15 +377,24 @@ class _UsuariosViewState extends State<_UsuariosView> {
     final id = isEditing ? usuario.id : widget.dataService.nextUsuarioId;
     final emailController = TextEditingController(text: usuario?.email ?? '');
     final nombreController = TextEditingController(text: usuario?.nombre ?? '');
+    final tiposDoc = widget.dataService.tiposDocumentoActivos;
+    var tipoDocSeleccionado =
+        usuario != null && usuario.tipoDocumento.isNotEmpty
+            ? usuario.tipoDocumento
+            : 'V';
+    final cedulaController = TextEditingController(text: usuario?.cedula ?? '');
     final organizaciones = widget.dataService.organizaciones;
-    final organizacionActual =
-        isEditing ? widget.dataService.organizacionIdForUsuario(usuario.email) : null;
-    var organizacionSeleccionada = organizacionActual ?? (organizaciones.isNotEmpty ? organizaciones.first.id : null);
+    final organizacionActual = isEditing
+        ? widget.dataService.organizacionIdForUsuario(usuario.email)
+        : null;
+    var organizacionSeleccionada = organizacionActual ??
+        (organizaciones.isNotEmpty ? organizaciones.first.id : null);
 
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
       builder: (ctx) => StatefulBuilder(
         builder: (context, setModalState) => Padding(
           padding: EdgeInsets.only(
@@ -290,13 +413,16 @@ class _UsuariosViewState extends State<_UsuariosView> {
                   children: [
                     Expanded(
                       child: Text(
-                        isEditing ? 'Editar Usuario' : 'Nuevo Usuario Autorizado',
+                        isEditing
+                            ? 'Editar Usuario'
+                            : 'Nuevo Usuario Autorizado',
                         style: AppTypography.titleLarge.copyWith(fontSize: 17),
                         overflow: TextOverflow.ellipsis,
                       ),
                     ),
                     IconButton(
-                      icon: const Icon(CupertinoIcons.xmark_circle_fill, color: AppPalette.textSecondary),
+                      icon: const Icon(CupertinoIcons.xmark_circle_fill,
+                          color: AppPalette.textSecondary),
                       onPressed: () => Navigator.pop(ctx),
                     ),
                   ],
@@ -306,7 +432,8 @@ class _UsuariosViewState extends State<_UsuariosView> {
                     padding: const EdgeInsets.only(top: 2),
                     child: Text(
                       id,
-                      style: AppTypography.labelSmall.copyWith(color: AppPalette.textSecondary),
+                      style: AppTypography.labelSmall
+                          .copyWith(color: AppPalette.textSecondary),
                       overflow: TextOverflow.ellipsis,
                     ),
                   ),
@@ -323,7 +450,8 @@ class _UsuariosViewState extends State<_UsuariosView> {
                     padding: const EdgeInsets.only(top: 4),
                     child: Text(
                       'El correo no se puede cambiar una vez creado: es la clave usada por Seguridad y el login.',
-                      style: AppTypography.labelSmall.copyWith(color: AppPalette.textSecondary),
+                      style: AppTypography.labelSmall
+                          .copyWith(color: AppPalette.textSecondary),
                     ),
                   ),
                 const SizedBox(height: AppSpacing.sm),
@@ -333,36 +461,101 @@ class _UsuariosViewState extends State<_UsuariosView> {
                   hint: 'Ej: Juan Pérez',
                 ),
                 const SizedBox(height: AppSpacing.sm),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    SizedBox(
+                      width: 90,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          // Text('Tipo Doc.', style: AppTypography.labelSmall),
+                          // const SizedBox(height: 6),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 10),
+                            decoration: BoxDecoration(
+                              color: AppPalette.surface,
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(color: AppPalette.divider),
+                            ),
+                            child: DropdownButtonHideUnderline(
+                              child: DropdownButton<String>(
+                                value: tiposDoc.contains(tipoDocSeleccionado)
+                                    ? tipoDocSeleccionado
+                                    : tiposDoc.first,
+                                isExpanded: true,
+                                items: tiposDoc
+                                    .map((t) => DropdownMenuItem(
+                                        value: t, child: Text(t)))
+                                    .toList(),
+                                onChanged: (val) {
+                                  if (val != null) {
+                                    setModalState(
+                                        () => tipoDocSeleccionado = val);
+                                  }
+                                },
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: AppSpacing.sm),
+                    Expanded(
+                      child: AppTextField(
+                        label: 'Cédula / Documento',
+                        controller: cedulaController,
+                        hint: '12345678',
+                        keyboardType: TextInputType.number,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: AppSpacing.sm),
                 DropdownButtonFormField<String>(
                   initialValue: organizacionSeleccionada,
                   decoration: const InputDecoration(
                     labelText: 'Organización',
                     filled: true,
                     fillColor: AppPalette.surface,
-                    border: OutlineInputBorder(borderRadius: AppSpacing.roundedSm),
+                    border:
+                        OutlineInputBorder(borderRadius: AppSpacing.roundedSm),
                   ),
                   items: organizaciones
-                      .map((o) => DropdownMenuItem(value: o.id, child: Text(o.nombre)))
+                      .map((o) =>
+                          DropdownMenuItem(value: o.id, child: Text(o.nombre)))
                       .toList(),
-                  onChanged: (val) => setModalState(() => organizacionSeleccionada = val),
+                  onChanged: (val) =>
+                      setModalState(() => organizacionSeleccionada = val),
                 ),
                 const SizedBox(height: AppSpacing.lg),
                 Row(
                   children: [
-                    Expanded(child: AppOutlinedButton(label: 'Cancelar', onPressed: () => Navigator.pop(ctx))),
+                    Expanded(
+                        child: AppOutlinedButton(
+                            label: 'Cancelar',
+                            onPressed: () => Navigator.pop(ctx))),
                     const SizedBox(width: AppSpacing.md),
                     Expanded(
                       child: AppButton(
-                        label: isEditing ? 'Guardar Cambios' : 'Autorizar Acceso',
-                        icon: isEditing ? CupertinoIcons.check_mark : CupertinoIcons.add,
+                        label:
+                            isEditing ? 'Guardar Cambios' : 'Autorizar Acceso',
+                        icon: isEditing
+                            ? CupertinoIcons.check_mark
+                            : CupertinoIcons.add,
                         onPressed: () async {
-                          final email = emailController.text.trim().toLowerCase();
-                          if (email.isEmpty || organizacionSeleccionada == null) return;
+                          final email =
+                              emailController.text.trim().toLowerCase();
+                          if (email.isEmpty || organizacionSeleccionada == null) {
+                            return;
+                          }
 
                           final nuevoUsuario = Usuario(
                             id: id,
                             email: email,
                             nombre: nombreController.text.trim(),
+                            tipoDocumento: tipoDocSeleccionado,
+                            cedula: cedulaController.text.trim(),
                           );
 
                           Navigator.pop(ctx);
@@ -396,9 +589,12 @@ class _UsuariosViewState extends State<_UsuariosView> {
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('¿Quitar acceso a este usuario?'),
-        content: Text('${usuario.email} ya no va a poder iniciar sesión en el sistema.'),
+        content: Text(
+            '${usuario.email} ya no va a poder iniciar sesión en el sistema.'),
         actions: [
-          TextButton(child: const Text('Cancelar'), onPressed: () => Navigator.pop(ctx)),
+          TextButton(
+              child: const Text('Cancelar'),
+              onPressed: () => Navigator.pop(ctx)),
           FilledButton(
             style: FilledButton.styleFrom(backgroundColor: AppPalette.error),
             child: const Text('Eliminar'),
@@ -424,7 +620,9 @@ class _UsuariosViewState extends State<_UsuariosView> {
           'queda deshabilitado para no escribir datos mal alineados.',
         ),
         actions: [
-          TextButton(child: const Text('Entendido'), onPressed: () => Navigator.pop(ctx)),
+          TextButton(
+              child: const Text('Entendido'),
+              onPressed: () => Navigator.pop(ctx)),
         ],
       ),
     );

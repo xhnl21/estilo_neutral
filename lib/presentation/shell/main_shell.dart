@@ -55,6 +55,8 @@ class _MainShellState extends State<MainShell> {
     (title: 'Organizaciones', sheet: 'organizaciones', icon: CupertinoIcons.building_2_fill, category: 'Administración'),
     (title: 'Métodos de Pago', sheet: 'metodo pago', icon: CupertinoIcons.creditcard_fill, category: 'Administración'),
     (title: 'Tasas', sheet: 'tasas', icon: CupertinoIcons.money_dollar, category: 'Administración'),
+    (title: 'Códigos Teléfono', sheet: 'codigo de telefonos', icon: CupertinoIcons.phone_fill, category: 'Administración'),
+    (title: 'Tipos Documento', sheet: 'tipo de documento', icon: CupertinoIcons.doc_text_fill, category: 'Administración'),
   ];
 
   @override
@@ -75,6 +77,8 @@ class _MainShellState extends State<MainShell> {
       OrganizacionesPage(dataService: widget.dataService),
       MetodosPagoPage(dataService: widget.dataService),
       TasasPage(dataService: widget.dataService),
+      CodigosTelefonoPage(dataService: widget.dataService),
+      TiposDocumentoPage(dataService: widget.dataService),
     ];
   }
 
@@ -176,29 +180,39 @@ class _MainShellState extends State<MainShell> {
           mainAxisSize: MainAxisSize.min,
           children: [
             Row(
+              mainAxisSize: MainAxisSize.min,
               children: [
-                Semantics(
-                  header: true,
-                  headingLevel: 1,
-                  child: Text(
-                    currentInfo.title,
-                    style: AppTypography.titleLarge.copyWith(fontSize: 16),
+                Flexible(
+                  child: Semantics(
+                    header: true,
+                    headingLevel: 1,
+                    child: Text(
+                      currentInfo.title,
+                      style: AppTypography.titleLarge.copyWith(fontSize: 16),
+                      overflow: TextOverflow.ellipsis,
+                      maxLines: 1,
+                    ),
                   ),
                 ),
                 if (EnvironmentConfig.showTechnicalInfo) ...[
                   const SizedBox(width: AppSpacing.xs),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
-                    decoration: BoxDecoration(
-                      color: AppPalette.blue100,
-                      borderRadius: BorderRadius.circular(4),
-                    ),
-                    child: Text(
-                      currentInfo.sheet,
-                      style: AppTypography.labelSmall.copyWith(
-                        color: AppPalette.blue900,
-                        fontSize: 10,
-                        fontFamily: 'monospace',
+                  Flexible(
+                    fit: FlexFit.loose,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                      decoration: BoxDecoration(
+                        color: AppPalette.blue100,
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Text(
+                        currentInfo.sheet,
+                        style: AppTypography.labelSmall.copyWith(
+                          color: AppPalette.blue900,
+                          fontSize: 10,
+                          fontFamily: 'monospace',
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                        maxLines: 1,
                       ),
                     ),
                   ),
@@ -354,6 +368,8 @@ class _MainShellState extends State<MainShell> {
                   _buildDrawerItem(11, _vistasInfo[11]),
                   _buildDrawerItem(12, _vistasInfo[12]),
                   _buildDrawerItem(13, _vistasInfo[13]),
+                  _buildDrawerItem(14, _vistasInfo[14]),
+                  _buildDrawerItem(15, _vistasInfo[15]),
                 ],
               ),
             ),

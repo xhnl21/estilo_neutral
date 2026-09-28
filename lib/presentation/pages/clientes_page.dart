@@ -150,31 +150,61 @@ class _ClientesView extends StatelessWidget {
                               children: [
                                 ExpansionPanelList(
                                   elevation: 1,
-                                  expandedHeaderPadding: const EdgeInsets.symmetric(vertical: 4),
+                                  expandedHeaderPadding:
+                                      const EdgeInsets.symmetric(vertical: 4),
                                   expansionCallback: (panelIndex, isExpanded) {
                                     final cliente = clientes[panelIndex];
                                     cubit.toggleExpanded(cliente.id);
                                   },
-                                  children: clientes.map<ExpansionPanel>((cliente) {
-                                    final ventasDelCliente = cubit.dataService.ventas
-                                        .where((v) => v.clienteId == cliente.id);
-                                    final deudaReal = ventasDelCliente.fold<double>(
-                                        0.0, (sum, v) => sum + (v.deudaUsd > 0 ? v.deudaUsd : 0.0));
+                                  children:
+                                      clientes.map<ExpansionPanel>((cliente) {
+                                    final ventasDelCliente =
+                                        cubit.dataService.ventas.where(
+                                            (v) => v.clienteId == cliente.id);
+                                    final deudaReal = ventasDelCliente
+                                        .fold<double>(
+                                            0.0,
+                                            (sum, v) =>
+                                                sum +
+                                                (v.deudaUsd > 0
+                                                    ? v.deudaUsd
+                                                    : 0.0));
                                     final hasDebt = deudaReal > 0;
-                                    final clientCredits = ServiceLocator().creditsDataSource.credits.where((c) => c.clienteId == cliente.id && c.isAvailable).toList();
-                                    final totalCredito = clientCredits.fold<double>(0.0, (sum, c) => sum + c.saldoUsd);
-                                    final hasCreditLedger = ServiceLocator().creditsDataSource.credits.any((c) => c.clienteId == cliente.id);
-                                    final excedente = ventasDelCliente.fold<double>(0.0, (sum, v) => sum + v.excedenteUsd);
-                                    final saldoAFavor = hasCreditLedger ? totalCredito : (totalCredito > 0 ? totalCredito : excedente);
-                                    final isExpanded = state.expandedClienteId == cliente.id;
+                                    final clientCredits = ServiceLocator()
+                                        .creditsDataSource
+                                        .credits
+                                        .where((c) =>
+                                            c.clienteId == cliente.id &&
+                                            c.isAvailable)
+                                        .toList();
+                                    final totalCredito =
+                                        clientCredits.fold<double>(
+                                            0.0, (sum, c) => sum + c.saldoUsd);
+                                    final hasCreditLedger = ServiceLocator()
+                                        .creditsDataSource
+                                        .credits
+                                        .any((c) => c.clienteId == cliente.id);
+                                    final excedente =
+                                        ventasDelCliente.fold<double>(0.0,
+                                            (sum, v) => sum + v.excedenteUsd);
+                                    final saldoAFavor = hasCreditLedger
+                                        ? totalCredito
+                                        : (totalCredito > 0
+                                            ? totalCredito
+                                            : excedente);
+                                    final isExpanded =
+                                        state.expandedClienteId == cliente.id;
 
                                     return ExpansionPanel(
                                       isExpanded: isExpanded,
                                       canTapOnHeader: true,
                                       backgroundColor: AppPalette.surface,
-                                      headerBuilder: (context, isHeaderExpanded) {
+                                      headerBuilder:
+                                          (context, isHeaderExpanded) {
                                         return Padding(
-                                          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md, vertical: AppSpacing.sm),
+                                          padding: const EdgeInsets.symmetric(
+                                              horizontal: AppSpacing.md,
+                                              vertical: AppSpacing.sm),
                                           child: Row(
                                             children: [
                                               ExcludeSemantics(
@@ -192,48 +222,118 @@ class _ClientesView extends StatelessWidget {
                                                   ),
                                                 ),
                                               ),
-                                              const SizedBox(width: AppSpacing.md),
+                                              const SizedBox(
+                                                  width: AppSpacing.md),
                                               Expanded(
                                                 child: Column(
-                                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                                  mainAxisSize: MainAxisSize.min,
+                                                  crossAxisAlignment:
+                                                      CrossAxisAlignment.start,
+                                                  mainAxisSize:
+                                                      MainAxisSize.min,
                                                   children: [
                                                     Text(
                                                       cliente.nombre,
-                                                      style: AppTypography.titleLarge.copyWith(fontSize: 15),
-                                                      maxLines: isHeaderExpanded ? null : 1,
-                                                      overflow: isHeaderExpanded ? null : TextOverflow.ellipsis,
+                                                      style: AppTypography
+                                                          .titleLarge
+                                                          .copyWith(
+                                                              fontSize: 15),
+                                                      maxLines: isHeaderExpanded
+                                                          ? null
+                                                          : 1,
+                                                      overflow: isHeaderExpanded
+                                                          ? null
+                                                          : TextOverflow
+                                                              .ellipsis,
                                                     ),
                                                     const SizedBox(height: 2),
                                                     Wrap(
                                                       spacing: 8,
-                                                      crossAxisAlignment: WrapCrossAlignment.center,
+                                                      crossAxisAlignment:
+                                                          WrapCrossAlignment
+                                                              .center,
                                                       children: [
                                                         Text(
                                                           'ID: ${cliente.id}',
-                                                          style: AppTypography.labelSmall.copyWith(
-                                                            color: AppPalette.textSecondary,
+                                                          style: AppTypography
+                                                              .labelSmall
+                                                              .copyWith(
+                                                            color: AppPalette
+                                                                .textSecondary,
                                                             fontSize: 11,
                                                           ),
                                                         ),
+                                                        if (cliente
+                                                            .documentoCompleto
+                                                            .isNotEmpty)
+                                                          Container(
+                                                            padding:
+                                                                const EdgeInsets
+                                                                    .symmetric(
+                                                                    horizontal:
+                                                                        6,
+                                                                    vertical:
+                                                                        1),
+                                                            decoration:
+                                                                BoxDecoration(
+                                                              color: AppPalette
+                                                                  .surface,
+                                                              borderRadius:
+                                                                  BorderRadius
+                                                                      .circular(
+                                                                          4),
+                                                              border: Border.all(
+                                                                  color: AppPalette
+                                                                      .divider),
+                                                            ),
+                                                            child: Text(
+                                                              cliente
+                                                                  .documentoCompleto,
+                                                              style:
+                                                                  AppTypography
+                                                                      .labelSmall
+                                                                      .copyWith(
+                                                                fontSize: 10,
+                                                                fontWeight:
+                                                                    FontWeight
+                                                                        .w600,
+                                                                color: AppPalette
+                                                                    .textPrimary,
+                                                              ),
+                                                            ),
+                                                          ),
                                                         if (hasDebt)
                                                           Row(
-                                                            mainAxisSize: MainAxisSize.min,
+                                                            mainAxisSize:
+                                                                MainAxisSize
+                                                                    .min,
                                                             children: [
                                                               Text(
                                                                 'Deuda: ',
-                                                                style: AppTypography.labelSmall.copyWith(
-                                                                  color: AppPalette.error,
-                                                                  fontWeight: FontWeight.w600,
+                                                                style: AppTypography
+                                                                    .labelSmall
+                                                                    .copyWith(
+                                                                  color:
+                                                                      AppPalette
+                                                                          .error,
+                                                                  fontWeight:
+                                                                      FontWeight
+                                                                          .w600,
                                                                   fontSize: 11,
                                                                 ),
                                                               ),
                                                               AppMoneyText(
-                                                                amount: deudaReal,
-                                                                currency: MoneyCurrency.usd,
-                                                                nature: MoneyNature.debt,
+                                                                amount:
+                                                                    deudaReal,
+                                                                currency:
+                                                                    MoneyCurrency
+                                                                        .usd,
+                                                                nature:
+                                                                    MoneyNature
+                                                                        .debt,
                                                                 fontSize: 11,
-                                                                fontWeight: FontWeight.w600,
+                                                                fontWeight:
+                                                                    FontWeight
+                                                                        .w600,
                                                               ),
                                                             ],
                                                           ),
@@ -253,50 +353,116 @@ class _ClientesView extends StatelessWidget {
                                       },
                                       body: Container(
                                         width: double.infinity,
-                                        padding: const EdgeInsets.fromLTRB(AppSpacing.md, 0, AppSpacing.md, AppSpacing.md),
+                                        padding: const EdgeInsets.fromLTRB(
+                                            AppSpacing.md,
+                                            0,
+                                            AppSpacing.md,
+                                            AppSpacing.md),
                                         child: Column(
-                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
                                           children: [
-                                            const Divider(color: AppPalette.divider),
+                                            const Divider(
+                                                color: AppPalette.divider),
                                             const SizedBox(height: 4),
                                             // Detalle completo sin recortar textos
                                             SelectableText.rich(
                                               TextSpan(
-                                                style: AppTypography.bodyMedium.copyWith(fontSize: 13, height: 1.5),
+                                                style: AppTypography.bodyMedium
+                                                    .copyWith(
+                                                        fontSize: 13,
+                                                        height: 1.5),
                                                 children: [
-                                                  const TextSpan(text: '📞 Teléfono: ', style: TextStyle(fontWeight: FontWeight.w600)),
-                                                  TextSpan(text: cliente.telefono.isNotEmpty ? cliente.telefono : 'No registrado'),
-                                                  const TextSpan(text: '\n✉️ Email: ', style: TextStyle(fontWeight: FontWeight.w600)),
-                                                  TextSpan(text: cliente.email.isNotEmpty ? cliente.email : 'No registrado'),
-                                                  const TextSpan(text: '\n📅 Fecha Registro: ', style: TextStyle(fontWeight: FontWeight.w600)),
-                                                  TextSpan(text: cliente.fechaRegistro.toIso8601String().split('T').first),
-                                                  const TextSpan(text: '\n🏢 Organización: ', style: TextStyle(fontWeight: FontWeight.w600)),
-                                                  TextSpan(text: cliente.organizacionId),
+                                                  const TextSpan(
+                                                      text: '🆔 Cédula / Doc: ',
+                                                      style: TextStyle(
+                                                          fontWeight:
+                                                              FontWeight.w600)),
+                                                  TextSpan(
+                                                      text: cliente
+                                                              .documentoCompleto
+                                                              .isNotEmpty
+                                                          ? cliente
+                                                              .documentoCompleto
+                                                          : 'No registrada'),
+                                                  const TextSpan(
+                                                      text: '\n📞 Teléfono: ',
+                                                      style: TextStyle(
+                                                          fontWeight:
+                                                              FontWeight.w600)),
+                                                  TextSpan(
+                                                      text: cliente.telefono
+                                                              .isNotEmpty
+                                                          ? cliente.telefono
+                                                          : 'No registrado'),
+                                                  const TextSpan(
+                                                      text: '\n✉️ Email: ',
+                                                      style: TextStyle(
+                                                          fontWeight:
+                                                              FontWeight.w600)),
+                                                  TextSpan(
+                                                      text: cliente
+                                                              .email.isNotEmpty
+                                                          ? cliente.email
+                                                          : 'No registrado'),
+                                                  const TextSpan(
+                                                      text:
+                                                          '\n📅 Fecha Registro: ',
+                                                      style: TextStyle(
+                                                          fontWeight:
+                                                              FontWeight.w600)),
+                                                  TextSpan(
+                                                      text: cliente
+                                                          .fechaRegistro
+                                                          .toIso8601String()
+                                                          .split('T')
+                                                          .first),
+                                                  const TextSpan(
+                                                      text:
+                                                          '\n🏢 Organización: ',
+                                                      style: TextStyle(
+                                                          fontWeight:
+                                                              FontWeight.w600)),
+                                                  TextSpan(
+                                                      text: cliente
+                                                          .organizacionId),
                                                 ],
                                               ),
                                             ),
                                             const SizedBox(height: 8),
                                             Wrap(
-                                              crossAxisAlignment: WrapCrossAlignment.center,
+                                              crossAxisAlignment:
+                                                  WrapCrossAlignment.center,
                                               spacing: 8,
                                               runSpacing: 4,
                                               children: [
                                                 Row(
-                                                  mainAxisSize: MainAxisSize.min,
+                                                  mainAxisSize:
+                                                      MainAxisSize.min,
                                                   children: [
                                                     Text(
                                                       'Deuda Total: ',
-                                                      style: AppTypography.labelSmall.copyWith(
-                                                        color: hasDebt ? AppPalette.error : AppPalette.textSecondary,
-                                                        fontWeight: FontWeight.w600,
+                                                      style: AppTypography
+                                                          .labelSmall
+                                                          .copyWith(
+                                                        color: hasDebt
+                                                            ? AppPalette.error
+                                                            : AppPalette
+                                                                .textSecondary,
+                                                        fontWeight:
+                                                            FontWeight.w600,
                                                       ),
                                                     ),
                                                     AppMoneyText(
                                                       amount: deudaReal,
-                                                      currency: MoneyCurrency.usd,
-                                                      nature: hasDebt ? MoneyNature.debt : MoneyNature.neutral,
+                                                      currency:
+                                                          MoneyCurrency.usd,
+                                                      nature: hasDebt
+                                                          ? MoneyNature.debt
+                                                          : MoneyNature.neutral,
                                                       fontSize: 13,
-                                                      fontWeight: FontWeight.w600,
+                                                      fontWeight:
+                                                          FontWeight.w600,
                                                     ),
                                                   ],
                                                 ),
@@ -305,23 +471,45 @@ class _ClientesView extends StatelessWidget {
                                                     amount: saldoAFavor,
                                                     isCredit: true,
                                                     onTap: () {
-                                                      final pendingVentas = ventasDelCliente.where((v) => v.deudaUsd > 0).toList();
-                                                      if (pendingVentas.isNotEmpty) {
-                                                        final targetVenta = pendingVentas.first;
-                                                        final applyCubit = ApplyCreditCubit(
-                                                          repository: ServiceLocator().creditRepository,
-                                                          dataService: cubit.dataService,
+                                                      final pendingVentas =
+                                                          ventasDelCliente
+                                                              .where((v) =>
+                                                                  v.deudaUsd >
+                                                                  0)
+                                                              .toList();
+                                                      if (pendingVentas
+                                                          .isNotEmpty) {
+                                                        final targetVenta =
+                                                            pendingVentas.first;
+                                                        final applyCubit =
+                                                            ApplyCreditCubit(
+                                                          repository:
+                                                              ServiceLocator()
+                                                                  .creditRepository,
+                                                          dataService:
+                                                              cubit.dataService,
                                                         );
                                                         ApplyCreditSheet.show(
                                                           context,
                                                           cubit: applyCubit,
                                                           clienteId: cliente.id,
-                                                          clienteNombre: cliente.nombre,
-                                                          ventaId: targetVenta.id,
-                                                          deudaVenta: targetVenta.deudaUsd,
-                                                          totalCreditoDisponible: saldoAFavor,
-                                                          origenVentaId: clientCredits.firstOrNull?.origenVentaId,
-                                                          userEmail: cubit.dataService.currentUsuarioEmail ?? 'Antigravity Senior Agent',
+                                                          clienteNombre:
+                                                              cliente.nombre,
+                                                          ventaId:
+                                                              targetVenta.id,
+                                                          deudaVenta:
+                                                              targetVenta
+                                                                  .deudaUsd,
+                                                          totalCreditoDisponible:
+                                                              saldoAFavor,
+                                                          origenVentaId:
+                                                              clientCredits
+                                                                  .firstOrNull
+                                                                  ?.origenVentaId,
+                                                          userEmail: cubit
+                                                                  .dataService
+                                                                  .currentUsuarioEmail ??
+                                                              'Antigravity Senior Agent',
                                                         );
                                                       }
                                                     },
@@ -332,44 +520,68 @@ class _ClientesView extends StatelessWidget {
                                             // Botones de acción con Wrap para evitar overflow en pantallas estrechas
                                             Wrap(
                                               alignment: WrapAlignment.end,
-                                              crossAxisAlignment: WrapCrossAlignment.center,
+                                              crossAxisAlignment:
+                                                  WrapCrossAlignment.center,
                                               spacing: 8,
                                               runSpacing: 8,
                                               children: [
                                                 OutlinedButton.icon(
-                                                  style: OutlinedButton.styleFrom(
-                                                    visualDensity: VisualDensity.compact,
-                                                    foregroundColor: AppPalette.blue700,
-                                                    side: const BorderSide(color: AppPalette.border),
+                                                  style:
+                                                      OutlinedButton.styleFrom(
+                                                    visualDensity:
+                                                        VisualDensity.compact,
+                                                    foregroundColor:
+                                                        AppPalette.blue700,
+                                                    side: const BorderSide(
+                                                        color:
+                                                            AppPalette.border),
                                                   ),
-                                                  icon: const Icon(CupertinoIcons.cart, size: 16),
-                                                  label: const Text('Ver compras'),
+                                                  icon: const Icon(
+                                                      CupertinoIcons.cart,
+                                                      size: 16),
+                                                  label: const Text('Ver'),
                                                   onPressed: () => context.go(
                                                     '${RoutePaths.ventas}?cliente=${cliente.id}',
                                                   ),
                                                 ),
                                                 OutlinedButton.icon(
-                                                  style: OutlinedButton.styleFrom(
-                                                    visualDensity: VisualDensity.compact,
-                                                    foregroundColor: AppPalette.blue700,
-                                                    side: const BorderSide(color: AppPalette.border),
+                                                  style:
+                                                      OutlinedButton.styleFrom(
+                                                    visualDensity:
+                                                        VisualDensity.compact,
+                                                    foregroundColor:
+                                                        AppPalette.blue700,
+                                                    side: const BorderSide(
+                                                        color:
+                                                            AppPalette.border),
                                                   ),
-                                                  icon: const Icon(CupertinoIcons.pencil, size: 16),
+                                                  icon: const Icon(
+                                                      CupertinoIcons.pencil,
+                                                      size: 16),
                                                   label: const Text('Editar'),
-                                                  onPressed: () => _showClienteDialog(
+                                                  onPressed: () =>
+                                                      _showClienteDialog(
                                                     context,
                                                     cliente: cliente,
                                                   ),
                                                 ),
                                                 OutlinedButton.icon(
-                                                  style: OutlinedButton.styleFrom(
-                                                    visualDensity: VisualDensity.compact,
-                                                    foregroundColor: AppPalette.error,
-                                                    side: const BorderSide(color: AppPalette.border),
+                                                  style:
+                                                      OutlinedButton.styleFrom(
+                                                    visualDensity:
+                                                        VisualDensity.compact,
+                                                    foregroundColor:
+                                                        AppPalette.error,
+                                                    side: const BorderSide(
+                                                        color:
+                                                            AppPalette.border),
                                                   ),
-                                                  icon: const Icon(CupertinoIcons.trash, size: 16),
+                                                  icon: const Icon(
+                                                      CupertinoIcons.trash,
+                                                      size: 16),
                                                   label: const Text('Eliminar'),
-                                                  onPressed: () => _confirmDelete(
+                                                  onPressed: () =>
+                                                      _confirmDelete(
                                                     context,
                                                     cliente,
                                                   ),
@@ -467,7 +679,10 @@ class _ClienteModalSheet extends StatefulWidget {
 
 class _ClienteModalSheetState extends State<_ClienteModalSheet> {
   late final TextEditingController _nombreController;
-  late final TextEditingController _telefonoController;
+  late String _tipoDocumento;
+  late final TextEditingController _cedulaController;
+  late String _codigoTelefono;
+  late final TextEditingController _telefonoNumeroController;
   late final TextEditingController _emailController;
   late final TextEditingController _deudaController;
   bool _isProcessing = false;
@@ -475,19 +690,48 @@ class _ClienteModalSheetState extends State<_ClienteModalSheet> {
   @override
   void initState() {
     super.initState();
-    _nombreController = TextEditingController(text: widget.cliente?.nombre ?? '');
-    _telefonoController =
-        TextEditingController(text: widget.cliente?.telefono ?? '');
-    _emailController = TextEditingController(text: widget.cliente?.email ?? '');
+    final client = widget.cliente;
+    _nombreController = TextEditingController(text: client?.nombre ?? '');
+    _tipoDocumento = client != null && client.tipoDocumento.isNotEmpty
+        ? client.tipoDocumento
+        : 'V';
+    _cedulaController = TextEditingController(text: client?.cedula ?? '');
+
+    final codigos = widget.cubit.dataService.codigosTelefonoActivos;
+    String initialCodigo = codigos.isNotEmpty ? codigos.first : '0414';
+    String initialNumero = '';
+    final rawTel = client?.telefono.trim() ?? '';
+    if (rawTel.isNotEmpty) {
+      String cleanTel = rawTel;
+      if (cleanTel.startsWith('+58')) {
+        cleanTel = '0${cleanTel.substring(3)}';
+      }
+      for (final cod in codigos) {
+        if (cleanTel.startsWith(cod)) {
+          initialCodigo = cod;
+          initialNumero =
+              cleanTel.substring(cod.length).replaceAll(RegExp(r'[^0-9]'), '');
+          break;
+        }
+      }
+      if (initialNumero.isEmpty) {
+        initialNumero = rawTel.replaceAll(RegExp(r'[^0-9]'), '');
+      }
+    }
+    _codigoTelefono = initialCodigo;
+    _telefonoNumeroController = TextEditingController(text: initialNumero);
+
+    _emailController = TextEditingController(text: client?.email ?? '');
     _deudaController = TextEditingController(
-      text: widget.cliente?.saldoDeudaUsd.toStringAsFixed(2) ?? '0.00',
+      text: client?.saldoDeudaUsd.toStringAsFixed(2) ?? '0.00',
     );
   }
 
   @override
   void dispose() {
     _nombreController.dispose();
-    _telefonoController.dispose();
+    _cedulaController.dispose();
+    _telefonoNumeroController.dispose();
     _emailController.dispose();
     _deudaController.dispose();
     super.dispose();
@@ -497,6 +741,8 @@ class _ClienteModalSheetState extends State<_ClienteModalSheet> {
   Widget build(BuildContext context) {
     final isEditing = widget.cliente != null;
     final id = isEditing ? widget.cliente!.id : widget.nextId;
+    final tiposDoc = widget.cubit.dataService.tiposDocumentoActivos;
+    final codigos = widget.cubit.dataService.codigosTelefonoActivos;
 
     return PopScope(
       canPop: !_isProcessing,
@@ -525,7 +771,8 @@ class _ClienteModalSheetState extends State<_ClienteModalSheet> {
                     CupertinoIcons.xmark_circle_fill,
                     color: AppPalette.textSecondary,
                   ),
-                  onPressed: _isProcessing ? null : () => Navigator.pop(context),
+                  onPressed:
+                      _isProcessing ? null : () => Navigator.pop(context),
                 ),
               ],
             ),
@@ -536,11 +783,108 @@ class _ClienteModalSheetState extends State<_ClienteModalSheet> {
               hint: 'Ej: Juan Pérez',
             ),
             const SizedBox(height: AppSpacing.sm),
-            AppTextField(
-              label: 'Teléfono (E.164)',
-              controller: _telefonoController,
-              hint: '+584120000001',
-              keyboardType: TextInputType.phone,
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                SizedBox(
+                  width: 90,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Text('Tipo Doc.', style: AppTypography.labelSmall),
+                      // const SizedBox(height: 6),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10),
+                        decoration: BoxDecoration(
+                          color: AppPalette.surface,
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: AppPalette.divider),
+                        ),
+                        child: DropdownButtonHideUnderline(
+                          child: DropdownButton<String>(
+                            value: tiposDoc.contains(_tipoDocumento)
+                                ? _tipoDocumento
+                                : tiposDoc.first,
+                            isExpanded: true,
+                            items: tiposDoc
+                                .map((t) =>
+                                    DropdownMenuItem(value: t, child: Text(t)))
+                                .toList(),
+                            onChanged: _isProcessing
+                                ? null
+                                : (v) {
+                                    if (v != null) {
+                                      setState(() => _tipoDocumento = v);
+                                    }
+                                  },
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: AppSpacing.sm),
+                Expanded(
+                  child: AppTextField(
+                    label: 'Cédula / Documento',
+                    controller: _cedulaController,
+                    hint: '12345678',
+                    keyboardType: TextInputType.number,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: AppSpacing.sm),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                SizedBox(
+                  width: 105,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Text('Código', style: AppTypography.labelSmall),
+                      // const SizedBox(height: 6),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10),
+                        decoration: BoxDecoration(
+                          color: AppPalette.surface,
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: AppPalette.divider),
+                        ),
+                        child: DropdownButtonHideUnderline(
+                          child: DropdownButton<String>(
+                            value: codigos.contains(_codigoTelefono)
+                                ? _codigoTelefono
+                                : codigos.first,
+                            isExpanded: true,
+                            items: codigos
+                                .map((c) =>
+                                    DropdownMenuItem(value: c, child: Text(c)))
+                                .toList(),
+                            onChanged: _isProcessing
+                                ? null
+                                : (v) {
+                                    if (v != null) {
+                                      setState(() => _codigoTelefono = v);
+                                    }
+                                  },
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: AppSpacing.sm),
+                Expanded(
+                  child: AppTextField(
+                    label: 'Número de Teléfono',
+                    controller: _telefonoNumeroController,
+                    hint: '1234567',
+                    keyboardType: TextInputType.phone,
+                  ),
+                ),
+              ],
             ),
             const SizedBox(height: AppSpacing.sm),
             AppTextField(
@@ -562,7 +906,8 @@ class _ClienteModalSheetState extends State<_ClienteModalSheet> {
                 Expanded(
                   child: AppOutlinedButton(
                     label: 'Cancelar',
-                    onPressed: _isProcessing ? null : () => Navigator.pop(context),
+                    onPressed:
+                        _isProcessing ? null : () => Navigator.pop(context),
                   ),
                 ),
                 const SizedBox(width: AppSpacing.md),
@@ -587,23 +932,32 @@ class _ClienteModalSheetState extends State<_ClienteModalSheet> {
                               return;
                             }
 
+                            final numTel =
+                                _telefonoNumeroController.text.trim();
+                            final telefonoCompleto = numTel.isNotEmpty
+                                ? '$_codigoTelefono$numTel'
+                                : '';
+
                             final nuevoCliente = Cliente(
                               id: id,
                               nombre: nombre,
-                              telefono: _telefonoController.text.trim(),
+                              telefono: telefonoCompleto,
                               email: _emailController.text.trim(),
                               saldoDeudaUsd: double.tryParse(
                                     _deudaController.text.replaceAll(',', '.'),
                                   ) ??
                                   0.0,
-                              fechaRegistro:
-                                  widget.cliente?.fechaRegistro ?? DateTime.now(),
+                              fechaRegistro: widget.cliente?.fechaRegistro ??
+                                  DateTime.now(),
+                              tipoDocumento: _tipoDocumento,
+                              cedula: _cedulaController.text.trim(),
                             );
 
                             Logger.info(
                               'ClientesPage: Guardando cliente: ${nuevoCliente.id} (${nuevoCliente.nombre})',
                             );
-                            Logger.object('Cliente Datos', nuevoCliente.toMap());
+                            Logger.object(
+                                'Cliente Datos', nuevoCliente.toMap());
 
                             final navigator = Navigator.of(context);
                             final messenger = ScaffoldMessenger.of(context);

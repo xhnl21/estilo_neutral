@@ -20,3 +20,5 @@ export 'usuario_organizacion.dart';
 export 'metodo_pago.dart';
 export 'number_parser.dart';
 export 'batch_transaction.dart';
+export 'codigo_telefono.dart';
+export 'tipo_documento.dart';

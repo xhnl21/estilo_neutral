@@ -85,9 +85,35 @@ class SheetsDataService extends ChangeNotifier {
   List<MonedaOrganizacion> _monedasOrganizacion = [];
   List<GaleriaItem> _galeria = [];
   List<ClientCredit> _creditosClientes = [];
+  List<CodigoTelefono> _codigosTelefono = [
+    const CodigoTelefono(id: 'ct00000001', codigo: '0414', status: true),
+    const CodigoTelefono(id: 'ct00000002', codigo: '0424', status: true),
+    const CodigoTelefono(id: 'ct00000003', codigo: '0416', status: true),
+    const CodigoTelefono(id: 'ct00000004', codigo: '0426', status: true),
+    const CodigoTelefono(id: 'ct00000005', codigo: '0412', status: true),
+    const CodigoTelefono(id: 'ct00000006', codigo: '0422', status: true),
+  ];
+  List<CodigoTelefono> get codigosTelefono => List.unmodifiable(_codigosTelefono);
+  List<String> get codigosTelefonoActivos {
+    final list = _codigosTelefono.where((c) => c.status).map((c) => c.codigo).toList();
+    return list.isNotEmpty ? list : const ['0414', '0424', '0416', '0426', '0412', '0422'];
+  }
+
+  List<TipoDocumento> _tiposDocumento = [
+    const TipoDocumento(id: 'td00000001', tipo: 'V', descripcion: 'Venezolano', status: true),
+    const TipoDocumento(id: 'td00000002', tipo: 'E', descripcion: 'Extranjero', status: true),
+    const TipoDocumento(id: 'td00000003', tipo: 'J', descripcion: 'Jurídico', status: true),
+    const TipoDocumento(id: 'td00000004', tipo: 'G', descripcion: 'Gubernamental', status: true),
+  ];
+  List<TipoDocumento> get tiposDocumento => List.unmodifiable(_tiposDocumento);
+  List<String> get tiposDocumentoActivos {
+    final list = _tiposDocumento.where((t) => t.status).map((t) => t.tipo).toList();
+    return list.isNotEmpty ? list : const ['V', 'E', 'J', 'G'];
+  }
 
   /// Historial de saldos a favor y compensaciones de créditos de clientes (hoja "creditos_clientes")
-  List<ClientCredit> get creditosClientes => List.unmodifiable(_creditosClientes);
+  List<ClientCredit> get creditosClientes =>
+      List.unmodifiable(_creditosClientes.where((c) => _matchesCurrentOrg(c.organizacionId)));
 
   /// Organización actualmente activa en la sesión (resuelta tras el login mediante
   /// la hoja de relación "usuario_organizacion"). Las 9 hojas de negocio (todas
@@ -394,6 +420,16 @@ class SheetsDataService extends ChangeNotifier {
           expectedHeaders: const ['id', 'organizacion_id', 'moneda', 'actualizado_en'],
         ),
         safeFetch(
+          'codigo de telefonos',
+          _parseCodigosTelefono,
+          expectedHeaders: const ['id', 'codigo', 'status'],
+        ),
+        safeFetch(
+          'tipo de documento',
+          _parseTiposDocumento,
+          expectedHeaders: const ['id', 'tipo', 'descripcion', 'status'],
+        ),
+        safeFetch(
           'creditos_clientes',
           _parseCreditosClientes,
           expectedHeaders: const [
@@ -682,6 +718,22 @@ class SheetsDataService extends ChangeNotifier {
         .toList();
     final localPending = _creditosClientes.where((local) => !cloud.any((c) => c.id == local.id)).toList();
     _creditosClientes = [...cloud, ...localPending];
+  }
+
+  void _parseCodigosTelefono(List<List<String>> rows) {
+    if (rows.isEmpty) return;
+    _codigosTelefono = rows
+        .where((r) => r.isNotEmpty && r.first.trim().isNotEmpty)
+        .map((r) => CodigoTelefono.fromRow(r))
+        .toList();
+  }
+
+  void _parseTiposDocumento(List<List<String>> rows) {
+    if (rows.isEmpty) return;
+    _tiposDocumento = rows
+        .where((r) => r.isNotEmpty && r.first.trim().isNotEmpty)
+        .map((r) => TipoDocumento.fromRow(r))
+        .toList();
   }
 
   void addCreditoClienteLocal(ClientCredit credit) {
@@ -1029,6 +1081,8 @@ class SheetsDataService extends ChangeNotifier {
       saldoDeudaUsd: cliente.saldoDeudaUsd,
       fechaRegistro: cliente.fechaRegistro,
       organizacionId: _currentOrganizacionId ?? '67774411-6aa1-4aa3-a4b2-d3fc6913b768',
+      tipoDocumento: cliente.tipoDocumento,
+      cedula: cliente.cedula,
     );
     Logger.info('SheetsDataService: Registrando nuevo cliente localmente: ${stamped.id} (${stamped.nombre})');
     _clientes.add(stamped);
@@ -1059,6 +1113,8 @@ class SheetsDataService extends ChangeNotifier {
           saldoDeudaUsd: stamped.saldoDeudaUsd,
           fechaRegistro: stamped.fechaRegistro,
           organizacionId: stamped.organizacionId,
+          tipoDocumento: stamped.tipoDocumento,
+          cedula: stamped.cedula,
         );
         notifyListeners();
       }
@@ -2723,6 +2779,8 @@ class SheetsDataService extends ChangeNotifier {
           id: idReal,
           nombre: usuario.nombre,
           email: usuario.email,
+          tipoDocumento: usuario.tipoDocumento,
+          cedula: usuario.cedula,
         );
         notifyListeners();
       }
@@ -3198,6 +3256,358 @@ class SheetsDataService extends ChangeNotifier {
       }
     }
     return idReal != null;
+  }
+
+  // =========================================================================
+  // CRUD DE CÓDIGOS DE TELÉFONO ("codigo de telefonos")
+  // =========================================================================
+
+  /// Verifica si un código de teléfono está siendo utilizado por clientes.
+  bool isCodigoTelefonoEnUso(String codigo) {
+    final cleanCode = codigo.trim();
+    if (cleanCode.isEmpty) return false;
+    return _clientes.any((c) => c.telefono.trim().startsWith(cleanCode));
+  }
+
+  /// Agrega un nuevo código de teléfono a la hoja "codigo de telefonos".
+  Future<void> addCodigoTelefono({required String codigo}) async {
+    final trimmed = codigo.trim();
+    if (trimmed.isEmpty) {
+      throw ArgumentError('El código de teléfono no puede estar vacío');
+    }
+
+    if (_codigosTelefono.any((c) => c.codigo.trim() == trimmed)) {
+      throw ArgumentError('Ya existe el código de teléfono "$trimmed"');
+    }
+
+    int maxIdNum = 0;
+    for (final c in _codigosTelefono) {
+      final digits = RegExp(r'\d+').firstMatch(c.id)?.group(0);
+      if (digits != null) {
+        final val = int.tryParse(digits) ?? 0;
+        if (val > maxIdNum) maxIdNum = val;
+      }
+    }
+    final nextId = 'ct${(maxIdNum + 1).toString().padLeft(8, '0')}';
+
+    final nuevo = CodigoTelefono(id: nextId, codigo: trimmed, status: true);
+    _codigosTelefono.add(nuevo);
+
+    _logAudit(
+      hoja: 'codigo de telefonos',
+      celda: 'A${_codigosTelefono.length + 1}',
+      valorAnterior: 'null',
+      valorNuevo: '$nextId: $trimmed',
+      accion: 'creacion_codigo_telefono',
+      norma: 'ISO 8000 §4.2',
+      observaciones: 'Creación de código de teléfono "$trimmed"',
+    );
+
+    _postToAppsScript({
+      'action': 'create',
+      'sheet': 'codigo de telefonos',
+      'data': nuevo.toMap(),
+    });
+
+    notifyListeners();
+  }
+
+  /// Actualiza un código de teléfono existente.
+  Future<bool> updateCodigoTelefono({required String id, required String nuevoCodigo}) async {
+    final idx = _codigosTelefono.indexWhere((c) => c.id == id);
+    if (idx == -1) return false;
+
+    final trimmed = nuevoCodigo.trim();
+    if (trimmed.isEmpty) {
+      throw ArgumentError('El código de teléfono no puede estar vacío');
+    }
+
+    if (_codigosTelefono.any((c) => c.id != id && c.codigo.trim() == trimmed)) {
+      throw ArgumentError('Ya existe otro registro con el código "$trimmed"');
+    }
+
+    final anterior = _codigosTelefono[idx];
+    final actualizado = anterior.copyWith(codigo: trimmed);
+    _codigosTelefono[idx] = actualizado;
+
+    _logAudit(
+      hoja: 'codigo de telefonos',
+      celda: 'B${idx + 2}',
+      valorAnterior: anterior.codigo,
+      valorNuevo: trimmed,
+      accion: 'actualizacion_codigo_telefono',
+      norma: 'ISO 8000 §4.2',
+      observaciones: 'Código modificado de "${anterior.codigo}" a "$trimmed"',
+    );
+
+    _postToAppsScript({
+      'action': 'update',
+      'sheet': 'codigo de telefonos',
+      'id': id,
+      'data': {'codigo': trimmed},
+    });
+
+    notifyListeners();
+    return true;
+  }
+
+  /// Alterna el status de un código de teléfono (activo/inactivo).
+  Future<bool> toggleCodigoTelefonoStatus(String id) async {
+    final idx = _codigosTelefono.indexWhere((c) => c.id == id);
+    if (idx == -1) return false;
+
+    final actual = _codigosTelefono[idx];
+    final nuevoStatus = !actual.status;
+
+    if (!nuevoStatus && isCodigoTelefonoEnUso(actual.codigo)) {
+      throw StateError(
+        'No se puede deshabilitar el código "${actual.codigo}" porque está asignado a clientes o usuarios registrados.',
+      );
+    }
+
+    _codigosTelefono[idx] = actual.copyWith(status: nuevoStatus);
+
+    _logAudit(
+      hoja: 'codigo de telefonos',
+      celda: 'C${idx + 2}',
+      valorAnterior: actual.status.toString(),
+      valorNuevo: nuevoStatus.toString(),
+      accion: 'cambio_status_codigo_telefono',
+      norma: 'ISO 8000 §5.3',
+      observaciones: 'Código "${actual.codigo}" ${nuevoStatus ? "activado" : "deshabilitado"}',
+    );
+
+    _postToAppsScript({
+      'action': 'update',
+      'sheet': 'codigo de telefonos',
+      'id': id,
+      'data': {'status': nuevoStatus},
+    });
+
+    notifyListeners();
+    return true;
+  }
+
+  /// Elimina un código de teléfono si no está en uso.
+  Future<bool> deleteCodigoTelefono(String id) async {
+    final idx = _codigosTelefono.indexWhere((c) => c.id == id);
+    if (idx == -1) return false;
+
+    final actual = _codigosTelefono[idx];
+    if (isCodigoTelefonoEnUso(actual.codigo)) {
+      throw StateError(
+        'No se puede eliminar el código "${actual.codigo}" porque está en uso por clientes o usuarios registrados.',
+      );
+    }
+
+    _codigosTelefono.removeAt(idx);
+
+    _logAudit(
+      hoja: 'codigo de telefonos',
+      celda: 'A${idx + 2}',
+      valorAnterior: actual.codigo,
+      valorNuevo: 'ELIMINADO',
+      accion: 'eliminacion_codigo_telefono',
+      norma: 'GDPR Art. 17 / ISO 27001',
+      observaciones: 'Eliminación del código de teléfono "${actual.codigo}"',
+    );
+
+    _postToAppsScript({
+      'action': 'delete',
+      'sheet': 'codigo de telefonos',
+      'id': id,
+    });
+
+    notifyListeners();
+    return true;
+  }
+
+  // =========================================================================
+  // CRUD DE TIPOS DE DOCUMENTO ("tipo de documento")
+  // =========================================================================
+
+  /// Verifica si un tipo de documento está siendo utilizado por clientes o usuarios.
+  bool isTipoDocumentoEnUso(String tipo) {
+    final cleanTipo = tipo.trim().toUpperCase();
+    if (cleanTipo.isEmpty) return false;
+    final clienteUsa = _clientes.any((c) => c.tipoDocumento.trim().toUpperCase() == cleanTipo);
+    final usuarioUsa = _usuarios.any((u) => u.tipoDocumento.trim().toUpperCase() == cleanTipo);
+    return clienteUsa || usuarioUsa;
+  }
+
+  /// Agrega un nuevo tipo de documento a la hoja "tipo de documento".
+  Future<void> addTipoDocumento({
+    required String tipo,
+    required String descripcion,
+  }) async {
+    final cleanTipo = tipo.trim().toUpperCase();
+    final cleanDesc = descripcion.trim();
+
+    if (cleanTipo.isEmpty) {
+      throw ArgumentError('El tipo de documento no puede estar vacío');
+    }
+    if (cleanDesc.isEmpty) {
+      throw ArgumentError('La descripción no puede estar vacía');
+    }
+
+    if (_tiposDocumento.any((t) => t.tipo.trim().toUpperCase() == cleanTipo)) {
+      throw ArgumentError('Ya existe un tipo de documento con la letra "$cleanTipo"');
+    }
+
+    int maxIdNum = 0;
+    for (final t in _tiposDocumento) {
+      final digits = RegExp(r'\d+').firstMatch(t.id)?.group(0);
+      if (digits != null) {
+        final val = int.tryParse(digits) ?? 0;
+        if (val > maxIdNum) maxIdNum = val;
+      }
+    }
+    final nextId = 'td${(maxIdNum + 1).toString().padLeft(8, '0')}';
+
+    final nuevo = TipoDocumento(
+      id: nextId,
+      tipo: cleanTipo,
+      descripcion: cleanDesc,
+      status: true,
+    );
+    _tiposDocumento.add(nuevo);
+
+    _logAudit(
+      hoja: 'tipo de documento',
+      celda: 'A${_tiposDocumento.length + 1}',
+      valorAnterior: 'null',
+      valorNuevo: '$nextId: $cleanTipo - $cleanDesc',
+      accion: 'creacion_tipo_documento',
+      norma: 'ISO 8000 §4.2',
+      observaciones: 'Creación de tipo de documento "$cleanTipo" ($cleanDesc)',
+    );
+
+    _postToAppsScript({
+      'action': 'create',
+      'sheet': 'tipo de documento',
+      'data': nuevo.toMap(),
+    });
+
+    notifyListeners();
+  }
+
+  /// Actualiza un tipo de documento existente.
+  Future<bool> updateTipoDocumento({
+    required String id,
+    required String nuevoTipo,
+    required String nuevaDescripcion,
+  }) async {
+    final idx = _tiposDocumento.indexWhere((t) => t.id == id);
+    if (idx == -1) return false;
+
+    final cleanTipo = nuevoTipo.trim().toUpperCase();
+    final cleanDesc = nuevaDescripcion.trim();
+
+    if (cleanTipo.isEmpty) {
+      throw ArgumentError('El tipo de documento no puede estar vacío');
+    }
+    if (cleanDesc.isEmpty) {
+      throw ArgumentError('La descripción no puede estar vacía');
+    }
+
+    if (_tiposDocumento.any((t) => t.id != id && t.tipo.trim().toUpperCase() == cleanTipo)) {
+      throw ArgumentError('Ya existe otro registro con el tipo "$cleanTipo"');
+    }
+
+    final anterior = _tiposDocumento[idx];
+    final actualizado = anterior.copyWith(tipo: cleanTipo, descripcion: cleanDesc);
+    _tiposDocumento[idx] = actualizado;
+
+    _logAudit(
+      hoja: 'tipo de documento',
+      celda: 'B${idx + 2}',
+      valorAnterior: '${anterior.tipo} - ${anterior.descripcion}',
+      valorNuevo: '$cleanTipo - $cleanDesc',
+      accion: 'actualizacion_tipo_documento',
+      norma: 'ISO 8000 §4.2',
+      observaciones: 'Tipo de documento modificado a "$cleanTipo - $cleanDesc"',
+    );
+
+    _postToAppsScript({
+      'action': 'update',
+      'sheet': 'tipo de documento',
+      'id': id,
+      'data': {'tipo': cleanTipo, 'descripcion': cleanDesc},
+    });
+
+    notifyListeners();
+    return true;
+  }
+
+  /// Alterna el status de un tipo de documento (activo/inactivo).
+  Future<bool> toggleTipoDocumentoStatus(String id) async {
+    final idx = _tiposDocumento.indexWhere((t) => t.id == id);
+    if (idx == -1) return false;
+
+    final actual = _tiposDocumento[idx];
+    final nuevoStatus = !actual.status;
+
+    if (!nuevoStatus && isTipoDocumentoEnUso(actual.tipo)) {
+      throw StateError(
+        'No se puede deshabilitar el tipo de documento "${actual.tipo}" porque está asignado a clientes o usuarios registrados.',
+      );
+    }
+
+    _tiposDocumento[idx] = actual.copyWith(status: nuevoStatus);
+
+    _logAudit(
+      hoja: 'tipo de documento',
+      celda: 'D${idx + 2}',
+      valorAnterior: actual.status.toString(),
+      valorNuevo: nuevoStatus.toString(),
+      accion: 'cambio_status_tipo_documento',
+      norma: 'ISO 8000 §5.3',
+      observaciones: 'Tipo de documento "${actual.tipo}" ${nuevoStatus ? "activado" : "deshabilitado"}',
+    );
+
+    _postToAppsScript({
+      'action': 'update',
+      'sheet': 'tipo de documento',
+      'id': id,
+      'data': {'status': nuevoStatus},
+    });
+
+    notifyListeners();
+    return true;
+  }
+
+  /// Elimina un tipo de documento si no está en uso.
+  Future<bool> deleteTipoDocumento(String id) async {
+    final idx = _tiposDocumento.indexWhere((t) => t.id == id);
+    if (idx == -1) return false;
+
+    final actual = _tiposDocumento[idx];
+    if (isTipoDocumentoEnUso(actual.tipo)) {
+      throw StateError(
+        'No se puede eliminar el tipo de documento "${actual.tipo}" porque está en uso por clientes o usuarios registrados.',
+      );
+    }
+
+    _tiposDocumento.removeAt(idx);
+
+    _logAudit(
+      hoja: 'tipo de documento',
+      celda: 'A${idx + 2}',
+      valorAnterior: actual.tipo,
+      valorNuevo: 'ELIMINADO',
+      accion: 'eliminacion_tipo_documento',
+      norma: 'GDPR Art. 17 / ISO 27001',
+      observaciones: 'Eliminación del tipo de documento "${actual.tipo}"',
+    );
+
+    _postToAppsScript({
+      'action': 'delete',
+      'sheet': 'tipo de documento',
+      'id': id,
+    });
+
+    notifyListeners();
+    return true;
   }
 }
 

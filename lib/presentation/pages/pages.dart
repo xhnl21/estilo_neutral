@@ -11,3 +11,5 @@ export 'usuarios_page.dart';
 export 'ventas_page.dart';
 export 'metodos_pago_page.dart';
 export 'tasas_page.dart';
+export 'codigos_telefono_page.dart';
+export 'tipos_documento_page.dart';

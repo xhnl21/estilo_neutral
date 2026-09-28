@@ -59,6 +59,16 @@ class AuditRoutes implements FeatureRouteDefinition {
         name: RouteNames.tasas,
         builder: (context, state) => TasasPage(dataService: dataService),
       ),
+      GoRoute(
+        path: RoutePaths.codigosTelefono,
+        name: RouteNames.codigosTelefono,
+        builder: (context, state) => CodigosTelefonoPage(dataService: dataService),
+      ),
+      GoRoute(
+        path: RoutePaths.tiposDocumento,
+        name: RouteNames.tiposDocumento,
+        builder: (context, state) => TiposDocumentoPage(dataService: dataService),
+      ),
     ];
   }
 }

@@ -36,7 +36,9 @@ const ID_PREFIXES = {
   usuarios: "u",
   tasas: "t",
   moneda_organizacion: "mo",
-  creditos_clientes: "cr"
+  creditos_clientes: "cr",
+  "codigo de telefonos": "ct",
+  "tipo de documento": "td"
 };
 
 function _siguienteIdServidor(sheet, prefijo) {
@@ -543,7 +545,9 @@ function _handleCreate(ss, sheet, sheetName, data, skipAudit) {
       data.email || "",
       data.saldo_deuda_usd || 0.0,
       data.fecha_registro || Utilities.formatDate(new Date(), "GMT-4", "yyyy-MM-dd"),
-      data.organizacion_id || ORGANIZACION_ID_DEFAULT
+      data.organizacion_id || ORGANIZACION_ID_DEFAULT,
+      data.tipo_documento || "V",
+      data.cedula || ""
     ];
   } else if (sheetName === "inventario") {
     // foto_id es una FK a "galeria".id (nunca la URL directa) — la columna
@@ -663,7 +667,9 @@ function _handleCreate(ss, sheet, sheetName, data, skipAudit) {
     rowValues = [
       data.id,
       (data.email || "").toString().trim().toLowerCase(),
-      data.nombre || ""
+      data.nombre || "",
+      data.tipo_documento || "V",
+      data.cedula || ""
     ];
   } else if (sheetName === "organizaciones") {
     rowValues = [
@@ -757,6 +763,8 @@ function _handleUpdate(ss, sheet, sheetName, id, data, skipAudit) {
     if (data.telefono !== undefined) sheet.getRange(rowIndex, 3).setValue(data.telefono);
     if (data.email !== undefined) sheet.getRange(rowIndex, 4).setValue(data.email);
     if (data.saldo_deuda_usd !== undefined) sheet.getRange(rowIndex, 5).setValue(data.saldo_deuda_usd);
+    if (data.tipo_documento !== undefined) sheet.getRange(rowIndex, 8).setValue(data.tipo_documento);
+    if (data.cedula !== undefined) sheet.getRange(rowIndex, 9).setValue(data.cedula);
   } else if (sheetName === "inventario") {
     if (data.cantidad !== undefined) sheet.getRange(rowIndex, 2).setValue(data.cantidad);
     if (data.nombre !== undefined) sheet.getRange(rowIndex, 3).setValue(data.nombre);
@@ -797,6 +805,8 @@ function _handleUpdate(ss, sheet, sheetName, id, data, skipAudit) {
   } else if (sheetName === "usuarios") {
     if (data.email !== undefined) sheet.getRange(rowIndex, 2).setValue(data.email.toString().trim().toLowerCase());
     if (data.nombre !== undefined) sheet.getRange(rowIndex, 3).setValue(data.nombre);
+    if (data.tipo_documento !== undefined) sheet.getRange(rowIndex, 4).setValue(data.tipo_documento);
+    if (data.cedula !== undefined) sheet.getRange(rowIndex, 5).setValue(data.cedula);
   } else if (sheetName === "organizaciones") {
     if (data.nombre !== undefined) sheet.getRange(rowIndex, 2).setValue(data.nombre);
   } else if (sheetName === "moneda_organizacion") {

@@ -89,14 +89,16 @@ class _InventarioViewState extends State<_InventarioView> {
             backgroundColor: AppPalette.primary,
             foregroundColor: Colors.white,
             icon: const Icon(CupertinoIcons.plus_app, size: 20),
-            label: const Text('Nuevo Producto', style: TextStyle(fontWeight: FontWeight.w600)),
+            label: const Text('Nuevo Producto',
+                style: TextStyle(fontWeight: FontWeight.w600)),
             onPressed: () => _showProductoDialog(context),
           ),
           body: Column(
             children: [
               // Barra de búsqueda
               Padding(
-                padding: const EdgeInsets.fromLTRB(AppSpacing.lg, AppSpacing.sm, AppSpacing.lg, AppSpacing.sm),
+                padding: const EdgeInsets.fromLTRB(
+                    AppSpacing.lg, AppSpacing.sm, AppSpacing.lg, AppSpacing.sm),
                 child: AppTextField(
                   label: 'Buscar producto',
                   hint: 'Prenda, marca, modelo, talla o ID...',
@@ -109,7 +111,8 @@ class _InventarioViewState extends State<_InventarioView> {
               Expanded(
                 child: AnimatedSwitcher(
                   duration: const Duration(milliseconds: 300),
-                  child: (state.status == InventarioStatus.loading && state.productos.isEmpty)
+                  child: (state.status == InventarioStatus.loading &&
+                          state.productos.isEmpty)
                       ? const InventarioSkeleton(
                           key: ValueKey('inventario_skeleton'),
                         )
@@ -117,34 +120,45 @@ class _InventarioViewState extends State<_InventarioView> {
                           ? const AppEmptyState(
                               key: ValueKey('inventario_empty'),
                               title: 'No hay productos en inventario',
-                              description: 'Registra prendas usando el botón "Nuevo Producto".',
+                              description:
+                                  'Registra prendas usando el botón "Nuevo Producto".',
                               icon: CupertinoIcons.tag,
                             )
                           : ListView(
                               key: const ValueKey('inventario_list'),
-                              padding: const EdgeInsets.fromLTRB(AppSpacing.lg, 0, AppSpacing.lg, 80),
+                              padding: const EdgeInsets.fromLTRB(
+                                  AppSpacing.lg, 0, AppSpacing.lg, 80),
                               children: [
                                 ExpansionPanelList(
                                   elevation: 1,
-                                  expandedHeaderPadding: const EdgeInsets.symmetric(vertical: 4),
+                                  expandedHeaderPadding:
+                                      const EdgeInsets.symmetric(vertical: 4),
                                   expansionCallback: (panelIndex, isExpanded) {
                                     final producto = productos[panelIndex];
                                     cubit.toggleExpanded(producto.id);
                                   },
-                                  children: productos.map<ExpansionPanel>((producto) {
+                                  children:
+                                      productos.map<ExpansionPanel>((producto) {
                                     final isDepleted = producto.cantidad <= 0;
-                                    final isLowStock = producto.cantidad > 0 && producto.cantidad <= 3;
-                                    final fotoUrl = widget.dataService.fotoUrlPorId(producto.fotoId);
-                                    final hasPhoto = fotoUrl != null && fotoUrl.isNotEmpty;
-                                    final isExpanded = state.expandedProductoId == producto.id;
+                                    final isLowStock = producto.cantidad > 0 &&
+                                        producto.cantidad <= 3;
+                                    final fotoUrl = widget.dataService
+                                        .fotoUrlPorId(producto.fotoId);
+                                    final hasPhoto =
+                                        fotoUrl != null && fotoUrl.isNotEmpty;
+                                    final isExpanded =
+                                        state.expandedProductoId == producto.id;
 
                                     return ExpansionPanel(
                                       isExpanded: isExpanded,
                                       canTapOnHeader: true,
                                       backgroundColor: AppPalette.surface,
-                                      headerBuilder: (context, isHeaderExpanded) {
+                                      headerBuilder:
+                                          (context, isHeaderExpanded) {
                                         return Padding(
-                                          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md, vertical: AppSpacing.sm),
+                                          padding: const EdgeInsets.symmetric(
+                                              horizontal: AppSpacing.md,
+                                              vertical: AppSpacing.sm),
                                           child: Row(
                                             children: [
                                               // Miniatura foto
@@ -153,60 +167,101 @@ class _InventarioViewState extends State<_InventarioView> {
                                                 height: 44,
                                                 decoration: BoxDecoration(
                                                   color: AppPalette.blue100,
-                                                  borderRadius: BorderRadius.circular(8),
+                                                  borderRadius:
+                                                      BorderRadius.circular(8),
                                                 ),
                                                 child: hasPhoto
                                                     ? ClipRRect(
-                                                        borderRadius: BorderRadius.circular(8),
+                                                        borderRadius:
+                                                            BorderRadius
+                                                                .circular(8),
                                                         child: Image.network(
                                                           fotoUrl,
                                                           fit: BoxFit.cover,
-                                                          errorBuilder: (_, __, ___) => const Center(
-                                                            child: Icon(CupertinoIcons.photo, color: AppPalette.blue700, size: 20),
+                                                          errorBuilder:
+                                                              (_, __, ___) =>
+                                                                  const Center(
+                                                            child: Icon(
+                                                                CupertinoIcons
+                                                                    .photo,
+                                                                color: AppPalette
+                                                                    .blue700,
+                                                                size: 20),
                                                           ),
                                                         ),
                                                       )
                                                     : const Center(
-                                                        child: Icon(CupertinoIcons.tag_fill, color: AppPalette.blue700, size: 20),
+                                                        child: Icon(
+                                                            CupertinoIcons
+                                                                .tag_fill,
+                                                            color: AppPalette
+                                                                .blue700,
+                                                            size: 20),
                                                       ),
                                               ),
-                                              const SizedBox(width: AppSpacing.md),
+                                              const SizedBox(
+                                                  width: AppSpacing.md),
                                               Expanded(
                                                 child: Column(
-                                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                                  mainAxisSize: MainAxisSize.min,
+                                                  crossAxisAlignment:
+                                                      CrossAxisAlignment.start,
+                                                  mainAxisSize:
+                                                      MainAxisSize.min,
                                                   children: [
                                                     Text(
                                                       producto.nombre,
-                                                      style: AppTypography.titleLarge.copyWith(fontSize: 15),
-                                                      maxLines: isHeaderExpanded ? null : 1,
-                                                      overflow: isHeaderExpanded ? null : TextOverflow.ellipsis,
+                                                      style: AppTypography
+                                                          .titleLarge
+                                                          .copyWith(
+                                                              fontSize: 15),
+                                                      maxLines: isHeaderExpanded
+                                                          ? null
+                                                          : 1,
+                                                      overflow: isHeaderExpanded
+                                                          ? null
+                                                          : TextOverflow
+                                                              .ellipsis,
                                                     ),
                                                     const SizedBox(height: 2),
                                                     Wrap(
                                                       spacing: 6,
-                                                      crossAxisAlignment: WrapCrossAlignment.center,
+                                                      crossAxisAlignment:
+                                                          WrapCrossAlignment
+                                                              .center,
                                                       children: [
                                                         Text(
                                                           'ID: ${producto.id}',
-                                                          style: AppTypography.labelSmall.copyWith(
-                                                            color: AppPalette.textSecondary,
+                                                          style: AppTypography
+                                                              .labelSmall
+                                                              .copyWith(
+                                                            color: AppPalette
+                                                                .textSecondary,
                                                             fontSize: 11,
                                                           ),
                                                         ),
                                                         AppChip(
                                                           label: isDepleted
                                                               ? 'Agotado'
-                                                              : (isLowStock ? 'Bajo stock (${producto.cantidad})' : 'Stock: ${producto.cantidad}'),
+                                                              : (isLowStock
+                                                                  ? 'Bajo stock (${producto.cantidad})'
+                                                                  : 'Stock: ${producto.cantidad}'),
                                                           variant: isDepleted
-                                                              ? AppChipVariant.error
-                                                              : (isLowStock ? AppChipVariant.warning : AppChipVariant.success),
+                                                              ? AppChipVariant
+                                                                  .error
+                                                              : (isLowStock
+                                                                  ? AppChipVariant
+                                                                      .warning
+                                                                  : AppChipVariant
+                                                                      .success),
                                                         ),
                                                         AppMoneyText(
-                                                          amount: producto.precioUsd,
-                                                          currency: MoneyCurrency.usd,
+                                                          amount: producto
+                                                              .precioUsd,
+                                                          currency:
+                                                              MoneyCurrency.usd,
                                                           fontSize: 13,
-                                                          fontWeight: FontWeight.w700,
+                                                          fontWeight:
+                                                              FontWeight.w700,
                                                         ),
                                                       ],
                                                     ),
@@ -219,68 +274,135 @@ class _InventarioViewState extends State<_InventarioView> {
                                       },
                                       body: Container(
                                         width: double.infinity,
-                                        padding: const EdgeInsets.fromLTRB(AppSpacing.md, 0, AppSpacing.md, AppSpacing.md),
+                                        padding: const EdgeInsets.fromLTRB(
+                                            AppSpacing.md,
+                                            0,
+                                            AppSpacing.md,
+                                            AppSpacing.md),
                                         child: Column(
-                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
                                           children: [
-                                            const Divider(color: AppPalette.divider),
+                                            const Divider(
+                                                color: AppPalette.divider),
                                             const SizedBox(height: 4),
                                             SelectableText.rich(
                                               TextSpan(
-                                                style: AppTypography.bodyMedium.copyWith(fontSize: 13, height: 1.5),
+                                                style: AppTypography.bodyMedium
+                                                    .copyWith(
+                                                        fontSize: 13,
+                                                        height: 1.5),
                                                 children: [
-                                                  const TextSpan(text: '🏷️ Marca: ', style: TextStyle(fontWeight: FontWeight.w600)),
-                                                  TextSpan(text: producto.marca.isNotEmpty ? producto.marca : 'Sin marca'),
-                                                  const TextSpan(text: '\n👗 Modelo: ', style: TextStyle(fontWeight: FontWeight.w600)),
-                                                  TextSpan(text: producto.modelo.isNotEmpty ? producto.modelo : 'Sin modelo'),
-                                                  const TextSpan(text: '\n📏 Talla: ', style: TextStyle(fontWeight: FontWeight.w600)),
-                                                  TextSpan(text: producto.talla.isNotEmpty ? producto.talla : 'Única'),
-                                                  const TextSpan(text: '\n🏢 Organización: ', style: TextStyle(fontWeight: FontWeight.w600)),
-                                                  TextSpan(text: producto.organizacionId),
+                                                  const TextSpan(
+                                                      text: '🏷️ Marca: ',
+                                                      style: TextStyle(
+                                                          fontWeight:
+                                                              FontWeight.w600)),
+                                                  TextSpan(
+                                                      text: producto
+                                                              .marca.isNotEmpty
+                                                          ? producto.marca
+                                                          : 'Sin marca'),
+                                                  const TextSpan(
+                                                      text: '\n👗 Modelo: ',
+                                                      style: TextStyle(
+                                                          fontWeight:
+                                                              FontWeight.w600)),
+                                                  TextSpan(
+                                                      text: producto
+                                                              .modelo.isNotEmpty
+                                                          ? producto.modelo
+                                                          : 'Sin modelo'),
+                                                  const TextSpan(
+                                                      text: '\n📏 Talla: ',
+                                                      style: TextStyle(
+                                                          fontWeight:
+                                                              FontWeight.w600)),
+                                                  TextSpan(
+                                                      text: producto
+                                                              .talla.isNotEmpty
+                                                          ? producto.talla
+                                                          : 'Única'),
+                                                  const TextSpan(
+                                                      text:
+                                                          '\n🏢 Organización: ',
+                                                      style: TextStyle(
+                                                          fontWeight:
+                                                              FontWeight.w600)),
+                                                  TextSpan(
+                                                      text: producto
+                                                          .organizacionId),
                                                 ],
                                               ),
                                             ),
                                             const SizedBox(height: 8),
                                             Wrap(
-                                              alignment: WrapAlignment.spaceBetween,
-                                              crossAxisAlignment: WrapCrossAlignment.center,
+                                              alignment:
+                                                  WrapAlignment.spaceBetween,
+                                              crossAxisAlignment:
+                                                  WrapCrossAlignment.center,
                                               spacing: AppSpacing.sm,
                                               runSpacing: 4,
                                               children: [
                                                 Row(
-                                                  mainAxisSize: MainAxisSize.min,
+                                                  mainAxisSize:
+                                                      MainAxisSize.min,
                                                   children: [
                                                     Text(
                                                       'Ajustar existencias: ',
-                                                      style: AppTypography.labelSmall.copyWith(
-                                                        color: AppPalette.textSecondary,
-                                                        fontWeight: FontWeight.w600,
+                                                      style: AppTypography
+                                                          .labelSmall
+                                                          .copyWith(
+                                                        color: AppPalette
+                                                            .textSecondary,
+                                                        fontWeight:
+                                                            FontWeight.w600,
                                                       ),
                                                     ),
                                                     IconButton.filledTonal(
                                                       iconSize: 14,
                                                       padding: EdgeInsets.zero,
-                                                      constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
-                                                      icon: const Icon(CupertinoIcons.minus),
+                                                      constraints:
+                                                          const BoxConstraints(
+                                                              minWidth: 28,
+                                                              minHeight: 28),
+                                                      icon: const Icon(
+                                                          CupertinoIcons.minus),
                                                       tooltip: 'Reducir stock',
                                                       onPressed: isDepleted
                                                           ? null
-                                                          : () => widget.dataService.adjustStock(producto.id, -1),
+                                                          : () => widget
+                                                              .dataService
+                                                              .adjustStock(
+                                                                  producto.id,
+                                                                  -1),
                                                     ),
                                                     Padding(
-                                                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                                                      padding: const EdgeInsets
+                                                          .symmetric(
+                                                          horizontal: 8),
                                                       child: Text(
                                                         '${producto.cantidad}',
-                                                        style: AppTypography.titleLarge.copyWith(fontSize: 14),
+                                                        style: AppTypography
+                                                            .titleLarge
+                                                            .copyWith(
+                                                                fontSize: 14),
                                                       ),
                                                     ),
                                                     IconButton.filledTonal(
                                                       iconSize: 14,
                                                       padding: EdgeInsets.zero,
-                                                      constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
-                                                      icon: const Icon(CupertinoIcons.plus),
+                                                      constraints:
+                                                          const BoxConstraints(
+                                                              minWidth: 28,
+                                                              minHeight: 28),
+                                                      icon: const Icon(
+                                                          CupertinoIcons.plus),
                                                       tooltip: 'Aumentar stock',
-                                                      onPressed: () => widget.dataService.adjustStock(producto.id, 1),
+                                                      onPressed: () => widget
+                                                          .dataService
+                                                          .adjustStock(
+                                                              producto.id, 1),
                                                     ),
                                                   ],
                                                 ),
@@ -289,41 +411,71 @@ class _InventarioViewState extends State<_InventarioView> {
                                             const SizedBox(height: 12),
                                             Wrap(
                                               alignment: WrapAlignment.end,
-                                              crossAxisAlignment: WrapCrossAlignment.center,
-                                              spacing: 8,
-                                              runSpacing: 8,
+                                              crossAxisAlignment:
+                                                  WrapCrossAlignment.center,
+                                              spacing: 1,
+                                              runSpacing: 1,
                                               children: [
                                                 OutlinedButton.icon(
-                                                  style: OutlinedButton.styleFrom(
-                                                    visualDensity: VisualDensity.compact,
-                                                    foregroundColor: AppPalette.blue700,
-                                                    side: const BorderSide(color: AppPalette.border),
+                                                  style:
+                                                      OutlinedButton.styleFrom(
+                                                    visualDensity:
+                                                        VisualDensity.compact,
+                                                    foregroundColor:
+                                                        AppPalette.blue700,
+                                                    side: const BorderSide(
+                                                        color:
+                                                            AppPalette.border),
                                                   ),
-                                                  icon: const Icon(CupertinoIcons.photo_camera, size: 16),
+                                                  icon: const Icon(
+                                                      CupertinoIcons
+                                                          .photo_camera,
+                                                      size: 16),
                                                   label: const Text('Foto'),
-                                                  onPressed: () => _showFotoActionSheet(context, producto),
+                                                  onPressed: () =>
+                                                      _showFotoActionSheet(
+                                                          context, producto),
                                                 ),
                                                 const SizedBox(width: 8),
                                                 OutlinedButton.icon(
-                                                  style: OutlinedButton.styleFrom(
-                                                    visualDensity: VisualDensity.compact,
-                                                    foregroundColor: AppPalette.blue700,
-                                                    side: const BorderSide(color: AppPalette.border),
+                                                  style:
+                                                      OutlinedButton.styleFrom(
+                                                    visualDensity:
+                                                        VisualDensity.compact,
+                                                    foregroundColor:
+                                                        AppPalette.blue700,
+                                                    side: const BorderSide(
+                                                        color:
+                                                            AppPalette.border),
                                                   ),
-                                                  icon: const Icon(CupertinoIcons.pencil, size: 16),
+                                                  icon: const Icon(
+                                                      CupertinoIcons.pencil,
+                                                      size: 16),
                                                   label: const Text('Editar'),
-                                                  onPressed: () => _showProductoDialog(context, producto: producto),
+                                                  onPressed: () =>
+                                                      _showProductoDialog(
+                                                          context,
+                                                          producto: producto),
                                                 ),
                                                 const SizedBox(width: 8),
                                                 OutlinedButton.icon(
-                                                  style: OutlinedButton.styleFrom(
-                                                    visualDensity: VisualDensity.compact,
-                                                    foregroundColor: AppPalette.error,
-                                                    side: const BorderSide(color: AppPalette.border),
+                                                  style:
+                                                      OutlinedButton.styleFrom(
+                                                    visualDensity:
+                                                        VisualDensity.compact,
+                                                    foregroundColor:
+                                                        AppPalette.error,
+                                                    side: const BorderSide(
+                                                        color:
+                                                            AppPalette.border),
                                                   ),
-                                                  icon: const Icon(CupertinoIcons.trash, size: 16),
+                                                  icon: const Icon(
+                                                      CupertinoIcons.trash,
+                                                      size: 16),
                                                   label: const Text('Eliminar'),
-                                                  onPressed: () => _confirmDelete(context, producto),
+                                                  onPressed: () =>
+                                                      _confirmDelete(
+                                                          context, producto),
                                                 ),
                                               ],
                                             ),
@@ -353,7 +505,8 @@ class _InventarioViewState extends State<_InventarioView> {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
       builder: (ctx) => StatefulBuilder(
         builder: (context, setModalState) => Padding(
           padding: EdgeInsets.only(
@@ -377,7 +530,8 @@ class _InventarioViewState extends State<_InventarioView> {
                     ),
                   ),
                   IconButton(
-                    icon: const Icon(CupertinoIcons.xmark_circle_fill, color: AppPalette.textSecondary),
+                    icon: const Icon(CupertinoIcons.xmark_circle_fill,
+                        color: AppPalette.textSecondary),
                     onPressed: () => Navigator.pop(ctx),
                   ),
                 ],
@@ -412,18 +566,24 @@ class _InventarioViewState extends State<_InventarioView> {
   void _showProductoDialog(BuildContext context, {Producto? producto}) {
     final isEditing = producto != null;
     final id = isEditing ? producto.id : widget.dataService.nextProductoId;
-    final nombreController = TextEditingController(text: producto?.nombre ?? '');
-    final marcaController = TextEditingController(text: producto?.marca ?? 'Genérica');
-    final modeloController = TextEditingController(text: producto?.modelo ?? 'Casual');
+    final nombreController =
+        TextEditingController(text: producto?.nombre ?? '');
+    final marcaController =
+        TextEditingController(text: producto?.marca ?? 'Genérica');
+    final modeloController =
+        TextEditingController(text: producto?.modelo ?? 'Casual');
     final tallaController = TextEditingController(text: producto?.talla ?? 'M');
-    final cantidadController = TextEditingController(text: producto?.cantidad.toString() ?? '10');
-    final precioController = TextEditingController(text: producto?.precioUsd.toStringAsFixed(2) ?? '20.00');
+    final cantidadController =
+        TextEditingController(text: producto?.cantidad.toString() ?? '10');
+    final precioController = TextEditingController(
+        text: producto?.precioUsd.toStringAsFixed(2) ?? '20.00');
     var pendingFotoId = producto?.fotoId;
 
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
       builder: (ctx) {
         return StatefulBuilder(
           builder: (context, setModalState) => Padding(
@@ -442,11 +602,14 @@ class _InventarioViewState extends State<_InventarioView> {
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       Text(
-                        isEditing ? 'Editar Producto ($id)' : 'Registrar Nuevo Producto',
+                        isEditing
+                            ? 'Editar Producto ($id)'
+                            : 'Registrar Nuevo Producto',
                         style: AppTypography.titleLarge.copyWith(fontSize: 17),
                       ),
                       IconButton(
-                        icon: const Icon(CupertinoIcons.xmark_circle_fill, color: AppPalette.textSecondary),
+                        icon: const Icon(CupertinoIcons.xmark_circle_fill,
+                            color: AppPalette.textSecondary),
                         onPressed: () => Navigator.pop(ctx),
                       ),
                     ],
@@ -455,7 +618,8 @@ class _InventarioViewState extends State<_InventarioView> {
                   _FotoPicker(
                     fotoId: pendingFotoId,
                     dataService: widget.dataService,
-                    onChanged: (nuevoFotoId) => setModalState(() => pendingFotoId = nuevoFotoId),
+                    onChanged: (nuevoFotoId) =>
+                        setModalState(() => pendingFotoId = nuevoFotoId),
                   ),
                   const SizedBox(height: AppSpacing.md),
                   AppTextField(
@@ -505,7 +669,8 @@ class _InventarioViewState extends State<_InventarioView> {
                   AppTextField(
                     label: 'Precio Unitario (USD)',
                     controller: precioController,
-                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                    keyboardType:
+                        const TextInputType.numberWithOptions(decimal: true),
                   ),
                   const SizedBox(height: AppSpacing.lg),
                   Row(
@@ -520,19 +685,24 @@ class _InventarioViewState extends State<_InventarioView> {
                       Expanded(
                         child: AppButton(
                           label: isEditing ? 'Guardar Cambios' : 'Registrar',
-                          icon: isEditing ? CupertinoIcons.check_mark : CupertinoIcons.add,
+                          icon: isEditing
+                              ? CupertinoIcons.check_mark
+                              : CupertinoIcons.add,
                           onPressed: () {
                             final nombre = nombreController.text.trim();
                             if (nombre.isEmpty) return;
 
                             final p = Producto(
                               id: id,
-                              cantidad: int.tryParse(cantidadController.text) ?? 0,
+                              cantidad:
+                                  int.tryParse(cantidadController.text) ?? 0,
                               nombre: nombre,
                               marca: marcaController.text.trim(),
                               modelo: modeloController.text.trim(),
                               talla: tallaController.text.trim(),
-                              precioUsd: double.tryParse(precioController.text.replaceAll(',', '.')) ?? 0.0,
+                              precioUsd: double.tryParse(precioController.text
+                                      .replaceAll(',', '.')) ??
+                                  0.0,
                               fotoId: pendingFotoId,
                             );
 
@@ -561,7 +731,8 @@ class _InventarioViewState extends State<_InventarioView> {
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('¿Eliminar producto?'),
-        content: Text('Se desincorporará "${producto.nombre}" (${producto.id}) del inventario.'),
+        content: Text(
+            'Se desincorporará "${producto.nombre}" (${producto.id}) del inventario.'),
         actions: [
           TextButton(
             child: const Text('Cancelar'),
@@ -609,7 +780,8 @@ class _FotoPickerState extends State<_FotoPicker> {
 
   void _mostrarInfo(String mensaje) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(mensaje)));
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(mensaje)));
   }
 
   void _mostrarError(String mensaje) {
@@ -622,10 +794,13 @@ class _FotoPickerState extends State<_FotoPicker> {
   Future<void> _tomarOElegir(ImageSource source) async {
     XFile? picked;
     try {
-      picked = await ImagePicker().pickImage(source: source, imageQuality: 85, maxWidth: 1600);
+      picked = await ImagePicker()
+          .pickImage(source: source, imageQuality: 85, maxWidth: 1600);
     } catch (_) {
       _mostrarError(
-        source == ImageSource.camera ? 'No se pudo abrir la cámara.' : 'No se pudo abrir la galería.',
+        source == ImageSource.camera
+            ? 'No se pudo abrir la cámara.'
+            : 'No se pudo abrir la galería.',
       );
       return;
     }
@@ -656,7 +831,9 @@ class _FotoPickerState extends State<_FotoPicker> {
         if (comprimido.length < original.length) {
           bytes = comprimido;
           mimeType = 'image/jpeg';
-          final sinExtension = fileName.contains('.') ? fileName.substring(0, fileName.lastIndexOf('.')) : fileName;
+          final sinExtension = fileName.contains('.')
+              ? fileName.substring(0, fileName.lastIndexOf('.'))
+              : fileName;
           fileName = '$sinExtension.jpg';
         }
       } catch (_) {
@@ -676,7 +853,8 @@ class _FotoPickerState extends State<_FotoPicker> {
         // que la URL responda antes de mostrarla, para no pintar el ícono de
         // error de entrada aunque la foto ya haya quedado bien guardada.
         setState(() => _procesandoMensaje = 'Verificando foto...');
-        await _esperarUrlDisponible(widget.dataService.fotoUrlPorId(nuevoFotoId));
+        await _esperarUrlDisponible(
+            widget.dataService.fotoUrlPorId(nuevoFotoId));
         if (!mounted) return;
         widget.onChanged(nuevoFotoId);
         _mostrarInfo('Foto subida correctamente.');
@@ -692,7 +870,8 @@ class _FotoPickerState extends State<_FotoPicker> {
     if (url == null || url.isEmpty) return;
     for (var intento = 0; intento < 5; intento++) {
       try {
-        final response = await _dio.get(url, options: Options(receiveTimeout: const Duration(seconds: 5)));
+        final response = await _dio.get(url,
+            options: Options(receiveTimeout: const Duration(seconds: 5)));
         if (response.statusCode == 200) return;
       } catch (_) {}
       await Future.delayed(const Duration(seconds: 1));
@@ -708,7 +887,8 @@ class _FotoPickerState extends State<_FotoPicker> {
       _procesandoMensaje = 'Descargando foto...';
     });
     try {
-      final response = await _dio.get<List<int>>(url, options: Options(responseType: ResponseType.bytes));
+      final response = await _dio.get<List<int>>(url,
+          options: Options(responseType: ResponseType.bytes));
       if (response.statusCode != 200 || response.data == null) {
         _mostrarError('No se pudo descargar la foto.');
         return;
@@ -747,7 +927,8 @@ class _FotoPickerState extends State<_FotoPicker> {
                         const SizedBox(height: 6),
                         Text(
                           _procesandoMensaje ?? '',
-                          style: AppTypography.labelSmall.copyWith(fontSize: 10, color: AppPalette.textSecondary),
+                          style: AppTypography.labelSmall.copyWith(
+                              fontSize: 10, color: AppPalette.textSecondary),
                         ),
                       ],
                     ),
@@ -760,10 +941,12 @@ class _FotoPickerState extends State<_FotoPicker> {
                           fit: BoxFit.cover,
                           loadingBuilder: (context, child, progress) {
                             if (progress == null) return child;
-                            return const Center(child: CupertinoActivityIndicator());
+                            return const Center(
+                                child: CupertinoActivityIndicator());
                           },
                           errorBuilder: (_, __, ___) => const Center(
-                            child: Icon(CupertinoIcons.exclamationmark_circle, color: AppPalette.warning, size: 28),
+                            child: Icon(CupertinoIcons.exclamationmark_circle,
+                                color: AppPalette.warning, size: 28),
                           ),
                         ),
                       )
@@ -771,9 +954,13 @@ class _FotoPickerState extends State<_FotoPicker> {
                         child: Column(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            Icon(CupertinoIcons.photo, color: AppPalette.blue400, size: 36),
+                            Icon(CupertinoIcons.photo,
+                                color: AppPalette.blue400, size: 36),
                             SizedBox(height: 4),
-                            Text('Sin foto asignada', style: TextStyle(fontSize: 11, color: AppPalette.textSecondary)),
+                            Text('Sin foto asignada',
+                                style: TextStyle(
+                                    fontSize: 11,
+                                    color: AppPalette.textSecondary)),
                           ],
                         ),
                       ),
@@ -788,12 +975,14 @@ class _FotoPickerState extends State<_FotoPicker> {
             AppOutlinedButton(
               label: 'Tomar foto',
               icon: CupertinoIcons.camera,
-              onPressed: _procesando ? null : () => _tomarOElegir(ImageSource.camera),
+              onPressed:
+                  _procesando ? null : () => _tomarOElegir(ImageSource.camera),
             ),
             AppOutlinedButton(
               label: 'Galería',
               icon: CupertinoIcons.photo,
-              onPressed: _procesando ? null : () => _tomarOElegir(ImageSource.gallery),
+              onPressed:
+                  _procesando ? null : () => _tomarOElegir(ImageSource.gallery),
             ),
             if (hasPhoto)
               AppOutlinedButton(

@@ -152,6 +152,16 @@ class AppRouter {
             StatefulShellBranch(
               routes: [auditRoutesList[8]],
             ),
+
+            // Rama 14: Códigos de Teléfono
+            StatefulShellBranch(
+              routes: [auditRoutesList[9]],
+            ),
+
+            // Rama 15: Tipos de Documento
+            StatefulShellBranch(
+              routes: [auditRoutesList[10]],
+            ),
           ],
         ),
       ],

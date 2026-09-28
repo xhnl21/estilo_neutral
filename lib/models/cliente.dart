@@ -24,6 +24,12 @@ class Cliente {
   /// Columna G: Identificador de la organización a la que pertenece el registro
   final String organizacionId;
 
+  /// Columna H: Tipo de documento (V, E, J, G)
+  final String tipoDocumento;
+
+  /// Columna I: Número de cédula o documento de identidad
+  final String cedula;
+
   const Cliente({
     required this.id,
     required this.nombre,
@@ -32,7 +38,13 @@ class Cliente {
     required this.saldoDeudaUsd,
     required this.fechaRegistro,
     this.organizacionId = '67774411-6aa1-4aa3-a4b2-d3fc6913b768',
+    this.tipoDocumento = 'V',
+    this.cedula = '',
   });
+
+  /// Helper que devuelve el documento formateado (ej. "V-12345678" o "" si no tiene)
+  String get documentoCompleto =>
+      cedula.trim().isEmpty ? '' : '${tipoDocumento.toUpperCase()}-${cedula.trim()}';
 
   factory Cliente.fromRow(List<dynamic> row) {
     return Cliente(
@@ -45,6 +57,10 @@ class Cliente {
       organizacionId: row.length > 6 && row[6].toString().trim().isNotEmpty
           ? row[6].toString().trim()
           : '67774411-6aa1-4aa3-a4b2-d3fc6913b768',
+      tipoDocumento: row.length > 7 && row[7].toString().trim().isNotEmpty
+          ? row[7].toString().trim().toUpperCase()
+          : 'V',
+      cedula: row.length > 8 ? row[8].toString().trim() : '',
     );
   }
 
@@ -57,6 +73,8 @@ class Cliente {
       saldoDeudaUsd.toStringAsFixed(2),
       fechaRegistro.toIso8601String().split('T').first,
       organizacionId,
+      tipoDocumento,
+      cedula,
     ];
   }
 
@@ -69,6 +87,32 @@ class Cliente {
       'saldo_deuda_usd': saldoDeudaUsd,
       'fecha_registro': fechaRegistro.toIso8601String().split('T').first,
       'organizacion_id': organizacionId,
+      'tipo_documento': tipoDocumento,
+      'cedula': cedula,
     };
+  }
+
+  Cliente copyWith({
+    String? id,
+    String? nombre,
+    String? telefono,
+    String? email,
+    double? saldoDeudaUsd,
+    DateTime? fechaRegistro,
+    String? organizacionId,
+    String? tipoDocumento,
+    String? cedula,
+  }) {
+    return Cliente(
+      id: id ?? this.id,
+      nombre: nombre ?? this.nombre,
+      telefono: telefono ?? this.telefono,
+      email: email ?? this.email,
+      saldoDeudaUsd: saldoDeudaUsd ?? this.saldoDeudaUsd,
+      fechaRegistro: fechaRegistro ?? this.fechaRegistro,
+      organizacionId: organizacionId ?? this.organizacionId,
+      tipoDocumento: tipoDocumento ?? this.tipoDocumento,
+      cedula: cedula ?? this.cedula,
+    );
   }
 }
