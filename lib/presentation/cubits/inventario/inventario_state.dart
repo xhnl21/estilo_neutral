@@ -12,11 +12,14 @@ class InventarioState extends Equatable {
   final String? errorMessage;
   final String? actionSuccessMessage;
 
+  final String? expandedProductoId;
+
   const InventarioState({
     this.status = InventarioStatus.initial,
     this.productos = const [],
     this.filteredProductos = const [],
     this.searchQuery = '',
+    this.expandedProductoId,
     this.errorMessage,
     this.actionSuccessMessage,
   });
@@ -26,6 +29,8 @@ class InventarioState extends Equatable {
     List<Producto>? productos,
     List<Producto>? filteredProductos,
     String? searchQuery,
+    String? expandedProductoId,
+    bool clearExpandedId = false,
     String? errorMessage,
     String? actionSuccessMessage,
   }) {
@@ -34,6 +39,8 @@ class InventarioState extends Equatable {
       productos: productos ?? this.productos,
       filteredProductos: filteredProductos ?? this.filteredProductos,
       searchQuery: searchQuery ?? this.searchQuery,
+      expandedProductoId:
+          clearExpandedId ? null : (expandedProductoId ?? this.expandedProductoId),
       errorMessage: errorMessage,
       actionSuccessMessage: actionSuccessMessage,
     );
@@ -49,6 +56,7 @@ class InventarioState extends Equatable {
         productos,
         filteredProductos,
         searchQuery,
+        expandedProductoId,
         errorMessage,
         actionSuccessMessage,
       ];

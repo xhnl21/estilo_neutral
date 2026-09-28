@@ -103,99 +103,157 @@ class _OrganizacionesView extends StatelessWidget {
                         description: 'Usa el botón "Nueva Organización" para crear la primera.',
                         icon: CupertinoIcons.building_2_fill,
                       )
-                    : ListView.builder(
+                    : ListView(
+                        key: const ValueKey('organizaciones_list'),
                         padding: const EdgeInsets.fromLTRB(AppSpacing.lg, AppSpacing.sm, AppSpacing.lg, 80),
-                        itemCount: organizaciones.length,
-                        itemBuilder: (context, index) {
-                          final organizacion = organizaciones[index];
-                          final cantidadUsuarios = cubit.usuariosEnOrganizacion(organizacion.id);
+                        children: [
+                          ExpansionPanelList(
+                            elevation: 1,
+                            expandedHeaderPadding: const EdgeInsets.symmetric(vertical: 4),
+                            expansionCallback: (panelIndex, isExpanded) {
+                              final org = organizaciones[panelIndex];
+                              cubit.toggleExpanded(org.id);
+                            },
+                            children: organizaciones.map<ExpansionPanel>((organizacion) {
+                              final cantidadUsuarios = cubit.usuariosEnOrganizacion(organizacion.id);
+                              final moneda = cubit.monedaOrganizacion(organizacion.id);
+                              final tasaManual = cubit.tasaManualOrganizacion(organizacion.id);
+                              final isExpanded = state.expandedOrganizacionId == organizacion.id;
 
-                          return Padding(
-                            padding: const EdgeInsets.only(bottom: AppSpacing.sm),
-                            child: AppCard(
-                              padding: AppSpacing.pMd,
-                              child: Row(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  const ExcludeSemantics(
-                                    child: CircleAvatar(
-                                      radius: 20,
-                                      backgroundColor: AppPalette.blue100,
-                                      child: Icon(CupertinoIcons.building_2_fill, color: AppPalette.blue700, size: 20),
+                              return ExpansionPanel(
+                                isExpanded: isExpanded,
+                                canTapOnHeader: true,
+                                backgroundColor: AppPalette.surface,
+                                headerBuilder: (context, isHeaderExpanded) {
+                                  return Padding(
+                                    padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md, vertical: AppSpacing.sm),
+                                    child: Row(
+                                      children: [
+                                        const ExcludeSemantics(
+                                          child: CircleAvatar(
+                                            radius: 18,
+                                            backgroundColor: AppPalette.blue100,
+                                            child: Icon(CupertinoIcons.building_2_fill, color: AppPalette.blue700, size: 18),
+                                          ),
+                                        ),
+                                        const SizedBox(width: AppSpacing.md),
+                                        Expanded(
+                                          child: Column(
+                                            crossAxisAlignment: CrossAxisAlignment.start,
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              Text(
+                                                organizacion.nombre,
+                                                style: AppTypography.titleLarge.copyWith(fontSize: 15),
+                                                maxLines: isHeaderExpanded ? null : 1,
+                                                overflow: isHeaderExpanded ? null : TextOverflow.ellipsis,
+                                              ),
+                                              const SizedBox(height: 2),
+                                              Wrap(
+                                                spacing: 6,
+                                                crossAxisAlignment: WrapCrossAlignment.center,
+                                                children: [
+                                                  AppChip(
+                                                    label: '$cantidadUsuarios usuario${cantidadUsuarios == 1 ? '' : 's'}',
+                                                    variant: AppChipVariant.info,
+                                                  ),
+                                                  Text(
+                                                    'Moneda: $moneda',
+                                                    style: AppTypography.labelSmall.copyWith(
+                                                      color: AppPalette.textSecondary,
+                                                      fontSize: 11,
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      ],
                                     ),
-                                  ),
-                                  const SizedBox(width: AppSpacing.md),
-                                  Expanded(
-                                    child: MergeSemantics(
-                                      child: Column(
-                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                  );
+                                },
+                                body: Container(
+                                  width: double.infinity,
+                                  padding: const EdgeInsets.fromLTRB(AppSpacing.md, 0, AppSpacing.md, AppSpacing.md),
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      const Divider(color: AppPalette.divider),
+                                      const SizedBox(height: 4),
+                                      SelectableText.rich(
+                                        TextSpan(
+                                          style: AppTypography.bodyMedium.copyWith(fontSize: 13, height: 1.5),
+                                          children: [
+                                            const TextSpan(text: '🏢 Organización: ', style: TextStyle(fontWeight: FontWeight.w600)),
+                                            TextSpan(text: organizacion.nombre),
+                                            const TextSpan(text: '\n🔑 ID único: ', style: TextStyle(fontWeight: FontWeight.w600)),
+                                            TextSpan(text: organizacion.id),
+                                            const TextSpan(text: '\n👥 Usuarios asignados: ', style: TextStyle(fontWeight: FontWeight.w600)),
+                                            TextSpan(text: '$cantidadUsuarios miembros'),
+                                            const TextSpan(text: '\n💱 Moneda oficial: ', style: TextStyle(fontWeight: FontWeight.w600)),
+                                            TextSpan(text: moneda),
+                                            if (tasaManual != null) ...[
+                                              const TextSpan(text: '\n📈 Tasa manual configurada: ', style: TextStyle(fontWeight: FontWeight.w600)),
+                                              TextSpan(text: 'Bs. ${tasaManual.valor.toStringAsFixed(2)} / ${tasaManual.moneda}'),
+                                            ],
+                                          ],
+                                        ),
+                                      ),
+                                      const SizedBox(height: 12),
+                                      Wrap(
+                                        alignment: WrapAlignment.end,
+                                        crossAxisAlignment: WrapCrossAlignment.center,
+                                        spacing: 8,
+                                        runSpacing: 8,
                                         children: [
-                                          Text(
-                                            organizacion.nombre,
-                                            style: AppTypography.titleLarge.copyWith(fontSize: 15),
-                                            overflow: TextOverflow.ellipsis,
+                                          OutlinedButton.icon(
+                                            style: OutlinedButton.styleFrom(
+                                              visualDensity: VisualDensity.compact,
+                                              foregroundColor: AppPalette.blue700,
+                                              side: const BorderSide(color: AppPalette.border),
+                                            ),
+                                            icon: const Icon(CupertinoIcons.person_2, size: 16),
+                                            label: const Text('Usuarios'),
+                                            onPressed: () => esquemaListo
+                                                ? _showMiembrosDialog(context, organizacion)
+                                                : _showEsquemaPendienteDialog(context),
                                           ),
-                                          const SizedBox(height: 2),
-                                          Text(
-                                            organizacion.id,
-                                            style: AppTypography.bodyMedium.copyWith(fontSize: 12),
-                                            overflow: TextOverflow.ellipsis,
+                                          const SizedBox(width: 8),
+                                          OutlinedButton.icon(
+                                            style: OutlinedButton.styleFrom(
+                                              visualDensity: VisualDensity.compact,
+                                              foregroundColor: AppPalette.blue700,
+                                              side: const BorderSide(color: AppPalette.border),
+                                            ),
+                                            icon: const Icon(CupertinoIcons.pencil, size: 16),
+                                            label: const Text('Editar'),
+                                            onPressed: () => esquemaListo
+                                                ? _showOrganizacionDialog(context, organizacion: organizacion)
+                                                : _showEsquemaPendienteDialog(context),
                                           ),
-                                          const SizedBox(height: 4),
-                                          AppChip(
-                                            label: '$cantidadUsuarios usuario${cantidadUsuarios == 1 ? '' : 's'}',
-                                            variant: AppChipVariant.info,
+                                          const SizedBox(width: 8),
+                                          OutlinedButton.icon(
+                                            style: OutlinedButton.styleFrom(
+                                              visualDensity: VisualDensity.compact,
+                                              foregroundColor: AppPalette.error,
+                                              side: const BorderSide(color: AppPalette.border),
+                                            ),
+                                            icon: const Icon(CupertinoIcons.trash, size: 16),
+                                            label: const Text('Eliminar'),
+                                            onPressed: () => esquemaListo
+                                                ? _confirmDelete(context, organizacion, cantidadUsuarios)
+                                                : _showEsquemaPendienteDialog(context),
                                           ),
                                         ],
                                       ),
-                                    ),
-                                  ),
-                                  Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      Semantics(
-                                        button: true,
-                                        label: 'Ver y asignar usuarios de ${organizacion.nombre}',
-                                        child: IconButton(
-                                          visualDensity: VisualDensity.compact,
-                                          icon: const Icon(CupertinoIcons.person_2, size: 18, color: AppPalette.blue700),
-                                          tooltip: 'Ver / Asignar Usuarios',
-                                          onPressed: () => esquemaListo
-                                              ? _showMiembrosDialog(context, organizacion)
-                                              : _showEsquemaPendienteDialog(context),
-                                        ),
-                                      ),
-                                      Semantics(
-                                        button: true,
-                                        label: 'Editar organización ${organizacion.nombre}',
-                                        child: IconButton(
-                                          visualDensity: VisualDensity.compact,
-                                          icon: const Icon(CupertinoIcons.pencil, size: 18, color: AppPalette.blue700),
-                                          tooltip: 'Editar Organización',
-                                          onPressed: () => esquemaListo
-                                              ? _showOrganizacionDialog(context, organizacion: organizacion)
-                                              : _showEsquemaPendienteDialog(context),
-                                        ),
-                                      ),
-                                      Semantics(
-                                        button: true,
-                                        label: 'Eliminar organización ${organizacion.nombre}',
-                                        child: IconButton(
-                                          visualDensity: VisualDensity.compact,
-                                          icon: const Icon(CupertinoIcons.trash, size: 18, color: AppPalette.error),
-                                          tooltip: 'Eliminar Organización',
-                                          onPressed: () => esquemaListo
-                                              ? _confirmDelete(context, organizacion, cantidadUsuarios)
-                                              : _showEsquemaPendienteDialog(context),
-                                        ),
-                                      ),
                                     ],
                                   ),
-                                ],
-                              ),
-                            ),
-                          );
-                        },
+                                ),
+                              );
+                            }).toList(),
+                          ),
+                        ],
                       ),
               ),
             ],

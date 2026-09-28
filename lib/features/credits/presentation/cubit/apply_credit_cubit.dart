@@ -31,6 +31,7 @@ class ApplyCreditCubit extends Cubit<ApplyCreditState> {
     required String ventaDestinoId,
     required double deudaVenta,
   }) async {
+    if (isClosed) return;
     emit(state.copyWith(status: ApplyCreditStatus.loading));
     try {
       final preview = await _previewUseCase(
@@ -38,11 +39,13 @@ class ApplyCreditCubit extends Cubit<ApplyCreditState> {
         ventaDestinoId: ventaDestinoId,
         deudaVenta: deudaVenta,
       );
+      if (isClosed) return;
       emit(state.copyWith(
         status: ApplyCreditStatus.previewReady,
         preview: preview,
       ));
     } catch (e) {
+      if (isClosed) return;
       emit(state.copyWith(
         status: ApplyCreditStatus.failure,
         errorMessage: 'Error al previsualizar compensación: $e',
@@ -57,6 +60,7 @@ class ApplyCreditCubit extends Cubit<ApplyCreditState> {
     required double deudaVenta,
     required String userEmail,
   }) async {
+    if (isClosed) return false;
     emit(state.copyWith(status: ApplyCreditStatus.loading));
     try {
       final result = await _applyUseCase.execute(
@@ -65,6 +69,8 @@ class ApplyCreditCubit extends Cubit<ApplyCreditState> {
         deudaVenta: deudaVenta,
         userEmail: userEmail,
       );
+
+      if (isClosed) return result.isSuccess;
 
       if (result.isSuccess) {
         emit(state.copyWith(
@@ -81,6 +87,7 @@ class ApplyCreditCubit extends Cubit<ApplyCreditState> {
         return false;
       }
     } catch (e) {
+      if (isClosed) return false;
       emit(state.copyWith(
         status: ApplyCreditStatus.failure,
         errorMessage: 'Excepción durante la aplicación: $e',

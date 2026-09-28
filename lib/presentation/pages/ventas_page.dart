@@ -188,7 +188,10 @@ class _VentasViewState extends State<_VentasView> {
 
         final totalVentasUsd = ventas.fold<double>(0.0, (sum, v) => sum + v.totalPagarUsd);
         final totalDeudaUsd = ventas.fold<double>(0.0, (sum, v) => sum + (v.deudaUsd > 0 ? v.deudaUsd : 0.0));
-        final totalExcedenteUsd = ventas.fold<double>(0.0, (sum, v) => sum + v.excedenteUsd);
+        final allAvailableCredits = ServiceLocator().creditsDataSource.credits.where((c) => c.isAvailable);
+        final totalSaldoAFavorUsd = state.filtroClienteId != null
+            ? allAvailableCredits.where((c) => c.clienteId == state.filtroClienteId).fold<double>(0.0, (sum, c) => sum + c.saldoUsd)
+            : allAvailableCredits.fold<double>(0.0, (sum, c) => sum + c.saldoUsd);
 
         return AppScaffold(
           title: 'Ventas',
@@ -285,7 +288,7 @@ class _VentasViewState extends State<_VentasView> {
                           ],
                         ),
                       ),
-                      if (totalExcedenteUsd > 0)
+                      if (totalSaldoAFavorUsd > 0)
                         Padding(
                           padding: const EdgeInsets.fromLTRB(AppSpacing.lg, 0, AppSpacing.lg, AppSpacing.sm),
                           child: AppCard(
@@ -294,9 +297,9 @@ class _VentasViewState extends State<_VentasView> {
                             child: Row(
                               mainAxisAlignment: MainAxisAlignment.spaceBetween,
                               children: [
-                                Text('EXCEDENTE', style: AppTypography.labelSmall.copyWith(color: AppPalette.success)),
+                                Text('SALDO A FAVOR DISPONIBLE', style: AppTypography.labelSmall.copyWith(color: AppPalette.success)),
                                 AppMoneyText(
-                                  amount: totalExcedenteUsd,
+                                  amount: totalSaldoAFavorUsd,
                                   currency: MoneyCurrency.usd,
                                   nature: MoneyNature.credit,
                                   fontSize: 16,
@@ -336,51 +339,238 @@ class _VentasViewState extends State<_VentasView> {
                                 description: 'Pulsa "Nueva Venta" para asentar la primera factura.',
                                 icon: CupertinoIcons.cart,
                               )
-                            : ListView.builder(
-                                padding: const EdgeInsets.fromLTRB(AppSpacing.lg, AppSpacing.sm, AppSpacing.lg, 80),
-                                itemCount: ventas.length,
-                                itemBuilder: (context, index) {
-                                  final v = ventas[index];
-                                  final cliente = state.clientes.where((c) => c.id == v.clienteId).firstOrNull;
-                                  final availableCredits = ServiceLocator().creditsDataSource.credits.where((c) => c.clienteId == v.clienteId && c.isAvailable).toList();
-                                  final saldoAFavor = availableCredits.fold<double>(0.0, (sum, c) => sum + c.saldoUsd);
-                                  final pagadaConCredito = ds.abonosDeVenta(v.id).any((a) => a.metodoPagoId == 'mp00000009');
+                          : ListView(
+                              key: const ValueKey('sales_list'),
+                              padding: const EdgeInsets.fromLTRB(AppSpacing.lg, AppSpacing.sm, AppSpacing.lg, 80),
+                              children: [
+                                ExpansionPanelList(
+                                  elevation: 1,
+                                  expandedHeaderPadding: const EdgeInsets.symmetric(vertical: 4),
+                                  expansionCallback: (panelIndex, isExpanded) {
+                                    final v = ventas[panelIndex];
+                                    cubit.toggleExpanded(v.id);
+                                  },
+                                  children: ventas.map<ExpansionPanel>((v) {
+                                    final cliente = state.clientes.where((c) => c.id == v.clienteId).firstOrNull;
+                                    final availableCredits = ServiceLocator().creditsDataSource.credits.where((c) => c.clienteId == v.clienteId && c.isAvailable).toList();
+                                    final saldoAFavor = availableCredits.fold<double>(0.0, (sum, c) => sum + c.saldoUsd);
+                                    final pagadaConCredito = ds.abonosDeVenta(v.id).any((a) => a.metodoPagoId == 'mp00000009');
+                                    final isPaid = v.estado == EstadoVenta.pagada;
+                                    final hasDebt = v.deudaUsd > 0;
+                                    final isExpanded = state.expandedVentaId == v.id;
+                                    final metodoPagoNombre = ds.metodoPagoNombre(v.metodoPagoId);
+                                    final cantidadItems = ds.itemsDeVenta(v.id).length;
 
-                                  return AnimatedContainer(
-                                    key: ValueKey('venta_${v.id}'),
-                                    duration: const Duration(milliseconds: 300),
-                                    curve: Curves.easeOutCubic,
-                                    child: _VentaCard(
-                                      venta: v,
-                                      cliente: cliente,
-                                      metodoPagoNombre: ds.metodoPagoNombre(v.metodoPagoId),
-                                      cantidadItems: ds.itemsDeVenta(v.id).length,
-                                      saldoAFavorCliente: saldoAFavor,
-                                      pagadaConSaldoAFavor: pagadaConCredito,
-                                      onTap: () => context.push(RoutePaths.buildSaleDetailPath(v.id)),
-                                      onAbono: v.deudaUsd > 0 ? () => _showAbonoDialog(v) : null,
-                                      onAplicarSaldo: () {
-                                        final cubit = ApplyCreditCubit(
-                                          repository: ServiceLocator().creditRepository,
-                                          dataService: ds,
-                                        );
-                                        ApplyCreditSheet.show(
-                                          context,
-                                          cubit: cubit,
-                                          clienteId: v.clienteId,
-                                          clienteNombre: cliente?.nombre ?? v.clienteId,
-                                          ventaId: v.id,
-                                          deudaVenta: v.deudaUsd,
-                                          totalCreditoDisponible: saldoAFavor,
-                                          origenVentaId: availableCredits.firstOrNull?.origenVentaId,
-                                          userEmail: ds.currentUsuarioEmail ?? 'Antigravity Senior Agent',
+                                    return ExpansionPanel(
+                                      isExpanded: isExpanded,
+                                      canTapOnHeader: true,
+                                      backgroundColor: AppPalette.surface,
+                                      headerBuilder: (context, isHeaderExpanded) {
+                                        return Padding(
+                                          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md, vertical: AppSpacing.sm),
+                                          child: Row(
+                                            children: [
+                                              ExcludeSemantics(
+                                                child: CircleAvatar(
+                                                  radius: 18,
+                                                  backgroundColor: isPaid
+                                                      ? AppPalette.blue100
+                                                      : const Color(0xFFFFEBEE),
+                                                  child: Icon(
+                                                    isPaid ? CupertinoIcons.check_mark_circled_solid : CupertinoIcons.clock_fill,
+                                                    color: isPaid ? AppPalette.success : AppPalette.error,
+                                                    size: 18,
+                                                  ),
+                                                ),
+                                              ),
+                                              const SizedBox(width: AppSpacing.md),
+                                              Expanded(
+                                                child: Column(
+                                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                                  mainAxisSize: MainAxisSize.min,
+                                                  children: [
+                                                    Row(
+                                                      children: [
+                                                        Flexible(
+                                                          child: Text(
+                                                            'Factura #${v.id}',
+                                                            style: AppTypography.titleLarge.copyWith(fontSize: 15),
+                                                            maxLines: isHeaderExpanded ? null : 1,
+                                                            overflow: isHeaderExpanded ? null : TextOverflow.ellipsis,
+                                                          ),
+                                                        ),
+                                                        const SizedBox(width: AppSpacing.xs),
+                                                        AppChip(
+                                                          label: isPaid
+                                                              ? (pagadaConCredito ? 'Pagada con saldo' : 'Pagada')
+                                                              : 'Pendiente',
+                                                          variant: isPaid ? AppChipVariant.success : AppChipVariant.warning,
+                                                        ),
+                                                      ],
+                                                    ),
+                                                    const SizedBox(height: 2),
+                                                    Wrap(
+                                                      spacing: 8,
+                                                      crossAxisAlignment: WrapCrossAlignment.center,
+                                                      children: [
+                                                        Text(
+                                                          '👤 ${cliente?.nombre ?? v.clienteId}',
+                                                          style: AppTypography.labelSmall.copyWith(
+                                                            color: AppPalette.textSecondary,
+                                                            fontSize: 12,
+                                                          ),
+                                                        ),
+                                                        AppMoneyText(
+                                                          amount: v.totalPagarUsd,
+                                                          currency: MoneyCurrency.usd,
+                                                          fontSize: 13,
+                                                          fontWeight: FontWeight.w700,
+                                                        ),
+                                                        if (hasDebt)
+                                                          Row(
+                                                            mainAxisSize: MainAxisSize.min,
+                                                            children: [
+                                                              Text(
+                                                                'Debe: ',
+                                                                style: AppTypography.labelSmall.copyWith(
+                                                                  color: AppPalette.error,
+                                                                  fontWeight: FontWeight.w600,
+                                                                  fontSize: 11,
+                                                                ),
+                                                              ),
+                                                              AppMoneyText(
+                                                                amount: v.deudaUsd,
+                                                                currency: MoneyCurrency.usd,
+                                                                nature: MoneyNature.debt,
+                                                                fontSize: 11,
+                                                                fontWeight: FontWeight.w600,
+                                                              ),
+                                                            ],
+                                                          ),
+                                                      ],
+                                                    ),
+                                                  ],
+                                                ),
+                                              ),
+                                            ],
+                                          ),
                                         );
                                       },
-                                      onDelete: () => _confirmDelete(context, ds, v),
-                                    ),
-                                  );
-                                },
-                              ),
+                                      body: Container(
+                                        width: double.infinity,
+                                        padding: const EdgeInsets.fromLTRB(AppSpacing.md, 0, AppSpacing.md, AppSpacing.md),
+                                        child: Column(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          children: [
+                                            const Divider(color: AppPalette.divider),
+                                            const SizedBox(height: 4),
+                                            SelectableText.rich(
+                                              TextSpan(
+                                                style: AppTypography.bodyMedium.copyWith(fontSize: 13, height: 1.5),
+                                                children: [
+                                                  const TextSpan(text: '👤 Cliente: ', style: TextStyle(fontWeight: FontWeight.w600)),
+                                                  TextSpan(text: '${cliente?.nombre ?? v.clienteId} (${v.clienteId})'),
+                                                  const TextSpan(text: '\n📦 Cantidad de prendas: ', style: TextStyle(fontWeight: FontWeight.w600)),
+                                                  TextSpan(text: '$cantidadItems ítem${cantidadItems == 1 ? '' : 's'}'),
+                                                  const TextSpan(text: '\n💳 Método de pago: ', style: TextStyle(fontWeight: FontWeight.w600)),
+                                                  TextSpan(text: metodoPagoNombre),
+                                                  const TextSpan(text: '\n📈 Tasa BCV: ', style: TextStyle(fontWeight: FontWeight.w600)),
+                                                  TextSpan(text: 'VES ${v.tasaBcv.toStringAsFixed(2)}'),
+                                                  const TextSpan(text: '\n📅 Fecha: ', style: TextStyle(fontWeight: FontWeight.w600)),
+                                                  TextSpan(text: v.fecha.toIso8601String().split('T').first),
+                                                  const TextSpan(text: '\n💵 Total a pagar: ', style: TextStyle(fontWeight: FontWeight.w600)),
+                                                  TextSpan(text: 'USD ${v.totalPagarUsd.toStringAsFixed(2)} (Bs. ${(v.totalPagarUsd * v.tasaBcv).toStringAsFixed(2)})'),
+                                                  const TextSpan(text: '\n💰 Abonado: ', style: TextStyle(fontWeight: FontWeight.w600)),
+                                                  TextSpan(text: 'USD ${v.abonoUsd.toStringAsFixed(2)}'),
+                                                  const TextSpan(text: '\n⚠️ Deuda restante: ', style: TextStyle(fontWeight: FontWeight.w600)),
+                                                  TextSpan(text: 'USD ${v.deudaUsd.toStringAsFixed(2)}', style: TextStyle(color: hasDebt ? AppPalette.error : AppPalette.textPrimary, fontWeight: FontWeight.w600)),
+                                                  if (v.excedenteUsd > 0) ...[
+                                                    const TextSpan(text: '\n✨ Excedente/Sobrepago: ', style: TextStyle(fontWeight: FontWeight.w600)),
+                                                    TextSpan(text: 'USD ${v.excedenteUsd.toStringAsFixed(2)}', style: const TextStyle(color: AppPalette.success)),
+                                                  ],
+                                                ],
+                                              ),
+                                            ),
+                                            const SizedBox(height: 8),
+                                            if (saldoAFavor > 0)
+                                              Padding(
+                                                padding: const EdgeInsets.only(bottom: 8.0),
+                                                child: Row(
+                                                  children: [
+                                                    Text('Saldo disponible del cliente: ', style: AppTypography.labelSmall),
+                                                    CreditChip(amount: saldoAFavor, isCredit: true),
+                                                  ],
+                                                ),
+                                              ),
+                                            const SizedBox(height: 8),
+                                            Wrap(
+                                              alignment: WrapAlignment.end,
+                                              crossAxisAlignment: WrapCrossAlignment.center,
+                                              spacing: AppSpacing.xs,
+                                              runSpacing: AppSpacing.xs,
+                                              children: [
+                                                OutlinedButton.icon(
+                                                  style: OutlinedButton.styleFrom(
+                                                    visualDensity: VisualDensity.compact,
+                                                    foregroundColor: AppPalette.blue700,
+                                                    side: const BorderSide(color: AppPalette.border),
+                                                  ),
+                                                  icon: const Icon(CupertinoIcons.doc_text, size: 16),
+                                                  label: const Text('Ver detalle'),
+                                                  onPressed: () => context.push(RoutePaths.buildSaleDetailPath(v.id)),
+                                                ),
+                                                if (hasDebt && saldoAFavor > 0)
+                                                  ApplyCreditButton(
+                                                    applicableAmount: saldoAFavor < v.deudaUsd ? saldoAFavor : v.deudaUsd,
+                                                    onPressed: () {
+                                                      final cubit = ApplyCreditCubit(
+                                                        repository: ServiceLocator().creditRepository,
+                                                        dataService: ds,
+                                                      );
+                                                      ApplyCreditSheet.show(
+                                                        context,
+                                                        cubit: cubit,
+                                                        clienteId: v.clienteId,
+                                                        clienteNombre: cliente?.nombre ?? v.clienteId,
+                                                        ventaId: v.id,
+                                                        deudaVenta: v.deudaUsd,
+                                                        totalCreditoDisponible: saldoAFavor,
+                                                        origenVentaId: availableCredits.firstOrNull?.origenVentaId,
+                                                        userEmail: ds.currentUsuarioEmail ?? 'Antigravity Senior Agent',
+                                                      );
+                                                    },
+                                                  ),
+                                                if (hasDebt)
+                                                  OutlinedButton.icon(
+                                                    style: OutlinedButton.styleFrom(
+                                                      visualDensity: VisualDensity.compact,
+                                                      foregroundColor: AppPalette.blue700,
+                                                      side: const BorderSide(color: AppPalette.border),
+                                                    ),
+                                                    icon: const Icon(CupertinoIcons.money_dollar, size: 16),
+                                                    label: const Text('Abonar'),
+                                                    onPressed: () => _showAbonoDialog(v),
+                                                  ),
+                                                OutlinedButton.icon(
+                                                  style: OutlinedButton.styleFrom(
+                                                    visualDensity: VisualDensity.compact,
+                                                    foregroundColor: AppPalette.error,
+                                                    side: const BorderSide(color: AppPalette.border),
+                                                  ),
+                                                  icon: const Icon(CupertinoIcons.trash, size: 16),
+                                                  label: const Text('Anular'),
+                                                  onPressed: () => _confirmDelete(context, ds, v),
+                                                ),
+                                              ],
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    );
+                                  }).toList(),
+                                ),
+                              ],
+                            ),
                       ),
                     ],
                   ),
@@ -453,154 +643,6 @@ class _VentasViewState extends State<_VentasView> {
   }
 }
 
-class _VentaCard extends StatelessWidget {
-  final Venta venta;
-  final Cliente? cliente;
-  final String metodoPagoNombre;
-  final int cantidadItems;
-  final VoidCallback onTap;
-  final VoidCallback? onAbono;
-  final VoidCallback onDelete;
-  final double saldoAFavorCliente;
-  final VoidCallback? onAplicarSaldo;
-  final bool pagadaConSaldoAFavor;
-
-  const _VentaCard({
-    required this.venta,
-    required this.cliente,
-    required this.metodoPagoNombre,
-    required this.cantidadItems,
-    required this.onTap,
-    required this.onAbono,
-    required this.onDelete,
-    this.saldoAFavorCliente = 0.0,
-    this.onAplicarSaldo,
-    this.pagadaConSaldoAFavor = false,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final isPaid = venta.estado == EstadoVenta.pagada;
-    final hasDebt = venta.deudaUsd > 0;
-
-    return Padding(
-      padding: const EdgeInsets.only(bottom: AppSpacing.sm),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(12),
-        onTap: onTap,
-        child: AppCard(
-          padding: AppSpacing.pMd,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Wrap(
-                alignment: WrapAlignment.spaceBetween,
-                crossAxisAlignment: WrapCrossAlignment.center,
-                spacing: AppSpacing.sm,
-                runSpacing: 4,
-                children: [
-                  Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Flexible(
-                        child: Text(
-                          'Factura #${venta.id}',
-                          style: AppTypography.titleLarge.copyWith(fontSize: 15),
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                      const SizedBox(width: AppSpacing.xs),
-                      AppChip(
-                        label: isPaid
-                            ? (pagadaConSaldoAFavor ? 'Pagada con saldo a favor' : 'Pagada')
-                            : 'Pendiente',
-                        variant: isPaid ? AppChipVariant.success : AppChipVariant.warning,
-                        icon: isPaid ? AppIcons.success : AppIcons.warning,
-                      ),
-                    ],
-                  ),
-                  AppMoneyText(
-                    amount: venta.totalPagarUsd,
-                    currency: MoneyCurrency.usd,
-                    fontSize: 15,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ],
-              ),
-              const SizedBox(height: 4),
-              Text(
-                'Cliente: ${cliente?.nombre ?? venta.clienteId} • $cantidadItems ítem${cantidadItems == 1 ? '' : 's'}',
-                style: AppTypography.bodyMedium.copyWith(fontSize: 13),
-                overflow: TextOverflow.ellipsis,
-                maxLines: 1,
-              ),
-              Text(
-                'Pago: $metodoPagoNombre • Tasa BCV: ${venta.tasaBcv} • Fecha: ${venta.fecha.toIso8601String().split('T').first}',
-                style: AppTypography.labelSmall.copyWith(color: AppPalette.textSecondary),
-                overflow: TextOverflow.ellipsis,
-                maxLines: 1,
-              ),
-              if (hasDebt) ...[
-                const SizedBox(height: 4),
-                Wrap(
-                  crossAxisAlignment: WrapCrossAlignment.center,
-                  spacing: AppSpacing.xs,
-                  runSpacing: 2,
-                  children: [
-                    Text(
-                      'Abonado: USD ${venta.abonoUsd.toStringAsFixed(2)} | ',
-                      style: AppTypography.labelSmall.copyWith(fontSize: 12),
-                    ),
-                    Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          'Deuda: ',
-                          style: AppTypography.labelSmall.copyWith(color: AppPalette.error, fontWeight: FontWeight.w600),
-                        ),
-                        AppMoneyText(
-                          amount: venta.deudaUsd,
-                          currency: MoneyCurrency.usd,
-                          nature: MoneyNature.debt,
-                          fontSize: 12,
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ],
-              const SizedBox(height: AppSpacing.sm),
-              Wrap(
-                alignment: WrapAlignment.end,
-                crossAxisAlignment: WrapCrossAlignment.center,
-                spacing: AppSpacing.xs,
-                runSpacing: AppSpacing.xs,
-                children: [
-                  if (hasDebt && saldoAFavorCliente > 0)
-                    ApplyCreditButton(
-                      applicableAmount: saldoAFavorCliente < venta.deudaUsd ? saldoAFavorCliente : venta.deudaUsd,
-                      onPressed: onAplicarSaldo,
-                    ),
-                  if (onAbono != null)
-                    TextButton.icon(
-                      icon: const Icon(CupertinoIcons.money_dollar, size: 16),
-                      label: const Text('Registrar Abono'),
-                      onPressed: onAbono,
-                    ),
-                  IconButton(
-                    icon: const Icon(CupertinoIcons.trash, size: 18, color: AppPalette.error),
-                    tooltip: 'Anular/Eliminar Venta',
-                    onPressed: onDelete,
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
 
 class _AbonoDialog extends StatefulWidget {
   final Venta venta;
@@ -769,6 +811,7 @@ class _NuevaVentaBottomSheetState extends State<_NuevaVentaBottomSheet> {
   late final TextEditingController _abonoController;
   late String _selectedMetodoPago;
   bool _usarTasaManual = false;
+  bool _isProcessing = false;
   final List<_CartLine> _carrito = [];
 
   @override
@@ -808,34 +851,36 @@ class _NuevaVentaBottomSheetState extends State<_NuevaVentaBottomSheet> {
     final totalBs = totalCarrito * (tasaSeleccionada?.valor ?? 0.0);
     final metodosActivos = ds.metodosPagoActivos;
 
-    return Padding(
-      padding: EdgeInsets.only(
-        bottom: MediaQuery.of(context).viewInsets.bottom + AppSpacing.lg,
-        left: AppSpacing.lg,
-        right: AppSpacing.lg,
-        top: AppSpacing.lg,
-      ),
-      child: SingleChildScrollView(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Expanded(
-                  child: Text(
-                    'Registrar Venta (${ds.nextVentaId})',
-                    style: AppTypography.titleLarge.copyWith(fontSize: 17),
-                    overflow: TextOverflow.ellipsis,
+    return PopScope(
+      canPop: !_isProcessing,
+      child: Padding(
+        padding: EdgeInsets.only(
+          bottom: MediaQuery.of(context).viewInsets.bottom + AppSpacing.lg,
+          left: AppSpacing.lg,
+          right: AppSpacing.lg,
+          top: AppSpacing.lg,
+        ),
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Expanded(
+                    child: Text(
+                      'Registrar Venta (${ds.nextVentaId})',
+                      style: AppTypography.titleLarge.copyWith(fontSize: 17),
+                      overflow: TextOverflow.ellipsis,
+                    ),
                   ),
-                ),
-                IconButton(
-                  icon: const Icon(CupertinoIcons.xmark_circle_fill, color: AppPalette.textSecondary),
-                  onPressed: () => Navigator.pop(context),
-                ),
-              ],
-            ),
+                  IconButton(
+                    icon: const Icon(CupertinoIcons.xmark_circle_fill, color: AppPalette.textSecondary),
+                    onPressed: _isProcessing ? null : () => Navigator.pop(context),
+                  ),
+                ],
+              ),
             const SizedBox(height: AppSpacing.md),
             DropdownButtonFormField<String>(
               initialValue: ds.clientes.any((c) => c.id == _selectedCliente)
@@ -844,6 +889,29 @@ class _NuevaVentaBottomSheetState extends State<_NuevaVentaBottomSheet> {
               decoration: const InputDecoration(labelText: 'Cliente', border: OutlineInputBorder()),
               items: ds.clientes.map((c) => DropdownMenuItem(value: c.id, child: Text('${c.nombre} (${c.id})'))).toList(),
               onChanged: (val) => setState(() => _selectedCliente = val!),
+            ),
+            Builder(
+              builder: (context) {
+                final cId = _selectedCliente;
+                final ventasC = ds.ventas.where((v) => v.clienteId == cId);
+                final deudaC = ventasC.fold<double>(0.0, (s, v) => s + (v.deudaUsd > 0 ? v.deudaUsd : 0.0));
+                final creditsC = ServiceLocator().creditsDataSource.credits.where((c) => c.clienteId == cId && c.isAvailable);
+                final saldoC = creditsC.fold<double>(0.0, (s, c) => s + c.saldoUsd);
+                if (deudaC <= 0 && saldoC <= 0) return const SizedBox.shrink();
+                return Padding(
+                  padding: const EdgeInsets.only(top: AppSpacing.xs),
+                  child: Wrap(
+                    spacing: AppSpacing.sm,
+                    runSpacing: 4,
+                    children: [
+                      if (deudaC > 0)
+                        CreditChip(amount: deudaC, isCredit: false),
+                      if (saldoC > 0)
+                        CreditChip(amount: saldoC, isCredit: true),
+                    ],
+                  ),
+                );
+              },
             ),
             const SizedBox(height: AppSpacing.md),
             Text('Agregar productos', style: AppTypography.bodyMedium.copyWith(fontWeight: FontWeight.w600)),
@@ -971,32 +1039,60 @@ class _NuevaVentaBottomSheetState extends State<_NuevaVentaBottomSheet> {
             Row(
               children: [
                 Expanded(
-                  child: AppOutlinedButton(label: 'Cancelar', onPressed: () => Navigator.pop(context)),
+                  child: AppOutlinedButton(
+                    label: 'Cancelar',
+                    onPressed: _isProcessing ? null : () => Navigator.pop(context),
+                  ),
                 ),
                 const SizedBox(width: AppSpacing.md),
                 Expanded(
                   child: AppButton(
-                    label: 'Guardar Venta',
-                    icon: CupertinoIcons.cart_fill,
-                    onPressed: () async {
-                      if (_carrito.isEmpty) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('Agregá al menos un producto al carrito.')),
-                        );
-                        return;
-                      }
-                      final abono = double.tryParse(_abonoController.text.replaceAll(',', '.')) ?? totalCarrito;
-                      Navigator.pop(context);
-                      await ds.addVenta(
-                        clienteId: _selectedCliente,
-                        items: _carrito
-                            .map((l) => (productoId: l.productoId, cantidad: l.cantidad, precioUsd: l.precioUsd))
-                            .toList(),
-                        metodoPagoId: _selectedMetodoPago,
-                        abonoUsd: abono,
-                        usarTasaManual: _usarTasaManual,
-                      );
-                    },
+                    label: _isProcessing ? 'Guardando...' : 'Guardar Venta',
+                    icon: _isProcessing ? null : CupertinoIcons.cart_fill,
+                    onPressed: _isProcessing
+                        ? null
+                        : () async {
+                            if (_carrito.isEmpty) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(content: Text('Agregá al menos un producto al carrito.')),
+                              );
+                              return;
+                            }
+                            final abono = double.tryParse(_abonoController.text.replaceAll(',', '.')) ?? totalCarrito;
+                            final navigator = Navigator.of(context);
+                            final messenger = ScaffoldMessenger.of(context);
+                            setState(() => _isProcessing = true);
+                            try {
+                              final ok = await ds.addVenta(
+                                clienteId: _selectedCliente,
+                                items: _carrito
+                                    .map((l) => (productoId: l.productoId, cantidad: l.cantidad, precioUsd: l.precioUsd))
+                                    .toList(),
+                                metodoPagoId: _selectedMetodoPago,
+                                abonoUsd: abono,
+                                usarTasaManual: _usarTasaManual,
+                              );
+                              if (!mounted) return;
+                              navigator.pop();
+                              if (ok) {
+                                messenger.showSnackBar(
+                                  const SnackBar(
+                                    backgroundColor: AppPalette.success,
+                                    content: Text('Venta registrada con éxito.'),
+                                  ),
+                                );
+                              }
+                            } catch (e) {
+                              if (!mounted) return;
+                              setState(() => _isProcessing = false);
+                              messenger.showSnackBar(
+                                SnackBar(
+                                  backgroundColor: AppPalette.error,
+                                  content: Text('Error al registrar venta: $e'),
+                                ),
+                              );
+                            }
+                          },
                   ),
                 ),
               ],
@@ -1004,6 +1100,7 @@ class _NuevaVentaBottomSheetState extends State<_NuevaVentaBottomSheet> {
           ],
         ),
       ),
-    );
+    ),
+  );
   }
 }

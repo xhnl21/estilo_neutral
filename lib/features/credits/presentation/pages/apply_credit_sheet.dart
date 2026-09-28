@@ -106,29 +106,31 @@ class ApplyCreditSheet extends StatelessWidget {
         final saldoRestante = preview?.saldoRestante ?? (totalCreditoDisponible - montoAplicar);
         final deudaRestante = preview?.deudaRestante ?? (deudaVenta - montoAplicar);
 
-        return SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(AppSpacing.lg, AppSpacing.md, AppSpacing.lg, AppSpacing.lg),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                // Cabecera con botón de cierre
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text(
-                      'Aplicar saldo a favor',
-                      style: AppTypography.titleLarge.copyWith(color: AppPalette.blue700),
-                    ),
-                    IconButton(
-                      icon: const Icon(CupertinoIcons.xmark, size: 20),
-                      onPressed: () => Navigator.of(context).pop(false),
-                    ),
-                  ],
-                ),
-                const Divider(),
-                const SizedBox(height: 8),
+        return PopScope(
+          canPop: !state.isLoading,
+          child: SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(AppSpacing.lg, AppSpacing.md, AppSpacing.lg, AppSpacing.lg),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  // Cabecera con botón de cierre
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        'Aplicar saldo a favor',
+                        style: AppTypography.titleLarge.copyWith(color: AppPalette.blue700),
+                      ),
+                      IconButton(
+                        icon: const Icon(CupertinoIcons.xmark, size: 20),
+                        onPressed: state.isLoading ? null : () => Navigator.of(context).pop(false),
+                      ),
+                    ],
+                  ),
+                  const Divider(),
+                  const SizedBox(height: 8),
 
                 // Frase 2: Cliente
                 Row(
@@ -254,8 +256,9 @@ class ApplyCreditSheet extends StatelessWidget {
               ],
             ),
           ),
-        );
-      },
-    );
+        ),
+      );
+    },
+  );
   }
 }

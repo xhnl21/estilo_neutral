@@ -114,92 +114,141 @@ class _UsuariosViewState extends State<_UsuariosView> {
                         description: 'Usa el botón "Nuevo Usuario" para dar acceso a alguien.',
                         icon: CupertinoIcons.person_2,
                       )
-                    : ListView.builder(
+                    : ListView(
+                        key: const ValueKey('usuarios_list'),
                         padding: const EdgeInsets.fromLTRB(AppSpacing.lg, 0, AppSpacing.lg, 80),
-                        itemCount: usuarios.length,
-                        itemBuilder: (context, index) {
-                          final usuario = usuarios[index];
-                          final organizacionId = widget.dataService.organizacionIdForUsuario(usuario.email);
-                          final organizacion = organizacionId == null
-                              ? null
-                              : widget.dataService.organizaciones
-                                  .where((o) => o.id == organizacionId)
-                                  .firstOrNull;
+                        children: [
+                          ExpansionPanelList(
+                            elevation: 1,
+                            expandedHeaderPadding: const EdgeInsets.symmetric(vertical: 4),
+                            expansionCallback: (panelIndex, isExpanded) {
+                              final usuario = usuarios[panelIndex];
+                              cubit.toggleExpanded(usuario.id);
+                            },
+                            children: usuarios.map<ExpansionPanel>((usuario) {
+                              final organizacionId = widget.dataService.organizacionIdForUsuario(usuario.email);
+                              final organizacion = organizacionId == null
+                                  ? null
+                                  : widget.dataService.organizaciones
+                                      .where((o) => o.id == organizacionId)
+                                      .firstOrNull;
+                              final isExpanded = state.expandedUsuarioId == usuario.id;
 
-                          return Padding(
-                            padding: const EdgeInsets.only(bottom: AppSpacing.sm),
-                            child: AppCard(
-                              padding: AppSpacing.pMd,
-                              child: Row(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  const ExcludeSemantics(
-                                    child: CircleAvatar(
-                                      radius: 20,
-                                      backgroundColor: AppPalette.blue100,
-                                      child: Icon(CupertinoIcons.person_fill, color: AppPalette.blue700, size: 20),
+                              return ExpansionPanel(
+                                isExpanded: isExpanded,
+                                canTapOnHeader: true,
+                                backgroundColor: AppPalette.surface,
+                                headerBuilder: (context, isHeaderExpanded) {
+                                  return Padding(
+                                    padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md, vertical: AppSpacing.sm),
+                                    child: Row(
+                                      children: [
+                                        const ExcludeSemantics(
+                                          child: CircleAvatar(
+                                            radius: 18,
+                                            backgroundColor: AppPalette.blue100,
+                                            child: Icon(CupertinoIcons.person_fill, color: AppPalette.blue700, size: 18),
+                                          ),
+                                        ),
+                                        const SizedBox(width: AppSpacing.md),
+                                        Expanded(
+                                          child: Column(
+                                            crossAxisAlignment: CrossAxisAlignment.start,
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              Text(
+                                                usuario.nombre.isNotEmpty ? usuario.nombre : usuario.email,
+                                                style: AppTypography.titleLarge.copyWith(fontSize: 15),
+                                                maxLines: isHeaderExpanded ? null : 1,
+                                                overflow: isHeaderExpanded ? null : TextOverflow.ellipsis,
+                                              ),
+                                              const SizedBox(height: 2),
+                                              Wrap(
+                                                spacing: 6,
+                                                crossAxisAlignment: WrapCrossAlignment.center,
+                                                children: [
+                                                  Text(
+                                                    'ID: ${usuario.id}',
+                                                    style: AppTypography.labelSmall.copyWith(
+                                                      color: AppPalette.textSecondary,
+                                                      fontSize: 11,
+                                                    ),
+                                                  ),
+                                                  AppChip(
+                                                    label: organizacion?.nombre ?? 'Sin organización',
+                                                    variant: organizacion != null ? AppChipVariant.info : AppChipVariant.warning,
+                                                  ),
+                                                ],
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      ],
                                     ),
-                                  ),
-                                  const SizedBox(width: AppSpacing.md),
-                                  Expanded(
-                                    child: MergeSemantics(
-                                      child: Column(
-                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                  );
+                                },
+                                body: Container(
+                                  width: double.infinity,
+                                  padding: const EdgeInsets.fromLTRB(AppSpacing.md, 0, AppSpacing.md, AppSpacing.md),
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      const Divider(color: AppPalette.divider),
+                                      const SizedBox(height: 4),
+                                      SelectableText.rich(
+                                        TextSpan(
+                                          style: AppTypography.bodyMedium.copyWith(fontSize: 13, height: 1.5),
+                                          children: [
+                                            const TextSpan(text: '👤 Nombre: ', style: TextStyle(fontWeight: FontWeight.w600)),
+                                            TextSpan(text: usuario.nombre.isNotEmpty ? usuario.nombre : 'No especificado'),
+                                            const TextSpan(text: '\n✉️ Email: ', style: TextStyle(fontWeight: FontWeight.w600)),
+                                            TextSpan(text: usuario.email),
+                                            const TextSpan(text: '\n🏢 Organización: ', style: TextStyle(fontWeight: FontWeight.w600)),
+                                            TextSpan(text: organizacion != null ? '${organizacion.nombre} (${organizacion.id})' : 'Sin organización asignada'),
+                                          ],
+                                        ),
+                                      ),
+                                      const SizedBox(height: 12),
+                                      Wrap(
+                                        alignment: WrapAlignment.end,
+                                        crossAxisAlignment: WrapCrossAlignment.center,
+                                        spacing: 8,
+                                        runSpacing: 8,
                                         children: [
-                                          Text(
-                                            usuario.nombre.isNotEmpty ? usuario.nombre : usuario.email,
-                                            style: AppTypography.titleLarge.copyWith(fontSize: 15),
-                                            overflow: TextOverflow.ellipsis,
+                                          OutlinedButton.icon(
+                                            style: OutlinedButton.styleFrom(
+                                              visualDensity: VisualDensity.compact,
+                                              foregroundColor: AppPalette.blue700,
+                                              side: const BorderSide(color: AppPalette.border),
+                                            ),
+                                            icon: const Icon(CupertinoIcons.pencil, size: 16),
+                                            label: const Text('Editar'),
+                                            onPressed: () => esquemaListo
+                                                ? _showUsuarioDialog(context, usuario: usuario)
+                                                : _showEsquemaPendienteDialog(context),
                                           ),
-                                          const SizedBox(height: 2),
-                                          Text(
-                                            '✉️ ${usuario.email} • ${usuario.id}',
-                                            style: AppTypography.bodyMedium.copyWith(fontSize: 12),
-                                            overflow: TextOverflow.ellipsis,
-                                          ),
-                                          const SizedBox(height: 4),
-                                          AppChip(
-                                            label: organizacion?.nombre ?? 'Sin organización asignada',
-                                            variant: organizacion != null ? AppChipVariant.info : AppChipVariant.warning,
+                                          const SizedBox(width: 8),
+                                          OutlinedButton.icon(
+                                            style: OutlinedButton.styleFrom(
+                                              visualDensity: VisualDensity.compact,
+                                              foregroundColor: AppPalette.error,
+                                              side: const BorderSide(color: AppPalette.border),
+                                            ),
+                                            icon: const Icon(CupertinoIcons.trash, size: 16),
+                                            label: const Text('Eliminar'),
+                                            onPressed: () => esquemaListo
+                                                ? _confirmDelete(context, usuario)
+                                                : _showEsquemaPendienteDialog(context),
                                           ),
                                         ],
                                       ),
-                                    ),
-                                  ),
-                                  Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      Semantics(
-                                        button: true,
-                                        label: 'Editar usuario ${usuario.email}',
-                                        child: IconButton(
-                                          visualDensity: VisualDensity.compact,
-                                          icon: const Icon(CupertinoIcons.pencil, size: 18, color: AppPalette.blue700),
-                                          tooltip: 'Editar Usuario',
-                                          onPressed: () => esquemaListo
-                                              ? _showUsuarioDialog(context, usuario: usuario)
-                                              : _showEsquemaPendienteDialog(context),
-                                        ),
-                                      ),
-                                      Semantics(
-                                        button: true,
-                                        label: 'Eliminar usuario ${usuario.email}',
-                                        child: IconButton(
-                                          visualDensity: VisualDensity.compact,
-                                          icon: const Icon(CupertinoIcons.trash, size: 18, color: AppPalette.error),
-                                          tooltip: 'Eliminar Usuario',
-                                          onPressed: () => esquemaListo
-                                              ? _confirmDelete(context, usuario)
-                                              : _showEsquemaPendienteDialog(context),
-                                        ),
-                                      ),
                                     ],
                                   ),
-                                ],
-                              ),
-                            ),
-                          );
-                        },
+                                ),
+                              );
+                            }).toList(),
+                          ),
+                        ],
                       ),
               ),
             ],

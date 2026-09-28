@@ -15,6 +15,8 @@ class VentasState extends Equatable {
   final String? errorMessage;
   final String? actionSuccessMessage;
 
+  final String? expandedVentaId;
+
   const VentasState({
     this.status = VentasStatus.initial,
     this.ventas = const [],
@@ -22,6 +24,7 @@ class VentasState extends Equatable {
     this.clientes = const [],
     this.filtroClienteId,
     this.filterStatus = 'Todos',
+    this.expandedVentaId,
     this.errorMessage,
     this.actionSuccessMessage,
   });
@@ -34,6 +37,8 @@ class VentasState extends Equatable {
     String? filtroClienteId,
     bool clearFiltroCliente = false,
     String? filterStatus,
+    String? expandedVentaId,
+    bool clearExpandedId = false,
     String? errorMessage,
     String? actionSuccessMessage,
   }) {
@@ -45,6 +50,8 @@ class VentasState extends Equatable {
       filtroClienteId:
           clearFiltroCliente ? null : (filtroClienteId ?? this.filtroClienteId),
       filterStatus: filterStatus ?? this.filterStatus,
+      expandedVentaId:
+          clearExpandedId ? null : (expandedVentaId ?? this.expandedVentaId),
       errorMessage: errorMessage,
       actionSuccessMessage: actionSuccessMessage,
     );
@@ -62,6 +69,7 @@ class VentasState extends Equatable {
         clientes,
         filtroClienteId,
         filterStatus,
+        expandedVentaId,
         errorMessage,
         actionSuccessMessage,
       ];

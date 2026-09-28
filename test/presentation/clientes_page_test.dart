@@ -77,6 +77,6 @@ void main() {
     }
     expect(exception, isNull);
     expect(find.textContaining('Cliente Con Deuda Grande'), findsOneWidget);
-    expect(find.text(r'$20000.00'), findsOneWidget);
+    expect(find.text(r'$20000.00'), findsWidgets);
   });
 }

@@ -56,6 +56,15 @@ class ClientesCubit extends Cubit<ClientesState> {
     ));
   }
 
+  /// Alterna la apertura del panel acordeón de un cliente
+  void toggleExpanded(String clienteId) {
+    if (state.expandedClienteId == clienteId) {
+      emit(state.copyWith(clearExpandedId: true));
+    } else {
+      emit(state.copyWith(expandedClienteId: clienteId));
+    }
+  }
+
   /// Refresca datos desde Google Sheets bajo demanda (Cero Polling)
   Future<void> refresh() async {
     Logger.info('ClientesCubit: Refrescando lista de clientes desde Google Sheets...');

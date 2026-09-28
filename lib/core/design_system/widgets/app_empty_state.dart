@@ -26,7 +26,8 @@ class AppEmptyState extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Center(
-      child: Padding(
+      child: SingleChildScrollView(
+        physics: const ClampingScrollPhysics(),
         padding: AppSpacing.pXl,
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,

@@ -12,11 +12,14 @@ class ClientesState extends Equatable {
   final String? errorMessage;
   final String? actionSuccessMessage;
 
+  final String? expandedClienteId;
+
   const ClientesState({
     this.status = ClientesStatus.initial,
     this.clientes = const [],
     this.filteredClientes = const [],
     this.searchQuery = '',
+    this.expandedClienteId,
     this.errorMessage,
     this.actionSuccessMessage,
   });
@@ -26,6 +29,8 @@ class ClientesState extends Equatable {
     List<Cliente>? clientes,
     List<Cliente>? filteredClientes,
     String? searchQuery,
+    String? expandedClienteId,
+    bool clearExpandedId = false,
     String? errorMessage,
     String? actionSuccessMessage,
   }) {
@@ -34,6 +39,8 @@ class ClientesState extends Equatable {
       clientes: clientes ?? this.clientes,
       filteredClientes: filteredClientes ?? this.filteredClientes,
       searchQuery: searchQuery ?? this.searchQuery,
+      expandedClienteId:
+          clearExpandedId ? null : (expandedClienteId ?? this.expandedClienteId),
       errorMessage: errorMessage,
       actionSuccessMessage: actionSuccessMessage,
     );
@@ -49,6 +56,7 @@ class ClientesState extends Equatable {
         clientes,
         filteredClientes,
         searchQuery,
+        expandedClienteId,
         errorMessage,
         actionSuccessMessage,
       ];

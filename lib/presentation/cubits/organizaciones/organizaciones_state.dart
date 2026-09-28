@@ -14,12 +14,15 @@ class OrganizacionesState extends Equatable {
   final String? errorMessage;
   final String? actionSuccessMessage;
 
+  final String? expandedOrganizacionId;
+
   const OrganizacionesState({
     this.status = OrganizacionesStatus.initial,
     this.organizaciones = const [],
     this.usuarios = const [],
     this.schemaMultiOrgListo = true,
     this.isRefreshing = false,
+    this.expandedOrganizacionId,
     this.errorMessage,
     this.actionSuccessMessage,
   });
@@ -30,6 +33,8 @@ class OrganizacionesState extends Equatable {
     List<Usuario>? usuarios,
     bool? schemaMultiOrgListo,
     bool? isRefreshing,
+    String? expandedOrganizacionId,
+    bool clearExpandedId = false,
     String? errorMessage,
     String? actionSuccessMessage,
   }) {
@@ -39,6 +44,8 @@ class OrganizacionesState extends Equatable {
       usuarios: usuarios ?? this.usuarios,
       schemaMultiOrgListo: schemaMultiOrgListo ?? this.schemaMultiOrgListo,
       isRefreshing: isRefreshing ?? this.isRefreshing,
+      expandedOrganizacionId:
+          clearExpandedId ? null : (expandedOrganizacionId ?? this.expandedOrganizacionId),
       errorMessage: errorMessage,
       actionSuccessMessage: actionSuccessMessage,
     );
@@ -55,6 +62,7 @@ class OrganizacionesState extends Equatable {
         usuarios,
         schemaMultiOrgListo,
         isRefreshing,
+        expandedOrganizacionId,
         errorMessage,
         actionSuccessMessage,
       ];

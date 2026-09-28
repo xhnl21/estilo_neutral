@@ -49,6 +49,14 @@ class UsuariosCubit extends Cubit<UsuariosState> {
     ));
   }
 
+  void toggleExpanded(String usuarioId) {
+    if (state.expandedUsuarioId == usuarioId) {
+      emit(state.copyWith(clearExpandedId: true));
+    } else {
+      emit(state.copyWith(expandedUsuarioId: usuarioId));
+    }
+  }
+
   Future<void> refresh() async {
     Logger.info('UsuariosCubit: Refrescando usuarios desde Google Sheets...');
     emit(state.copyWith(status: UsuariosStatus.loading));

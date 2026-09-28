@@ -41,6 +41,14 @@ class OrganizacionesCubit extends Cubit<OrganizacionesState> {
   String monedaOrganizacion(String orgId) =>
       _dataService.monedaOrganizacion(orgId);
 
+  void toggleExpanded(String orgId) {
+    if (state.expandedOrganizacionId == orgId) {
+      emit(state.copyWith(clearExpandedId: true));
+    } else {
+      emit(state.copyWith(expandedOrganizacionId: orgId));
+    }
+  }
+
   Future<void> refresh() async {
     emit(state.copyWith(isRefreshing: true));
     try {

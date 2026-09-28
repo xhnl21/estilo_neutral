@@ -71,6 +71,14 @@ class VentasCubit extends Cubit<VentasState> {
     setFiltroCliente(null);
   }
 
+  void toggleExpanded(String ventaId) {
+    if (state.expandedVentaId == ventaId) {
+      emit(state.copyWith(clearExpandedId: true));
+    } else {
+      emit(state.copyWith(expandedVentaId: ventaId));
+    }
+  }
+
   /// Registra una venta en un lote atómico (All-or-Nothing).
   Future<bool> registrarVentaAtomica({
     required String clienteId,

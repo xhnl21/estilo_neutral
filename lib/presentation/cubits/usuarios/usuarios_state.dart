@@ -13,12 +13,15 @@ class UsuariosState extends Equatable {
   final String? errorMessage;
   final String? actionSuccessMessage;
 
+  final String? expandedUsuarioId;
+
   const UsuariosState({
     this.status = UsuariosStatus.initial,
     this.usuarios = const [],
     this.filteredUsuarios = const [],
     this.searchQuery = '',
     this.schemaMultiOrgListo = true,
+    this.expandedUsuarioId,
     this.errorMessage,
     this.actionSuccessMessage,
   });
@@ -29,6 +32,8 @@ class UsuariosState extends Equatable {
     List<Usuario>? filteredUsuarios,
     String? searchQuery,
     bool? schemaMultiOrgListo,
+    String? expandedUsuarioId,
+    bool clearExpandedId = false,
     String? errorMessage,
     String? actionSuccessMessage,
   }) {
@@ -38,6 +43,8 @@ class UsuariosState extends Equatable {
       filteredUsuarios: filteredUsuarios ?? this.filteredUsuarios,
       searchQuery: searchQuery ?? this.searchQuery,
       schemaMultiOrgListo: schemaMultiOrgListo ?? this.schemaMultiOrgListo,
+      expandedUsuarioId:
+          clearExpandedId ? null : (expandedUsuarioId ?? this.expandedUsuarioId),
       errorMessage: errorMessage,
       actionSuccessMessage: actionSuccessMessage,
     );
@@ -54,6 +61,7 @@ class UsuariosState extends Equatable {
         filteredUsuarios,
         searchQuery,
         schemaMultiOrgListo,
+        expandedUsuarioId,
         errorMessage,
         actionSuccessMessage,
       ];

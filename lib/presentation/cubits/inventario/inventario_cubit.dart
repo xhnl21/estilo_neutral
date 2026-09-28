@@ -55,6 +55,14 @@ class InventarioCubit extends Cubit<InventarioState> {
     ));
   }
 
+  void toggleExpanded(String productoId) {
+    if (state.expandedProductoId == productoId) {
+      emit(state.copyWith(clearExpandedId: true));
+    } else {
+      emit(state.copyWith(expandedProductoId: productoId));
+    }
+  }
+
   Future<void> refresh() async {
     Logger.info('InventarioCubit: Refrescando inventario desde Google Sheets...');
     emit(state.copyWith(status: InventarioStatus.loading));
