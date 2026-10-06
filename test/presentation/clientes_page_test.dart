@@ -3,8 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:estilo_neutral/core/design_system/theme/app_theme.dart';
 import 'package:estilo_neutral/models/cliente.dart';
 import 'package:estilo_neutral/presentation/pages/clientes_page.dart';
-import 'package:estilo_neutral/shared/google_sheets/sheets_data_service.dart';
-import '../test_sheets_config.dart';
+import '../test_servidor.dart';
 
 void main() {
   testWidgets('ClientesPage renders on narrow screen with large debt without RenderFlex overflow', (tester) async {
@@ -21,8 +20,8 @@ void main() {
     // de un testWidgets, el HttpClient queda interceptado por
     // TestWidgetsFlutterBinding y la llamada de red cuelga hasta el timeout
     // de 10 minutos en vez de fallar rápido.
-    final service = SheetsDataService(spreadsheetId: testSpreadsheetId, appsScriptUrl: testAppsScriptUrl);
-    service.setCurrentOrganizacion('67774411-6aa1-4aa3-a4b2-d3fc6913b768');
+    // Servidor simulado que confirma (sin él las altas se revierten, R4).
+    final (service, _) = await servicioConServidor(inicializar: false);
 
     // Add a customer with large debt that previously caused the 29px RenderFlex overflow
     //
@@ -46,8 +45,10 @@ void main() {
           fechaRegistro: DateTime(2026, 9, 14),
         ),
       );
+      // El ID lo asigna el servidor (R1).
+      final clienteId = service.clientes.firstWhere((c) => c.nombre == 'Cliente Con Deuda Grande').id;
       await service.addVenta(
-        clienteId: 'c99999999',
+        clienteId: clienteId,
         items: const [(productoId: 'p_fake', cantidad: 1, precioUsd: 20000.00)],
         metodoPagoId: 'mp_fake',
         abonoUsd: 0.0,

@@ -87,6 +87,17 @@ class _CodigosTelefonoViewState extends State<_CodigosTelefonoView> {
           ),
           body: Column(
             children: [
+              if (state.errorCarga != null)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(AppSpacing.lg, AppSpacing.sm, AppSpacing.lg, 0),
+                  child: Semantics(
+                    liveRegion: true,
+                    child: Text(
+                      'No se pudieron cargar los datos: ${state.errorCarga}',
+                      style: AppTypography.bodyMedium.copyWith(color: AppPalette.error),
+                    ),
+                  ),
+                ),
               Padding(
                 padding: const EdgeInsets.fromLTRB(
                   AppSpacing.lg,
@@ -113,7 +124,7 @@ class _CodigosTelefonoViewState extends State<_CodigosTelefonoView> {
                         itemCount: codigos.length,
                         itemBuilder: (context, index) {
                           final item = codigos[index];
-                          final enUso = cubit.isCodigoTelefonoEnUso(item.codigo);
+                          final enUso = state.enUso.contains(item.codigo.trim());
 
                           return Padding(
                             padding: const EdgeInsets.only(bottom: AppSpacing.sm),
@@ -187,9 +198,11 @@ class _CodigosTelefonoViewState extends State<_CodigosTelefonoView> {
                                   const SizedBox(width: AppSpacing.sm),
                                   IconButton(
                                     icon: const Icon(CupertinoIcons.pencil, size: 20),
-                                    color: AppPalette.primary,
-                                    tooltip: 'Editar código',
-                                    onPressed: () => _showFormDialog(context, codigoToEdit: item),
+                                    color: enUso ? AppPalette.textDisabled : AppPalette.primary,
+                                    // Los teléfonos de clientes guardan el código:
+                                    // en uso no se puede renombrar.
+                                    tooltip: enUso ? 'En uso (no editable)' : 'Editar código',
+                                    onPressed: enUso ? null : () => _showFormDialog(context, codigoToEdit: item),
                                   ),
                                   IconButton(
                                     icon: const Icon(CupertinoIcons.trash, size: 20),
@@ -344,11 +357,11 @@ class _CodigosTelefonoViewState extends State<_CodigosTelefonoView> {
                 keyboardType: TextInputType.number,
                 inputFormatters: [
                   FilteringTextInputFormatter.digitsOnly,
-                  LengthLimitingTextInputFormatter(5),
+                  LengthLimitingTextInputFormatter(4),
                 ],
                 decoration: InputDecoration(
                   labelText: 'Prefijo telefónico',
-                  hintText: 'Ej: 0414, 0424, 0212...',
+                  hintText: 'Ej: 0414, 0424, 0212',
                   prefixIcon: const Icon(CupertinoIcons.phone),
                   border: const OutlineInputBorder(),
                   errorText: errorText,
@@ -368,8 +381,8 @@ class _CodigosTelefonoViewState extends State<_CodigosTelefonoView> {
                   setDialogState(() => errorText = 'El código no puede estar vacío');
                   return;
                 }
-                if (input.length < 3) {
-                  setDialogState(() => errorText = 'El código debe tener al menos 3 dígitos');
+                if (!SheetsDataService.formatoCodigoTelefono.hasMatch(input)) {
+                  setDialogState(() => errorText = 'Debe tener 4 dígitos y empezar con 0 (ej: 0414)');
                   return;
                 }
 

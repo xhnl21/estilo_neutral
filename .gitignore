@@ -67,3 +67,9 @@ client_secret*.json
 # MkDocs — sitio generado, no se commitea
 /site/
 
+
+# Claude Code: configuración local (no se commitea)
+.claude/settings.local.json
+
+# Respaldos locales de la hoja de producción (datos personales)
+respaldos/

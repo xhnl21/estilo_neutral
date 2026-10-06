@@ -13,13 +13,14 @@ class CloudInventarioSearchRepository implements SearchRepository<InventarioItem
   ///
   /// Si se proporciona [_dataService], los elementos se obtienen reactivamente
   /// de los productos cargados en memoria desde Google Sheets.
-  /// Si no, se utilizan los elementos estáticos provistos en [fallbackItems].
+  /// Si no, se utilizan los elementos estáticos provistos en [fallbackItems]
+  /// (vacío por defecto: nunca se muestra un catálogo inventado).
   CloudInventarioSearchRepository({
     SheetsDataService? dataService,
     List<InventarioItem>? fallbackItems,
     Map<String, String>? customSynonyms,
   })  : _dataService = dataService,
-        _staticItems = fallbackItems ?? _defaultInventarioCatalog,
+        _staticItems = fallbackItems ?? const [],
         _customSynonyms = customSynonyms ?? _defaultInventarioSynonyms;
 
   @override
@@ -56,81 +57,6 @@ class CloudInventarioSearchRepository implements SearchRepository<InventarioItem
     return synonyms;
   }
 
-  /// Catálogo de demostración/fallback en caso de no contar aún con conexión a la nube.
-  static const List<InventarioItem> _defaultInventarioCatalog = [
-    InventarioItem(
-      id: 'p00000001',
-      name: 'Camisa Oxford Manga Larga',
-      marca: 'Tommy Hilfiger',
-      modelo: 'Classic Fit',
-      talla: 'M',
-      cantidad: 15,
-      precioUsd: 35.0,
-    ),
-    InventarioItem(
-      id: 'p00000002',
-      name: 'Pantalón Jean 501 Original',
-      marca: "Levi's",
-      modelo: 'Straight Leg',
-      talla: '32',
-      cantidad: 20,
-      precioUsd: 45.0,
-    ),
-    InventarioItem(
-      id: 'p00000003',
-      name: 'Franela Dri-FIT Deportiva',
-      marca: 'Nike',
-      modelo: 'Training Legend',
-      talla: 'L',
-      cantidad: 30,
-      precioUsd: 25.0,
-    ),
-    InventarioItem(
-      id: 'p00000004',
-      name: 'Chaqueta Impermeable Cortaviento',
-      marca: 'Columbia',
-      modelo: 'Glennaker Lake',
-      talla: 'XL',
-      cantidad: 8,
-      precioUsd: 65.0,
-    ),
-    InventarioItem(
-      id: 'p00000005',
-      name: 'Zapatos Deportivos Running',
-      marca: 'Adidas',
-      modelo: 'Ultraboost Light',
-      talla: '42',
-      cantidad: 12,
-      precioUsd: 110.0,
-    ),
-    InventarioItem(
-      id: 'p00000006',
-      name: 'Polo Piqué Algodón Premium',
-      marca: 'Lacoste',
-      modelo: 'L1212 Classic',
-      talla: 'M',
-      cantidad: 18,
-      precioUsd: 55.0,
-    ),
-    InventarioItem(
-      id: 'p00000007',
-      name: 'Suéter Tejido Cuello Redondo',
-      marca: 'Zara',
-      modelo: 'Soft Knit',
-      talla: 'S',
-      cantidad: 14,
-      precioUsd: 28.0,
-    ),
-    InventarioItem(
-      id: 'p00000008',
-      name: 'Bermuda Cargo Algodón',
-      marca: 'Dockers',
-      modelo: 'Cargo Utility',
-      talla: '34',
-      cantidad: 22,
-      precioUsd: 32.0,
-    ),
-  ];
 
   static const Map<String, String> _defaultInventarioSynonyms = {
     'p00000001': 'camisa vestir formal botones algodon ejecutiva tommy',

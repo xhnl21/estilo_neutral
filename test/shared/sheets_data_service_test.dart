@@ -4,6 +4,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:estilo_neutral/shared/google_sheets/sheets_data_service.dart';
 import 'package:estilo_neutral/models/models.dart';
+import '../test_servidor.dart';
 import '../test_sheets_config.dart';
 
 /// Adapter falso de dio para simular respuestas de Apps Script sin red real.
@@ -21,7 +22,8 @@ class _FakeHttpClientAdapter implements HttpClientAdapter {
     Future<void>? cancelFuture,
   ) async {
     onRequest(options);
-    final bytes = utf8.encode('{"status":"success"}');
+    // Un alta confirmada devuelve el ID que asignó el servidor.
+    final bytes = utf8.encode('{"status":"success","id":"c00000100"}');
     return ResponseBody.fromBytes(
       bytes,
       200,
@@ -37,16 +39,9 @@ void main() {
     late SheetsDataService service;
 
     setUp(() async {
-      service = SheetsDataService(spreadsheetId: testSpreadsheetId, appsScriptUrl: testAppsScriptUrl);
-      // Inicializar con datos de respaldo. Se espera a que termine (incluye
-      // un fetch real de red) para que no siga corriendo en paralelo con el
-      // cuerpo del test — si no, puede pisar cambios locales del test a
-      // mitad de camino (ej. el stock ajustado por una venta) con lo que
-      // haya en el Sheet real en ese momento, dando falsos negativos.
-      await service.initialize();
-      // Activar la organización de respaldo para que los getters filtrados por
-      // organización expongan los datos sembrados en las pruebas.
-      service.setCurrentOrganizacion('67774411-6aa1-4aa3-a4b2-d3fc6913b768');
+      // Datos de respaldo + servidor simulado que confirma las escrituras
+      // (R4: sin confirmación del servidor, toda escritura se revierte).
+      (service, _) = await servicioConServidor();
     });
 
     test('Inicializa con las 9 hojas cargadas en memoria', () {
@@ -172,22 +167,25 @@ void main() {
       timeout: const Timeout(Duration(seconds: 60)),
     );
 
-    test('CRUD Checklist ISO: alternar conformidad y persistir auditoría', () {
-      expect(service.checklistIsos.isNotEmpty, isTrue);
-      final primerItem = service.checklistIsos.first;
+    test('CRUD Checklist ISO: alternar conformidad por id', () async {
+      // Servidor simulado que confirma: el toggle espera la respuesta de Sheets.
+      final conServidor = SheetsDataService(
+        spreadsheetId: testSpreadsheetId,
+        appsScriptUrl: testAppsScriptUrl,
+        dio: Dio()..httpClientAdapter = _SoloEscrituras(),
+      );
+      await conServidor.initialize(); // gviz falla: quedan los datos de respaldo
+      conServidor.setCurrentOrganizacion('67774411-6aa1-4aa3-a4b2-d3fc6913b768');
+      final primerItem = conServidor.checklistIsos.first;
+      expect(primerItem.id, isNotEmpty);
       final estadoInicial = primerItem.estado;
 
-      // Toggle
-      service.toggleChecklistEstado(primerItem.nro);
-      final alternado =
-          service.checklistIsos.firstWhere((c) => c.nro == primerItem.nro);
-      expect(alternado.estado, isNot(equals(estadoInicial)));
+      await conServidor.toggleChecklistEstado(primerItem.id);
+      expect(conServidor.checklistIsos.firstWhere((c) => c.id == primerItem.id).estado,
+          isNot(equals(estadoInicial)));
 
-      // Re-toggle para restaurar
-      service.toggleChecklistEstado(primerItem.nro);
-      final restaurado =
-          service.checklistIsos.firstWhere((c) => c.nro == primerItem.nro);
-      expect(restaurado.estado, equals(estadoInicial));
+      await conServidor.toggleChecklistEstado(primerItem.id);
+      expect(conServidor.checklistIsos.firstWhere((c) => c.id == primerItem.id).estado, equals(estadoInicial));
     });
 
     test('Parser CSV RFC 4180 procesa comillas y campos anidados', () {
@@ -226,12 +224,28 @@ void main() {
         fechaRegistro: DateTime.now(),
       );
 
-      testService.addCliente(cliente);
-      await pumpEventQueue();
+      testService.setCurrentOrganizacion('67774411-6aa1-4aa3-a4b2-d3fc6913b768');
+      await testService.addCliente(cliente);
       expect(dispatched.length, equals(1));
       expect(dispatched.first['action'], equals('create'));
       expect(dispatched.first['sheet'], equals('clientes'));
       expect(dispatched.first['data']['nombre'], equals('Cliente Remoto'));
+      expect((dispatched.first['data'] as Map).containsKey('id'), isFalse, reason: 'el ID lo genera el servidor');
+      expect(testService.clientes.where((c) => c.nombre == 'Cliente Remoto').map((c) => c.id), contains('c00000100'));
     });
   });
+}
+
+/// Lecturas gviz fallan (quedan los datos de respaldo); las escrituras al
+/// Apps Script se confirman.
+class _SoloEscrituras implements HttpClientAdapter {
+  @override
+  Future<ResponseBody> fetch(RequestOptions o, Stream<Uint8List>? _, Future<void>? __) async {
+    final gviz = o.uri.toString().contains('gviz');
+    return ResponseBody.fromBytes(utf8.encode(gviz ? 'error' : '{"status":"success"}'), gviz ? 500 : 200,
+        headers: {Headers.contentTypeHeader: ['application/json']});
+  }
+
+  @override
+  void close({bool force = false}) {}
 }

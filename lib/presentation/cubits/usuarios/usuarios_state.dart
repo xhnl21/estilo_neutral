@@ -13,6 +13,9 @@ class UsuariosState extends Equatable {
   final String? errorMessage;
   final String? actionSuccessMessage;
 
+  /// Error de una acción (transitorio). [errorMessage] es el de la carga.
+  final String? actionErrorMessage;
+
   final String? expandedUsuarioId;
 
   const UsuariosState({
@@ -24,6 +27,7 @@ class UsuariosState extends Equatable {
     this.expandedUsuarioId,
     this.errorMessage,
     this.actionSuccessMessage,
+    this.actionErrorMessage,
   });
 
   UsuariosState copyWith({
@@ -36,6 +40,7 @@ class UsuariosState extends Equatable {
     bool clearExpandedId = false,
     String? errorMessage,
     String? actionSuccessMessage,
+    String? actionErrorMessage,
   }) {
     return UsuariosState(
       status: status ?? this.status,
@@ -47,6 +52,7 @@ class UsuariosState extends Equatable {
           clearExpandedId ? null : (expandedUsuarioId ?? this.expandedUsuarioId),
       errorMessage: errorMessage,
       actionSuccessMessage: actionSuccessMessage,
+      actionErrorMessage: actionErrorMessage,
     );
   }
 
@@ -64,5 +70,6 @@ class UsuariosState extends Equatable {
         expandedUsuarioId,
         errorMessage,
         actionSuccessMessage,
+        actionErrorMessage,
       ];
 }

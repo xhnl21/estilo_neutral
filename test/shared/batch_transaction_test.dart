@@ -9,6 +9,7 @@ import '../test_sheets_config.dart';
 
 class _FakeBatchHttpClientAdapter implements HttpClientAdapter {
   final Map<String, dynamic> responsePayload;
+  final List<Map<String, dynamic>> enviados = [];
 
   _FakeBatchHttpClientAdapter({
     required this.responsePayload,
@@ -23,6 +24,10 @@ class _FakeBatchHttpClientAdapter implements HttpClientAdapter {
     Stream<Uint8List>? requestStream,
     Future<void>? cancelFuture,
   ) async {
+    final data = options.data;
+    if (data != null) {
+      enviados.add(Map<String, dynamic>.from(data is String ? jsonDecode(data) as Map : data as Map));
+    }
     final bytes = utf8.encode(jsonEncode(responsePayload));
     return ResponseBody.fromBytes(
       bytes,
@@ -147,8 +152,8 @@ void main() {
       final tx = SheetsBatchExecutor.buildVentaBatch(
         venta: venta,
         items: items,
-        stockUpdates: {'p001': 8},
-        nuevoSaldoDeudaCliente: 50.0,
+        unidadesVendidas: {'p001': 2},
+        deudaAgregadaCliente: 50.0,
         abonoInicial: Abono(
           id: 'ab_temp',
           ventaId: 'v_temp',
@@ -166,10 +171,15 @@ void main() {
       expect(tx.operations[0].action, 'create');
       expect(tx.operations[1].sheet, 'venta_items');
       expect(tx.operations[1].action, 'batch_create');
+      // Stock y deuda van como diferencias: el servidor las aplica sobre el
+      // valor que tenga en ese momento.
       expect(tx.operations[2].sheet, 'inventario');
-      expect(tx.operations[2].action, 'update_cell');
+      expect(tx.operations[2].action, 'increment');
+      expect(tx.operations[2].delta, -2);
+      expect(tx.operations[2].min, 0);
       expect(tx.operations[3].sheet, 'clientes');
-      expect(tx.operations[3].action, 'update_cell');
+      expect(tx.operations[3].action, 'increment');
+      expect(tx.operations[3].delta, 50.0);
       expect(tx.operations[4].sheet, 'abonos');
       expect(tx.operations[4].action, 'create');
       expect(tx.operations[5].sheet, 'audit_log');
@@ -200,14 +210,16 @@ void main() {
       final initialCliente = service.clientes.first;
       final initialStock = service.productos.first.cantidad;
 
-      final success = await service.addVentaAtomica(
-        clienteId: initialCliente.id,
-        items: [(productoId: service.productos.first.id, cantidad: 1, precioUsd: 10.0)],
-        metodoPagoId: 'Efectivo USD',
-        abonoUsd: 5.0,
+      // El lote falla: se informa con StateError y no se toca nada.
+      await expectLater(
+        service.addVentaAtomica(
+          clienteId: initialCliente.id,
+          items: [(productoId: service.productos.first.id, cantidad: 1, precioUsd: 10.0)],
+          metodoPagoId: 'Efectivo USD',
+          abonoUsd: 5.0,
+        ),
+        throwsA(isA<StateError>()),
       );
-
-      expect(success, isFalse);
       // Memoria local NO fue modificada
       expect(service.ventas.length, initialVentasCount);
       expect(service.productos.first.cantidad, initialStock);
@@ -215,13 +227,14 @@ void main() {
 
     test('addVentaAtomica actualiza memoria local si el servidor responde éxito', () async {
       final dio = Dio();
-      dio.httpClientAdapter = _FakeBatchHttpClientAdapter(
+      final adaptador = _FakeBatchHttpClientAdapter(
         responsePayload: const {
           'status': 'success',
           'transactionId': 'tx_ok_123',
           'generatedIds': {'ventas': 'v00000999'},
         },
       );
+      dio.httpClientAdapter = adaptador;
 
       final service = SheetsDataService(
         spreadsheetId: testSpreadsheetId,
@@ -236,18 +249,19 @@ void main() {
       final prod = service.productos.first;
       final initialStock = prod.cantidad;
 
-      final success = await service.addVentaAtomica(
+      await service.addVentaAtomica(
         clienteId: service.clientes.first.id,
         items: [(productoId: prod.id, cantidad: 2, precioUsd: 20.0)],
         metodoPagoId: 'Efectivo USD',
         abonoUsd: 20.0,
       );
 
-      expect(success, isTrue);
       // Memoria local fue actualizada con el ID generado del servidor
       expect(service.ventas.length, initialVentasCount + 1);
       expect(service.ventas.first.id, 'v00000999');
       expect(service.productos.firstWhere((p) => p.id == prod.id).cantidad, initialStock - 2);
+      // El stock lo descontó el lote: no se envía otro ajuste aparte.
+      expect(adaptador.enviados.where((r) => r['sheet'] == 'inventario' && r['action'] == 'update'), isEmpty);
     });
   });
 }

@@ -1,3 +1,6 @@
+import 'dart:convert';
+
+import 'package:crypto/crypto.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -38,8 +41,7 @@ class _CuarentenaViewState extends State<_CuarentenaView> {
   Widget build(BuildContext context) {
     return BlocConsumer<CuarentenaCubit, CuarentenaState>(
       listenWhen: (prev, curr) =>
-          curr.actionSuccessMessage != null &&
-          prev.actionSuccessMessage != curr.actionSuccessMessage,
+          curr.actionSuccessMessage != null && prev.actionSuccessMessage != curr.actionSuccessMessage,
       listener: (context, state) {
         if (state.actionSuccessMessage != null) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -89,216 +91,259 @@ class _CuarentenaViewState extends State<_CuarentenaView> {
                     : ListView.builder(
                         key: const ValueKey('cuarentena_list'),
                         padding: const EdgeInsets.fromLTRB(AppSpacing.lg, AppSpacing.sm, AppSpacing.lg, 80),
-                  itemCount: items.length,
-                  itemBuilder: (context, index) {
-                    final item = items[index];
-                    final isResolved = item.estado == 'CONSOLIDADO' || item.estado == 'CORREGIDO';
+                        itemCount: items.length,
+                        itemBuilder: (context, index) {
+                          final item = items[index];
+                          final isResolved = item.estado == 'CONSOLIDADO' || item.estado == 'CORREGIDO';
 
-                    return Padding(
-                      padding: const EdgeInsets.only(bottom: AppSpacing.sm),
-                      child: AppCard(
-                        padding: AppSpacing.pMd,
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              children: [
-                                Flexible(
-                                  child: Text(
-                                    '#${item.idRegistroOriginal} • Origen: ${item.hojaOrigen}',
-                                    style: AppTypography.titleLarge.copyWith(fontSize: 15),
-                                    overflow: TextOverflow.ellipsis,
+                          return Padding(
+                            padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+                            child: AppCard(
+                              padding: AppSpacing.pMd,
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(
+                                    children: [
+                                      Flexible(
+                                        child: Text(
+                                          '#${item.idRegistroOriginal} • Origen: ${item.hojaOrigen}',
+                                          style: AppTypography.titleLarge.copyWith(fontSize: 15),
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ),
+                                      const SizedBox(width: AppSpacing.xs),
+                                      AppChip(
+                                        label: item.estado,
+                                        variant: isResolved ? AppChipVariant.success : AppChipVariant.warning,
+                                        icon: isResolved ? AppIcons.success : AppIcons.warning,
+                                      ),
+                                    ],
                                   ),
-                                ),
-                                const SizedBox(width: AppSpacing.xs),
-                                AppChip(
-                                  label: item.estado,
-                                  variant: isResolved ? AppChipVariant.success : AppChipVariant.warning,
-                                  icon: isResolved ? AppIcons.success : AppIcons.warning,
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              'Motivo: ${item.motivoCuarentena}',
-                              style: AppTypography.bodyMedium.copyWith(fontSize: 13, color: AppPalette.error),
-                            ),
-                            const SizedBox(height: 4),
-                            Container(
-                              padding: const EdgeInsets.all(AppSpacing.xs),
-                              decoration: BoxDecoration(
-                                color: const Color(0xFFF1F5F9),
-                                borderRadius: BorderRadius.circular(6),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    'Motivo: ${item.motivoCuarentena}',
+                                    style: AppTypography.bodyMedium.copyWith(fontSize: 13, color: AppPalette.error),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Container(
+                                    padding: const EdgeInsets.all(AppSpacing.xs),
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFFF1F5F9),
+                                      borderRadius: BorderRadius.circular(6),
+                                    ),
+                                    child: Text(
+                                      'JSON: ${item.datosOriginalesJson}',
+                                      style: AppTypography.labelSmall.copyWith(fontFamily: 'monospace', fontSize: 11),
+                                      maxLines: 2,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    'Resolución: ${item.resolucion}',
+                                    style: AppTypography.labelSmall.copyWith(color: AppPalette.blue900),
+                                  ),
+                                  Text(
+                                    'Hash: ${item.hashEvidencia.length > 16 ? '${item.hashEvidencia.substring(0, 16)}...' : item.hashEvidencia}',
+                                    style: AppTypography.labelSmall
+                                        .copyWith(color: AppPalette.textSecondary, fontSize: 10),
+                                  ),
+                                  const SizedBox(height: AppSpacing.xs),
+                                  Row(
+                                    mainAxisAlignment: MainAxisAlignment.end,
+                                    children: [
+                                      Semantics(
+                                        button: true,
+                                        label: 'Editar o resolver anomalía del registro ${item.idRegistroOriginal}',
+                                        child: IconButton(
+                                          icon: const Icon(CupertinoIcons.pencil, size: 18, color: AppPalette.blue700),
+                                          tooltip: 'Editar / Resolver Anomalía',
+                                          onPressed: () => _showCuarentenaDialog(context, item: item),
+                                        ),
+                                      ),
+                                      Semantics(
+                                        button: true,
+                                        label: 'Purgar de cuarentena registro ${item.idRegistroOriginal}',
+                                        child: IconButton(
+                                          icon: const Icon(CupertinoIcons.trash, size: 18, color: AppPalette.error),
+                                          tooltip: 'Purgar de Cuarentena',
+                                          onPressed: () => _confirmDelete(context, item),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ],
                               ),
-                              child: Text(
-                                'JSON: ${item.datosOriginalesJson}',
-                                style: AppTypography.labelSmall.copyWith(fontFamily: 'monospace', fontSize: 11),
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
-                              ),
                             ),
-                            const SizedBox(height: 4),
-                            Text(
-                              'Resolución: ${item.resolucion}',
-                              style: AppTypography.labelSmall.copyWith(color: AppPalette.blue900),
-                            ),
-                            Text(
-                              'Hash: ${item.hashEvidencia.substring(0, 16)}...',
-                              style: AppTypography.labelSmall.copyWith(color: AppPalette.textSecondary, fontSize: 10),
-                            ),
-                            const SizedBox(height: AppSpacing.xs),
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.end,
-                              children: [
-                                Semantics(
-                                  button: true,
-                                  label: 'Editar o resolver anomalía del registro ${item.idRegistroOriginal}',
-                                  child: IconButton(
-                                    icon: const Icon(CupertinoIcons.pencil, size: 18, color: AppPalette.blue700),
-                                    tooltip: 'Editar / Resolver Anomalía',
-                                    onPressed: () => _showCuarentenaDialog(context, item: item),
-                                  ),
-                                ),
-                                Semantics(
-                                  button: true,
-                                  label: 'Purgar de cuarentena registro ${item.idRegistroOriginal}',
-                                  child: IconButton(
-                                    icon: const Icon(CupertinoIcons.trash, size: 18, color: AppPalette.error),
-                                    tooltip: 'Purgar de Cuarentena',
-                                    onPressed: () => _confirmDelete(context, item),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ],
-                        ),
+                          );
+                        },
                       ),
-                    );
-                  },
-                ),
-        ),
-      );
+          ),
+        );
       },
     );
   }
 
   void _showCuarentenaDialog(BuildContext context, {RegistroCuarentena? item}) {
+    // El bottom sheet no queda debajo del BlocProvider: se toma el Cubit acá.
+    final cubit = context.read<CuarentenaCubit>();
     final isEditing = item != null;
-    final idController = TextEditingController(text: item?.idRegistroOriginal ?? 'ANOM-${DateTime.now().millisecondsSinceEpoch.toString().substring(7)}');
-    final hojaController = TextEditingController(text: item?.hojaOrigen ?? 'ventas');
-    final motivoController = TextEditingController(text: item?.motivoCuarentena ?? 'Inconsistencia en montos');
-    final jsonController = TextEditingController(text: item?.datosOriginalesJson ?? '{"ERROR": "Datos faltantes"}');
+    final idController = TextEditingController(
+        text: item?.idRegistroOriginal ?? 'ANOM-${DateTime.now().millisecondsSinceEpoch.toString().substring(7)}');
+    // Sin valores de ejemplo precargados (R7 del estándar): solo el ID
+    // generado y el estado inicial.
+    final hojaController = TextEditingController(text: item?.hojaOrigen ?? '');
+    final motivoController = TextEditingController(text: item?.motivoCuarentena ?? '');
+    final jsonController = TextEditingController(text: item?.datosOriginalesJson ?? '');
     final estadoController = TextEditingController(text: item?.estado ?? 'PENDIENTE');
-    final resolucionController = TextEditingController(text: item?.resolucion ?? 'En revisión por auditoría');
+    final resolucionController = TextEditingController(text: item?.resolucion ?? '');
+    var errores = <String, String>{};
 
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
-      builder: (ctx) => Padding(
-        padding: EdgeInsets.only(
-          bottom: MediaQuery.of(ctx).viewInsets.bottom + AppSpacing.lg,
-          left: AppSpacing.lg,
-          right: AppSpacing.lg,
-          top: AppSpacing.lg,
-        ),
-        child: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    isEditing ? 'Resolver Anomalía (${item.idRegistroOriginal})' : 'Reportar a Cuarentena',
-                    style: AppTypography.titleLarge.copyWith(fontSize: 17),
-                  ),
-                  IconButton(
-                    icon: const Icon(CupertinoIcons.xmark_circle_fill, color: AppPalette.textSecondary),
-                    onPressed: () => Navigator.pop(ctx),
-                  ),
-                ],
-              ),
-              const SizedBox(height: AppSpacing.md),
-              Row(
-                children: [
-                  Expanded(
-                    child: AppTextField(
-                      label: 'ID Registro Original',
-                      controller: idController,
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setModalState) => Padding(
+          padding: EdgeInsets.only(
+            bottom: MediaQuery.of(ctx).viewInsets.bottom + AppSpacing.lg,
+            left: AppSpacing.lg,
+            right: AppSpacing.lg,
+            top: AppSpacing.lg,
+          ),
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Expanded(
+                      child: Text(
+                        isEditing ? 'Resolver Anomalía (${item.idRegistroOriginal})' : 'Reportar a Cuarentena',
+                        style: AppTypography.titleLarge.copyWith(fontSize: 17),
+                        overflow: TextOverflow.ellipsis,
+                      ),
                     ),
-                  ),
-                  const SizedBox(width: AppSpacing.md),
-                  Expanded(
-                    child: AppTextField(
-                      label: 'Hoja de Origen',
-                      controller: hojaController,
+                    IconButton(
+                      icon: const Icon(CupertinoIcons.xmark_circle_fill, color: AppPalette.textSecondary),
+                      onPressed: () => Navigator.pop(ctx),
                     ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: AppSpacing.sm),
-              AppTextField(
-                label: 'Motivo de Cuarentena',
-                controller: motivoController,
-              ),
-              const SizedBox(height: AppSpacing.sm),
-              AppTextField(
-                label: 'Datos Originales (JSON)',
-                controller: jsonController,
-              ),
-              const SizedBox(height: AppSpacing.sm),
-              Row(
-                children: [
-                  Expanded(
-                    child: AppTextField(
-                      label: 'Estado (PENDIENTE, CORREGIDO, CONSOLIDADO)',
-                      controller: estadoController,
+                  ],
+                ),
+                const SizedBox(height: AppSpacing.md),
+                Row(
+                  children: [
+                    Expanded(
+                      child: AppTextField(
+                        label: 'ID Registro Original',
+                        readOnly: isEditing,
+                        controller: idController,
+                        errorText: errores['idRegistroOriginal'],
+                        onChanged: (_) => setModalState(() => errores.remove('idRegistroOriginal')),
+                      ),
                     ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: AppSpacing.sm),
-              AppTextField(
-                label: 'Resolución Forense',
-                controller: resolucionController,
-              ),
-              const SizedBox(height: AppSpacing.lg),
-              Row(
-                children: [
-                  Expanded(
-                    child: AppOutlinedButton(label: 'Cancelar', onPressed: () => Navigator.pop(ctx)),
-                  ),
-                  const SizedBox(width: AppSpacing.md),
-                  Expanded(
-                    child: AppButton(
-                      label: isEditing ? 'Guardar Resolución' : 'Aislar Registro',
-                      icon: CupertinoIcons.check_mark,
-                      onPressed: () {
-                        final nuevo = RegistroCuarentena(
-                          idRegistroOriginal: idController.text.trim(),
-                          hojaOrigen: hojaController.text.trim(),
-                          fechaDeteccion: item?.fechaDeteccion ?? DateTime.now(),
-                          motivoCuarentena: motivoController.text.trim(),
-                          datosOriginalesJson: jsonController.text.trim(),
-                          estado: estadoController.text.trim(),
-                          resolucion: resolucionController.text.trim(),
-                          hashEvidencia: item?.hashEvidencia ?? 'sha256_${DateTime.now().millisecondsSinceEpoch}',
-                        );
+                    const SizedBox(width: AppSpacing.md),
+                    Expanded(
+                      child: AppTextField(
+                        label: 'Hoja de Origen',
+                        hint: 'Ej: ventas',
+                        readOnly: isEditing,
+                        controller: hojaController,
+                        errorText: errores['hojaOrigen'],
+                        onChanged: (_) => setModalState(() => errores.remove('hojaOrigen')),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: AppSpacing.sm),
+                AppTextField(
+                  label: 'Motivo de Cuarentena',
+                  hint: 'Ej: Inconsistencia en montos',
+                  readOnly: isEditing,
+                  controller: motivoController,
+                  errorText: errores['motivoCuarentena'],
+                  onChanged: (_) => setModalState(() => errores.remove('motivoCuarentena')),
+                ),
+                const SizedBox(height: AppSpacing.sm),
+                AppTextField(
+                  label: 'Datos Originales (JSON)',
+                  hint: 'Ej: {"id": "v00000012", "monto_usd": -5}',
+                  readOnly: isEditing,
+                  controller: jsonController,
+                  errorText: errores['datosOriginalesJson'],
+                  onChanged: (_) => setModalState(() => errores.remove('datosOriginalesJson')),
+                ),
+                const SizedBox(height: AppSpacing.sm),
+                Row(
+                  children: [
+                    Expanded(
+                      child: AppTextField(
+                        label: 'Estado (PENDIENTE, CORREGIDO, CONSOLIDADO)',
+                        controller: estadoController,
+                        errorText: errores['estado'],
+                        onChanged: (_) => setModalState(() => errores.remove('estado')),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: AppSpacing.sm),
+                AppTextField(
+                  label: 'Resolución Forense',
+                  controller: resolucionController,
+                ),
+                const SizedBox(height: AppSpacing.lg),
+                Row(
+                  children: [
+                    Expanded(
+                      child: AppOutlinedButton(label: 'Cancelar', onPressed: () => Navigator.pop(ctx)),
+                    ),
+                    const SizedBox(width: AppSpacing.md),
+                    Expanded(
+                      child: AppButton(
+                        label: isEditing ? 'Guardar Resolución' : 'Aislar Registro',
+                        icon: CupertinoIcons.check_mark,
+                        onPressed: () {
+                          final nuevo = RegistroCuarentena(
+                            idRegistroOriginal: idController.text.trim(),
+                            hojaOrigen: hojaController.text.trim(),
+                            fechaDeteccion: item?.fechaDeteccion ?? DateTime.now(),
+                            motivoCuarentena: motivoController.text.trim(),
+                            datosOriginalesJson: jsonController.text.trim(),
+                            estado: estadoController.text.trim().toUpperCase(),
+                            resolucion: resolucionController.text.trim(),
+                            // Hash real del JSON original (antes era 'sha256_<ms>').
+                            hashEvidencia: item?.hashEvidencia ??
+                                sha256.convert(utf8.encode(jsonController.text.trim())).toString(),
+                          );
 
-                        if (isEditing) {
-                          widget.dataService.updateCuarentena(nuevo);
-                        } else {
-                          widget.dataService.addCuarentena(nuevo);
-                        }
-                        Navigator.pop(ctx);
-                      },
+                          // Al resolver solo se edita el estado (ver
+                          // SheetsDataService.updateCuarentena).
+                          final validacion = isEditing
+                              ? {
+                                  if (nuevo.errores['estado'] != null) 'estado': nuevo.errores['estado']!,
+                                }
+                              : nuevo.errores;
+                          if (validacion.isNotEmpty) {
+                            setModalState(() => errores = validacion);
+                            return;
+                          }
+
+                          if (isEditing) {
+                            cubit.updateCuarentena(nuevo.copyWith(id: item.id));
+                          } else {
+                            cubit.addCuarentena(nuevo);
+                          }
+                          Navigator.pop(ctx);
+                        },
+                      ),
                     ),
-                  ),
-                ],
-              ),
-            ],
+                  ],
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -306,6 +351,7 @@ class _CuarentenaViewState extends State<_CuarentenaView> {
   }
 
   void _confirmDelete(BuildContext context, RegistroCuarentena item) {
+    final cubit = context.read<CuarentenaCubit>();
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -317,7 +363,7 @@ class _CuarentenaViewState extends State<_CuarentenaView> {
             style: FilledButton.styleFrom(backgroundColor: AppPalette.error),
             child: const Text('Purgar'),
             onPressed: () {
-              widget.dataService.deleteCuarentena(item.idRegistroOriginal);
+              cubit.deleteCuarentena(item.id);
               Navigator.pop(ctx);
             },
           ),

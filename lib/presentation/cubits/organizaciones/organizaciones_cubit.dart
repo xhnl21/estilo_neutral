@@ -13,6 +13,8 @@ class OrganizacionesCubit extends Cubit<OrganizacionesState> {
     _syncFromService();
   }
 
+  SheetsDataService get dataService => _dataService;
+
   void _onDataChanged() {
     if (!isClosed) {
       _syncFromService();
@@ -20,9 +22,20 @@ class OrganizacionesCubit extends Cubit<OrganizacionesState> {
   }
 
   void _syncFromService() {
+    final organizaciones = _dataService.organizaciones;
     emit(state.copyWith(
       status: OrganizacionesStatus.success,
-      organizaciones: List.unmodifiable(_dataService.organizaciones),
+      usuariosPorOrganizacion: {
+        for (final o in organizaciones) o.id: _dataService.usuariosEnOrganizacion(o.id),
+      },
+      monedaPorOrganizacion: {
+        for (final o in organizaciones) o.id: _dataService.monedaOrganizacion(o.id),
+      },
+      tasaManualPorOrganizacion: {
+        for (final o in organizaciones)
+          if (_dataService.tasaManualOrganizacion(o.id) case final t?) o.id: t,
+      },
+      organizaciones: List.unmodifiable(organizaciones),
       usuarios: List.unmodifiable(_dataService.usuarios),
       schemaMultiOrgListo: _dataService.schemaMultiOrgListo,
       isRefreshing: _dataService.isLoading,
@@ -82,7 +95,7 @@ class OrganizacionesCubit extends Cubit<OrganizacionesState> {
       if (!isClosed) {
         emit(state.copyWith(
           status: OrganizacionesStatus.failure,
-          errorMessage: 'Error al crear organización: $e',
+          errorMessage: _mensaje(e),
         ));
       }
       return false;
@@ -105,7 +118,7 @@ class OrganizacionesCubit extends Cubit<OrganizacionesState> {
       if (!isClosed) {
         emit(state.copyWith(
           status: OrganizacionesStatus.failure,
-          errorMessage: 'Error al actualizar organización: $e',
+          errorMessage: _mensaje(e),
         ));
       }
       return false;
@@ -128,7 +141,7 @@ class OrganizacionesCubit extends Cubit<OrganizacionesState> {
       if (!isClosed) {
         emit(state.copyWith(
           status: OrganizacionesStatus.failure,
-          errorMessage: 'Error al eliminar organización: $e',
+          errorMessage: _mensaje(e),
         ));
       }
       return false;
@@ -140,7 +153,7 @@ class OrganizacionesCubit extends Cubit<OrganizacionesState> {
       await _dataService.setMonedaOrganizacion(orgId, moneda);
     } catch (e) {
       if (!isClosed) {
-        emit(state.copyWith(errorMessage: 'Error al actualizar moneda: $e'));
+        emit(state.copyWith(errorMessage: _mensaje(e)));
       }
     }
   }
@@ -150,7 +163,7 @@ class OrganizacionesCubit extends Cubit<OrganizacionesState> {
       await _dataService.setTasaManualOrganizacion(orgId, moneda, tasa);
     } catch (e) {
       if (!isClosed) {
-        emit(state.copyWith(errorMessage: 'Error al actualizar tasa manual: $e'));
+        emit(state.copyWith(errorMessage: _mensaje(e)));
       }
     }
   }
@@ -160,18 +173,19 @@ class OrganizacionesCubit extends Cubit<OrganizacionesState> {
       await _dataService.quitarTasaManualOrganizacion(orgId);
     } catch (e) {
       if (!isClosed) {
-        emit(state.copyWith(errorMessage: 'Error al quitar tasa manual: $e'));
+        emit(state.copyWith(errorMessage: _mensaje(e)));
       }
     }
   }
 
   Future<bool> updateUsuario(Usuario usuario, {required String organizacionId}) async {
     try {
-      await _dataService.updateUsuario(usuario, organizacionId: organizacionId);
+      final ok = await _dataService.updateUsuario(usuario, organizacionId: organizacionId);
       if (!isClosed) {
+        if (!ok) emit(state.copyWith(errorMessage: 'No se pudo mover el usuario: Google Sheets no lo confirmó.'));
         _syncFromService();
       }
-      return true;
+      return ok;
     } catch (e) {
       if (!isClosed) {
         emit(state.copyWith(errorMessage: 'Error al mover usuario: $e'));
@@ -179,6 +193,12 @@ class OrganizacionesCubit extends Cubit<OrganizacionesState> {
       return false;
     }
   }
+
+  static String _mensaje(Object e) => switch (e) {
+        StateError(:final message) => message,
+        ArgumentError(:final message) => message.toString(),
+        _ => e.toString(),
+      };
 
   @override
   Future<void> close() {

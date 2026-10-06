@@ -1,9 +1,15 @@
+import 'fecha_hoja.dart';
 import 'number_parser.dart';
 
 /// Modelo de entidad ResumenDiario mapeado desde la hoja "resumen_diario"
 /// Norma: ISO 8000 §5.3 / Automatización de métricas
 class ResumenDiario {
-  /// Columna A: Fecha del resumen ISO 8601 (YYYY-MM-DD)
+  /// Columna A: ID único (formato rd00000001), generado por el servidor.
+  /// Vacío mientras el cierre no se confirmó en Sheets.
+  final String id;
+
+  /// Columna B: Fecha del resumen ISO 8601 (YYYY-MM-DD). Junto con la
+  /// organización es única: un cierre por día y organización.
   final DateTime fecha;
 
   /// Columna B: Cantidad de ventas realizadas en el día
@@ -31,6 +37,7 @@ class ResumenDiario {
   final String organizacionId;
 
   const ResumenDiario({
+    this.id = '',
     required this.fecha,
     required this.nroVentas,
     required this.totalBs,
@@ -42,25 +49,61 @@ class ResumenDiario {
     this.organizacionId = '67774411-6aa1-4aa3-a4b2-d3fc6913b768',
   });
 
+  /// Acepta el formato actual (con columna `id` en A) y el anterior (sin
+  /// ella, fecha en A), por si la hoja todavía no se migró.
+  ///
+  /// Lanza [FormatException] si la fecha es ilegible (no se inventa "hoy").
   factory ResumenDiario.fromRow(List<dynamic> row) {
+    final conId = row.isNotEmpty && parseFechaHoja(row[0].toString()) == null;
+    final o = conId ? 1 : 0;
+    String celda(int i) => row.length > i + o ? row[i + o].toString().trim() : '';
     return ResumenDiario(
-      fecha: row.isNotEmpty ? DateTime.tryParse(row[0].toString()) ?? DateTime.now() : DateTime.now(),
-      nroVentas: row.length > 1 ? parseSheetInt(row[1]) : 0,
-      totalBs: row.length > 2 ? parseSheetDouble(row[2]) : 0.0,
-      totalUsd: row.length > 3 ? parseSheetDouble(row[3]) : 0.0,
-      tasaBcv: row.length > 4 ? parseSheetDouble(row[4]) : 0.0,
-      tasaUsd: row.length > 5 ? parseSheetDouble(row[5]) : 0.0,
-      usdComprados: row.length > 6 ? parseSheetDouble(row[6]) : 0.0,
-      usdVendidos: row.length > 7 ? parseSheetDouble(row[7]) : 0.0,
-      organizacionId: row.length > 8 && row[8].toString().trim().isNotEmpty
-          ? row[8].toString().trim()
-          : '67774411-6aa1-4aa3-a4b2-d3fc6913b768',
+      id: conId ? row[0].toString().trim() : '',
+      fecha: fechaHojaObligatoria(celda(0), 'resumen_diario.fecha'),
+      nroVentas: parseSheetInt(celda(1)),
+      totalBs: parseSheetDouble(celda(2)),
+      totalUsd: parseSheetDouble(celda(3)),
+      tasaBcv: parseSheetDouble(celda(4)),
+      tasaUsd: parseSheetDouble(celda(5)),
+      usdComprados: parseSheetDouble(celda(6)),
+      usdVendidos: parseSheetDouble(celda(7)),
+      organizacionId: celda(8).isNotEmpty ? celda(8) : '67774411-6aa1-4aa3-a4b2-d3fc6913b768',
+    );
+  }
+
+  /// Fecha en formato yyyy-MM-dd (clave del cierre junto con la organización).
+  String get fechaIso => fecha.toIso8601String().split('T').first;
+
+  ResumenDiario copyWith({
+    String? id,
+    DateTime? fecha,
+    int? nroVentas,
+    double? totalBs,
+    double? totalUsd,
+    double? tasaBcv,
+    double? tasaUsd,
+    double? usdComprados,
+    double? usdVendidos,
+    String? organizacionId,
+  }) {
+    return ResumenDiario(
+      id: id ?? this.id,
+      fecha: fecha ?? this.fecha,
+      nroVentas: nroVentas ?? this.nroVentas,
+      totalBs: totalBs ?? this.totalBs,
+      totalUsd: totalUsd ?? this.totalUsd,
+      tasaBcv: tasaBcv ?? this.tasaBcv,
+      tasaUsd: tasaUsd ?? this.tasaUsd,
+      usdComprados: usdComprados ?? this.usdComprados,
+      usdVendidos: usdVendidos ?? this.usdVendidos,
+      organizacionId: organizacionId ?? this.organizacionId,
     );
   }
 
   Map<String, dynamic> toMap() {
     return {
-      'fecha': fecha.toIso8601String().split('T').first,
+      if (id.isNotEmpty) 'id': id,
+      'fecha': fechaIso,
       'nro_ventas': nroVentas,
       'total_bs': totalBs,
       'total_usd': totalUsd,

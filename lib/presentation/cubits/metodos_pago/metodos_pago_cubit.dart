@@ -29,7 +29,11 @@ class MetodosPagoCubit extends Cubit<MetodosPagoState> {
       metodos: currentList,
       filteredMetodos: filtered,
       totalActivos: dataService.metodosPagoActivos.length,
-      errorMessage: dataService.errorMessage,
+      // El error de carga va aparte: reemitirlo como errorMessage mostraba
+      // un aviso de error justo después del de éxito de una acción.
+      errorCarga: dataService.errorMessage,
+      limpiarErrorCarga: dataService.errorMessage == null,
+      enUso: dataService.metodosPagoEnUso,
     ));
   }
 

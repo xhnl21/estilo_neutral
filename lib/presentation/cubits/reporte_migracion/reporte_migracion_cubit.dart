@@ -37,28 +37,37 @@ class ReporteMigracionCubit extends Cubit<ReporteMigracionState> {
     _syncFromService();
   }
 
-  void addReporteMigracion(ReporteMigracion rep) {
-    dataService.addReporteMigracion(rep);
-    emit(state.copyWith(
-      status: ReporteMigracionStatus.success,
-      actionSuccessMessage: 'Control de migración registrado.',
-    ));
-  }
+  Future<void> addReporteMigracion(ReporteMigracion rep) => _ejecutar(
+        () => dataService.addReporteMigracion(rep),
+        exito: 'Control de migración registrado.',
+      );
 
-  void updateReporteMigracion(int index, ReporteMigracion rep) {
-    dataService.updateReporteMigracion(index, rep);
-    emit(state.copyWith(
-      status: ReporteMigracionStatus.success,
-      actionSuccessMessage: 'Control de migración actualizado.',
-    ));
-  }
+  Future<void> updateReporteMigracion(ReporteMigracion rep) => _ejecutar(
+        () => dataService.updateReporteMigracion(rep),
+        exito: 'Control de migración actualizado.',
+      );
 
-  void deleteReporteMigracion(int index) {
-    dataService.deleteReporteMigracion(index);
-    emit(state.copyWith(
-      status: ReporteMigracionStatus.success,
-      actionSuccessMessage: 'Control de migración revocado.',
-    ));
+  Future<void> deleteReporteMigracion(String id) => _ejecutar(
+        () => dataService.deleteReporteMigracion(id),
+        exito: 'Control de migración revocado.',
+      );
+
+  /// Espera la operación del servicio (que revierte si Sheets falla) y emite
+  /// el mensaje de éxito o el error real.
+  Future<void> _ejecutar(Future<void> Function() operacion, {required String exito}) async {
+    try {
+      await operacion();
+      if (isClosed) return;
+      emit(state.copyWith(status: ReporteMigracionStatus.success, actionSuccessMessage: exito));
+    } catch (e) {
+      if (isClosed) return;
+      final mensaje = switch (e) {
+        StateError(:final message) => message,
+        ArgumentError(:final message) => message.toString(),
+        _ => e.toString(),
+      };
+      emit(state.copyWith(errorMessage: mensaje));
+    }
   }
 
   @override

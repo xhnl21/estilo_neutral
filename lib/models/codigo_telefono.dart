@@ -10,10 +10,17 @@ class CodigoTelefono {
     this.status = true,
   });
 
+  /// Google Sheets guarda "0414" como el número 414 (y gviz puede devolver
+  /// "414.0"): se restaura el 0 inicial. Lo demás queda igual.
+  static String normalizarCodigo(String raw) {
+    final s = raw.trim().replaceFirst(RegExp(r'\.0+$'), '');
+    return RegExp(r'^\d{1,3}$').hasMatch(s) ? s.padLeft(4, '0') : s;
+  }
+
   factory CodigoTelefono.fromRow(List<dynamic> row) {
     return CodigoTelefono(
       id: row.isNotEmpty ? row[0].toString().trim() : '',
-      codigo: row.length > 1 ? row[1].toString().trim() : '',
+      codigo: row.length > 1 ? normalizarCodigo(row[1].toString()) : '',
       status: row.length > 2
           ? (row[2].toString().trim().toLowerCase() == 'true' || row[2] == true)
           : true,

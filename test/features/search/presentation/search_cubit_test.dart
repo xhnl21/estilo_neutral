@@ -5,6 +5,7 @@ import 'package:estilo_neutral/features/search/infrastructure/utils/debouncer.da
 import 'package:estilo_neutral/features/search/presentation/cubit/search_cubit.dart';
 import 'package:estilo_neutral/features/search/presentation/cubit/search_state.dart';
 import 'package:flutter_test/flutter_test.dart';
+import '../catalogo_prueba.dart';
 
 void main() {
   group('SearchCubit con Inventario', () {
@@ -13,7 +14,7 @@ void main() {
     late SearchCubit<InventarioItem> cubit;
 
     setUp(() {
-      repository = CloudInventarioSearchRepository();
+      repository = CloudInventarioSearchRepository(fallbackItems: catalogoDePrueba);
       searchEngine = SearchEngine<InventarioItem>();
       cubit = SearchCubit<InventarioItem>(
         searchEngine: searchEngine,

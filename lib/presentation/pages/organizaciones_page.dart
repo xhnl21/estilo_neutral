@@ -7,6 +7,8 @@ import '../../models/models.dart';
 import '../../shared/shared.dart';
 import '../cubits/organizaciones/organizaciones_cubit.dart';
 import '../cubits/organizaciones/organizaciones_state.dart';
+import '../cubits/miembros_organizacion/miembros_organizacion_cubit.dart';
+import '../cubits/miembros_organizacion/miembros_organizacion_state.dart';
 
 /// Vista de Organizaciones (hoja: organizaciones)
 /// BLoC/Cubit: OrganizacionesCubit / OrganizacionesState
@@ -124,11 +126,11 @@ class _OrganizacionesView extends StatelessWidget {
                             children: organizaciones
                                 .map<ExpansionPanel>((organizacion) {
                               final cantidadUsuarios =
-                                  cubit.usuariosEnOrganizacion(organizacion.id);
+                                  state.usuariosPorOrganizacion[organizacion.id] ?? 0;
                               final moneda =
-                                  cubit.monedaOrganizacion(organizacion.id);
+                                  state.monedaPorOrganizacion[organizacion.id] ?? 'USD';
                               final tasaManual =
-                                  cubit.tasaManualOrganizacion(organizacion.id);
+                                  state.tasaManualPorOrganizacion[organizacion.id];
                               final isExpanded = state.expandedOrganizacionId ==
                                   organizacion.id;
 
@@ -349,172 +351,188 @@ class _OrganizacionesView extends StatelessWidget {
   }
 
   void _showMiembrosDialog(BuildContext context, Organizacion organizacion) {
-    final cubit = context.read<OrganizacionesCubit>();
+    final orgCubit = context.read<OrganizacionesCubit>();
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       shape: const RoundedRectangleBorder(
           borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
-      builder: (ctx) => StatefulBuilder(
-        builder: (context, setModalState) {
-          final miembros = cubit.state.usuarios
-              .where((u) =>
-                  cubit.organizacionIdForUsuario(u.email) == organizacion.id)
-              .toList();
-          final disponibles = cubit.state.usuarios
-              .where((u) =>
-                  cubit.organizacionIdForUsuario(u.email) != organizacion.id)
-              .toList();
-          Usuario? seleccionado =
-              disponibles.isNotEmpty ? disponibles.first : null;
-
-          return Padding(
-            padding: EdgeInsets.only(
-              bottom: MediaQuery.of(ctx).viewInsets.bottom + AppSpacing.lg,
-              left: AppSpacing.lg,
-              right: AppSpacing.lg,
-              top: AppSpacing.lg,
-            ),
-            child: ConstrainedBox(
-              constraints: BoxConstraints(
-                  maxHeight: MediaQuery.of(ctx).size.height * 0.8),
-              child: SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Expanded(
-                          child: Text(
-                            'Usuarios de ${organizacion.nombre}',
-                            style:
-                                AppTypography.titleLarge.copyWith(fontSize: 17),
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                        IconButton(
-                          icon: const Icon(CupertinoIcons.xmark_circle_fill,
-                              color: AppPalette.textSecondary),
-                          onPressed: () => Navigator.pop(ctx),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: AppSpacing.md),
-                    if (miembros.isEmpty)
-                      Text(
-                        'Todavía no tiene usuarios asignados.',
-                        style: AppTypography.bodyMedium
-                            .copyWith(color: AppPalette.textSecondary),
-                      )
-                    else
-                      ...miembros.map((usuario) => Padding(
-                            padding:
-                                const EdgeInsets.only(bottom: AppSpacing.xs),
-                            child: AppCard(
-                              padding: AppSpacing.pSm,
-                              child: Row(
-                                children: [
-                                  Expanded(
-                                    child: Text(
-                                      usuario.nombre.isNotEmpty
-                                          ? '${usuario.nombre} (${usuario.email})'
-                                          : usuario.email,
-                                      style: AppTypography.bodyMedium,
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                  ),
-                                  IconButton(
-                                    visualDensity: VisualDensity.compact,
-                                    icon: const Icon(
-                                        CupertinoIcons.arrow_right_arrow_left,
-                                        size: 18,
-                                        color: AppPalette.blue700),
-                                    tooltip: 'Mover a otra organización',
-                                    onPressed: () => _showMoverUsuarioDialog(
-                                        context, cubit, usuario, organizacion,
-                                        () {
-                                      Navigator.pop(ctx);
-                                    }),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          )),
-                    const SizedBox(height: AppSpacing.md),
-                    const Divider(height: 1, color: AppPalette.divider),
-                    const SizedBox(height: AppSpacing.md),
-                    Text('Agregar usuario existente',
-                        style: AppTypography.bodyMedium
-                            .copyWith(fontWeight: FontWeight.w600)),
-                    const SizedBox(height: AppSpacing.sm),
-                    if (disponibles.isEmpty)
-                      Text(
-                        'No hay otros usuarios para agregar (todos ya pertenecen a esta organización).',
-                        style: AppTypography.labelSmall
-                            .copyWith(color: AppPalette.textSecondary),
-                      )
-                    else
+      builder: (ctx) => BlocProvider(
+        create: (_) => MiembrosOrganizacionCubit(
+          dataService: orgCubit.dataService,
+          organizacionId: organizacion.id,
+        ),
+        child: BlocConsumer<MiembrosOrganizacionCubit, MiembrosOrganizacionState>(
+          listenWhen: (prev, curr) =>
+              curr.message != null && prev.message != curr.message,
+          listener: (context, state) {
+            final color = switch (state.messageType) {
+              MiembrosMessageType.success => AppPalette.success,
+              MiembrosMessageType.warning => AppPalette.warning,
+              MiembrosMessageType.error => AppPalette.error,
+            };
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text(state.message!), backgroundColor: color),
+            );
+          },
+          builder: (context, state) {
+            final cubit = context.read<MiembrosOrganizacionCubit>();
+            return Padding(
+              padding: EdgeInsets.only(
+                bottom: MediaQuery.of(ctx).viewInsets.bottom + AppSpacing.lg,
+                left: AppSpacing.lg,
+                right: AppSpacing.lg,
+                top: AppSpacing.lg,
+              ),
+              child: ConstrainedBox(
+                constraints: BoxConstraints(
+                    maxHeight: MediaQuery.of(ctx).size.height * 0.8),
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
                       Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
                           Expanded(
-                            child: DropdownButtonFormField<Usuario>(
-                              initialValue: seleccionado,
-                              isExpanded: true,
-                              decoration: const InputDecoration(
-                                filled: true,
-                                fillColor: AppPalette.surface,
-                                border: OutlineInputBorder(
-                                    borderRadius: AppSpacing.roundedSm),
-                                contentPadding: EdgeInsets.symmetric(
-                                    horizontal: AppSpacing.md,
-                                    vertical: AppSpacing.sm),
-                              ),
-                              items: disponibles
-                                  .map((u) => DropdownMenuItem(
-                                        value: u,
-                                        child: Text(
-                                          u.nombre.isNotEmpty
-                                              ? '${u.nombre} (${u.email})'
-                                              : u.email,
-                                          overflow: TextOverflow.ellipsis,
-                                        ),
-                                      ))
-                                  .toList(),
-                              onChanged: (val) =>
-                                  setModalState(() => seleccionado = val),
+                            child: Text(
+                              'Usuarios de ${organizacion.nombre}',
+                              style: AppTypography.titleLarge
+                                  .copyWith(fontSize: 17),
+                              overflow: TextOverflow.ellipsis,
                             ),
                           ),
-                          const SizedBox(width: AppSpacing.sm),
-                          FilledButton(
-                            onPressed: () async {
-                              final usuario = seleccionado;
-                              if (usuario == null) return;
-                              await cubit.updateUsuario(usuario,
-                                  organizacionId: organizacion.id);
-                              setModalState(() {});
-                            },
-                            child: const Text('Agregar'),
+                          IconButton(
+                            icon: const Icon(CupertinoIcons.xmark_circle_fill,
+                                color: AppPalette.textSecondary),
+                            onPressed: () => Navigator.pop(ctx),
                           ),
                         ],
                       ),
-                  ],
+                      const SizedBox(height: AppSpacing.md),
+                      if (state.miembros.isEmpty)
+                        Text(
+                          'Todavía no tiene usuarios asignados.',
+                          style: AppTypography.bodyMedium
+                              .copyWith(color: AppPalette.textSecondary),
+                        )
+                      else
+                        ...state.miembros.map((usuario) => Padding(
+                              padding:
+                                  const EdgeInsets.only(bottom: AppSpacing.xs),
+                              child: AppCard(
+                                padding: AppSpacing.pSm,
+                                child: Row(
+                                  children: [
+                                    Expanded(
+                                      child: Text(
+                                        _etiquetaUsuario(usuario),
+                                        style: AppTypography.bodyMedium,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ),
+                                    IconButton(
+                                      visualDensity: VisualDensity.compact,
+                                      icon: const Icon(
+                                          CupertinoIcons.arrow_right_arrow_left,
+                                          size: 18,
+                                          color: AppPalette.blue700),
+                                      tooltip: 'Mover a otra organización',
+                                      onPressed: state.isSaving
+                                          ? null
+                                          : () => _showMoverUsuarioDialog(
+                                                context,
+                                                orgCubit,
+                                                usuario,
+                                                organizacion,
+                                                (destinoId) =>
+                                                    cubit.mover(usuario, destinoId),
+                                              ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            )),
+                      const SizedBox(height: AppSpacing.md),
+                      const Divider(height: 1, color: AppPalette.divider),
+                      const SizedBox(height: AppSpacing.md),
+                      Text('Agregar usuario existente',
+                          style: AppTypography.bodyMedium
+                              .copyWith(fontWeight: FontWeight.w600)),
+                      const SizedBox(height: AppSpacing.sm),
+                      if (state.disponibles.isEmpty)
+                        Text(
+                          'No hay otros usuarios para agregar (todos ya pertenecen a esta organización).',
+                          style: AppTypography.labelSmall
+                              .copyWith(color: AppPalette.textSecondary),
+                        )
+                      else
+                        Row(
+                          children: [
+                            Expanded(
+                              // La key recrea el campo cuando la selección la
+                              // cambia el Cubit (p. ej. tras agregar al elegido).
+                              child: DropdownButtonFormField<String>(
+                                key: ValueKey(
+                                    'agregar_miembro_${state.seleccionadoEmail}'),
+                                initialValue: state.seleccionadoEmail,
+                                isExpanded: true,
+                                decoration: const InputDecoration(
+                                  filled: true,
+                                  fillColor: AppPalette.surface,
+                                  border: OutlineInputBorder(
+                                      borderRadius: AppSpacing.roundedSm),
+                                  contentPadding: EdgeInsets.symmetric(
+                                      horizontal: AppSpacing.md,
+                                      vertical: AppSpacing.sm),
+                                ),
+                                items: state.disponibles
+                                    .map((u) => DropdownMenuItem(
+                                          value: u.email,
+                                          child: Text(
+                                            _etiquetaUsuario(u),
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                        ))
+                                    .toList(),
+                                onChanged: state.isSaving
+                                    ? null
+                                    : (val) {
+                                        if (val != null) cubit.seleccionar(val);
+                                      },
+                              ),
+                            ),
+                            const SizedBox(width: AppSpacing.sm),
+                            FilledButton(
+                              onPressed: state.isSaving
+                                  ? null
+                                  : cubit.agregarSeleccionado,
+                              child: Text(
+                                  state.isSaving ? 'Guardando...' : 'Agregar'),
+                            ),
+                          ],
+                        ),
+                    ],
+                  ),
                 ),
               ),
-            ),
-          );
-        },
+            );
+          },
+        ),
       ),
     );
   }
+
+  static String _etiquetaUsuario(Usuario u) =>
+      u.nombre.isNotEmpty ? '${u.nombre} (${u.email})' : u.email;
 
   void _showMoverUsuarioDialog(
     BuildContext context,
     OrganizacionesCubit cubit,
     Usuario usuario,
     Organizacion organizacionActual,
-    VoidCallback onMoved,
+    Future<void> Function(String destinoId) onMover,
   ) {
     final otras = cubit.state.organizaciones
         .where((o) => o.id != organizacionActual.id)
@@ -557,10 +575,9 @@ class _OrganizacionesView extends StatelessWidget {
                 child: const Text('Cancelar'),
                 onPressed: () => Navigator.pop(ctx)),
             FilledButton(
-              onPressed: () async {
+              onPressed: () {
                 Navigator.pop(ctx);
-                await cubit.updateUsuario(usuario, organizacionId: destino.id);
-                onMoved();
+                onMover(destino.id);
               },
               child: const Text('Mover'),
             ),

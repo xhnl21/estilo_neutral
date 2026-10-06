@@ -51,6 +51,15 @@ class Abono {
     );
   }
 
+  Abono copyWith({String? id}) => Abono(
+        id: id ?? this.id,
+        ventaId: ventaId,
+        fecha: fecha,
+        monto: monto,
+        metodoPagoId: metodoPagoId,
+        tasaId: tasaId,
+      );
+
   Map<String, dynamic> toMap() {
     return {
       'id': id,

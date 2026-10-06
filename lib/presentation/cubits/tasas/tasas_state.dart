@@ -27,6 +27,10 @@ class TasasState extends Equatable {
     this.errorMessage,
   });
 
+  /// `actionMessage` y `errorMessage` son transitorios: si no se pasan,
+  /// quedan en null. Las tasas vigentes y la moneda no se pueden volver a
+  /// null con copyWith; para eso se arma un estado nuevo (ver
+  /// `TasasCubit._syncFromService`).
   TasasState copyWith({
     TasasStatus? status,
     List<TasaRegistro>? tasas,

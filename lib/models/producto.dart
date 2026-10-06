@@ -48,6 +48,32 @@ class Producto {
     this.organizacionId = '67774411-6aa1-4aa3-a4b2-d3fc6913b768',
   });
 
+  /// [borrarFoto] quita la foto (no se puede pasar `fotoId: null` con `??`).
+  Producto copyWith({
+    String? id,
+    int? cantidad,
+    String? nombre,
+    String? marca,
+    String? modelo,
+    String? talla,
+    double? precioUsd,
+    String? fotoId,
+    bool borrarFoto = false,
+    String? organizacionId,
+  }) {
+    return Producto(
+      id: id ?? this.id,
+      cantidad: cantidad ?? this.cantidad,
+      nombre: nombre ?? this.nombre,
+      marca: marca ?? this.marca,
+      modelo: modelo ?? this.modelo,
+      talla: talla ?? this.talla,
+      precioUsd: precioUsd ?? this.precioUsd,
+      fotoId: borrarFoto ? null : (fotoId ?? this.fotoId),
+      organizacionId: organizacionId ?? this.organizacionId,
+    );
+  }
+
   factory Producto.fromRow(List<dynamic> row) {
     return Producto(
       id: row.isNotEmpty ? row[0].toString() : '',

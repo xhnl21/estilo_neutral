@@ -185,21 +185,6 @@ class _AuditLogViewState extends State<_AuditLogView> {
                                     'Obs: ${log.observaciones}',
                                     style: AppTypography.bodyMedium.copyWith(fontSize: 12),
                                   ),
-                                  Row(
-                                    mainAxisAlignment: MainAxisAlignment.end,
-                                    children: [
-                                      IconButton(
-                                        icon: const Icon(CupertinoIcons.pencil, size: 16, color: AppPalette.blue700),
-                                        tooltip: 'Editar Observaciones',
-                                        onPressed: () => _showEditObservacionesDialog(context, index, log),
-                                      ),
-                                      IconButton(
-                                        icon: const Icon(CupertinoIcons.trash, size: 16, color: AppPalette.error),
-                                        tooltip: 'Revocar Entrada',
-                                        onPressed: () => _confirmDelete(context, index),
-                                      ),
-                                    ],
-                                  ),
                                 ],
                               ),
                             ),
@@ -243,7 +228,9 @@ class _AuditLogViewState extends State<_AuditLogView> {
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Text('Nuevo Checkpoint de Auditoría', style: AppTypography.titleLarge.copyWith(fontSize: 17)),
+                  Expanded(
+                    child: Text('Nuevo Checkpoint de Auditoría', style: AppTypography.titleLarge.copyWith(fontSize: 17)),
+                  ),
                   IconButton(
                     icon: const Icon(CupertinoIcons.xmark_circle_fill, color: AppPalette.textSecondary),
                     onPressed: () => Navigator.pop(ctx),
@@ -280,7 +267,7 @@ class _AuditLogViewState extends State<_AuditLogView> {
                       onPressed: () {
                         final log = AuditLog(
                           timestampIso8601: DateTime.now(),
-                          usuario: 'Auditor Manual',
+                          usuario: '', // lo firma el servicio con el usuario actual
                           hoja: hojaController.text.trim(),
                           celda: celdaController.text.trim(),
                           valorAnterior: valorAnteriorController.text.trim(),
@@ -289,7 +276,7 @@ class _AuditLogViewState extends State<_AuditLogView> {
                           normaAplicada: normaController.text.trim(),
                           observaciones: observacionesController.text.trim(),
                         );
-                        widget.dataService.addAuditLogManual(log);
+                        context.read<AuditLogCubit>().addAuditLogManual(log);
                         Navigator.pop(ctx);
                       },
                     ),
@@ -299,51 +286,6 @@ class _AuditLogViewState extends State<_AuditLogView> {
             ],
           ),
         ),
-      ),
-    );
-  }
-
-  void _showEditObservacionesDialog(BuildContext context, int index, AuditLog log) {
-    final controller = TextEditingController(text: log.observaciones);
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Editar Observación Forense'),
-        content: AppTextField(
-          label: 'Observaciones',
-          controller: controller,
-        ),
-        actions: [
-          TextButton(child: const Text('Cancelar'), onPressed: () => Navigator.pop(ctx)),
-          FilledButton(
-            child: const Text('Guardar'),
-            onPressed: () {
-              widget.dataService.updateAuditLog(index, controller.text.trim());
-              Navigator.pop(ctx);
-            },
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _confirmDelete(BuildContext context, int index) {
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('¿Revocar entrada de auditoría?'),
-        content: const Text('Esta acción eliminará el registro de la bitácora activa.'),
-        actions: [
-          TextButton(child: const Text('Cancelar'), onPressed: () => Navigator.pop(ctx)),
-          FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: AppPalette.error),
-            child: const Text('Revocar'),
-            onPressed: () {
-              widget.dataService.deleteAuditLog(index);
-              Navigator.pop(ctx);
-            },
-          ),
-        ],
       ),
     );
   }

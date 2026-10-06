@@ -10,8 +10,17 @@ class CodigosTelefonoState extends Equatable {
   final List<CodigoTelefono> filteredCodigos;
   final int totalActivos;
   final String searchQuery;
+  /// Error de una acción (transitorio: se muestra una vez).
   final String? errorMessage;
   final String? actionSuccessMessage;
+
+  /// Error de la última carga de Sheets; se muestra fijo en la pantalla,
+  /// no como aviso de una acción.
+  final String? errorCarga;
+
+  /// Claves en uso (por clientes, usuarios, ventas o abonos), calculadas una
+  /// vez por sincronización y no por cada fila de la lista.
+  final Set<String> enUso;
 
   const CodigosTelefonoState({
     this.status = CodigosTelefonoStatus.initial,
@@ -21,6 +30,8 @@ class CodigosTelefonoState extends Equatable {
     this.searchQuery = '',
     this.errorMessage,
     this.actionSuccessMessage,
+    this.errorCarga,
+    this.enUso = const {},
   });
 
   CodigosTelefonoState copyWith({
@@ -31,6 +42,9 @@ class CodigosTelefonoState extends Equatable {
     String? searchQuery,
     String? errorMessage,
     String? actionSuccessMessage,
+    String? errorCarga,
+    bool limpiarErrorCarga = false,
+    Set<String>? enUso,
   }) {
     return CodigosTelefonoState(
       status: status ?? this.status,
@@ -40,6 +54,8 @@ class CodigosTelefonoState extends Equatable {
       searchQuery: searchQuery ?? this.searchQuery,
       errorMessage: errorMessage,
       actionSuccessMessage: actionSuccessMessage,
+      errorCarga: limpiarErrorCarga ? null : (errorCarga ?? this.errorCarga),
+      enUso: enUso ?? this.enUso,
     );
   }
 
@@ -56,5 +72,7 @@ class CodigosTelefonoState extends Equatable {
         searchQuery,
         errorMessage,
         actionSuccessMessage,
+        errorCarga,
+        enUso,
       ];
 }

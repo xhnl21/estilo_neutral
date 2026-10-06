@@ -87,6 +87,17 @@ class _TiposDocumentoViewState extends State<_TiposDocumentoView> {
           ),
           body: Column(
             children: [
+              if (state.errorCarga != null)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(AppSpacing.lg, AppSpacing.sm, AppSpacing.lg, 0),
+                  child: Semantics(
+                    liveRegion: true,
+                    child: Text(
+                      'No se pudieron cargar los datos: ${state.errorCarga}',
+                      style: AppTypography.bodyMedium.copyWith(color: AppPalette.error),
+                    ),
+                  ),
+                ),
               Padding(
                 padding: const EdgeInsets.fromLTRB(
                   AppSpacing.lg,
@@ -113,7 +124,7 @@ class _TiposDocumentoViewState extends State<_TiposDocumentoView> {
                         itemCount: tipos.length,
                         itemBuilder: (context, index) {
                           final item = tipos[index];
-                          final enUso = cubit.isTipoDocumentoEnUso(item.tipo);
+                          final enUso = state.enUso.contains(item.tipo.trim().toUpperCase());
 
                           return Padding(
                             padding: const EdgeInsets.only(bottom: AppSpacing.sm),
@@ -319,6 +330,8 @@ class _TiposDocumentoViewState extends State<_TiposDocumentoView> {
   Future<void> _showFormDialog(BuildContext context, {TipoDocumento? tipoToEdit}) async {
     final cubit = context.read<TiposDocumentoCubit>();
     final isEditing = tipoToEdit != null;
+    // Clientes y usuarios guardan la sigla: en uso solo se edita la descripción.
+    final siglaBloqueada = isEditing && cubit.state.enUso.contains(tipoToEdit.tipo.trim().toUpperCase());
     final tipoController = TextEditingController(text: tipoToEdit?.tipo ?? '');
     final descController = TextEditingController(text: tipoToEdit?.descripcion ?? '');
     String? errorTipo;
@@ -335,14 +348,20 @@ class _TiposDocumentoViewState extends State<_TiposDocumentoView> {
             children: [
               Text(
                 isEditing
-                    ? 'Modifica los datos del tipo de documento de identidad.'
+                    ? (siglaBloqueada
+                        ? 'La sigla está en uso por clientes o usuarios: solo se puede cambiar la descripción.'
+                        : 'Modifica los datos del tipo de documento de identidad.')
                     : 'Ingresa el prefijo y descripción para el documento de identidad.',
                 style: AppTypography.bodyMedium,
               ),
               const SizedBox(height: AppSpacing.md),
               TextField(
                 controller: tipoController,
-                autofocus: true,
+                autofocus: !siglaBloqueada,
+                readOnly: siglaBloqueada,
+                onChanged: (_) {
+                  if (errorTipo != null) setDialogState(() => errorTipo = null);
+                },
                 textCapitalization: TextCapitalization.characters,
                 inputFormatters: [
                   LengthLimitingTextInputFormatter(2),
@@ -359,7 +378,11 @@ class _TiposDocumentoViewState extends State<_TiposDocumentoView> {
               const SizedBox(height: AppSpacing.md),
               TextField(
                 controller: descController,
+                autofocus: siglaBloqueada,
                 textCapitalization: TextCapitalization.words,
+                onChanged: (_) {
+                  if (errorDesc != null) setDialogState(() => errorDesc = null);
+                },
                 decoration: InputDecoration(
                   labelText: 'Descripción',
                   hintText: 'Ej: Venezolano, Pasaporte, Jurídico...',
@@ -381,6 +404,10 @@ class _TiposDocumentoViewState extends State<_TiposDocumentoView> {
                 final descInput = descController.text.trim();
 
                 var hasError = false;
+                setDialogState(() {
+                  errorTipo = null;
+                  errorDesc = null;
+                });
                 if (tipoInput.isEmpty) {
                   setDialogState(() => errorTipo = 'La sigla no puede estar vacía');
                   hasError = true;

@@ -138,7 +138,8 @@ class _TreasuryView extends StatelessWidget {
                       Semantics(
                         header: true,
                         headingLevel: 2,
-                        child: Text('Historial de Compras de Divisas', style: AppTypography.titleLarge.copyWith(fontSize: 16)),
+                        child: Text('Historial de Compras de Divisas',
+                            style: AppTypography.titleLarge.copyWith(fontSize: 16)),
                       ),
                       const SizedBox(height: AppSpacing.sm),
 
@@ -237,144 +238,178 @@ class _TreasuryView extends StatelessWidget {
     final cubit = context.read<TreasuryCubit>();
     final isEditing = compra != null;
     final id = isEditing ? compra.id : cubit.nextCompraDivisaId;
-    final ordenController = TextEditingController(text: compra?.numeroOrden ?? 'ORD-${DateTime.now().millisecondsSinceEpoch.toString().substring(7)}');
-    final capitalController = TextEditingController(text: compra?.capitalUsd.toStringAsFixed(2) ?? '100.00');
-    final comisionController = TextEditingController(text: compra?.comisionBinanceUsd.toStringAsFixed(2) ?? '1.00');
+    // Sin montos de ejemplo (se podían guardar por error); la tasa BCV se
+    // precarga con la vigente.
+    final ordenController = TextEditingController(text: compra?.numeroOrden ?? '');
+    final capitalController = TextEditingController(text: compra?.capitalUsd.toStringAsFixed(2) ?? '');
+    final comisionController = TextEditingController(text: compra?.comisionBinanceUsd.toStringAsFixed(2) ?? '');
     final plataformaController = TextEditingController(text: compra?.plataforma ?? 'Binance P2P');
-    final vendedorController = TextEditingController(text: compra?.vendedor ?? 'CryptoTrader');
-    final tasaBcvController = TextEditingController(text: compra?.tasaBcv.toStringAsFixed(2) ?? '474.00');
-    final tasaUsdController = TextEditingController(text: compra?.tasaUsd.toStringAsFixed(2) ?? '480.00');
+    final vendedorController = TextEditingController(text: compra?.vendedor ?? '');
+    final tasaBcvController = TextEditingController(
+        text: compra?.tasaBcv.toStringAsFixed(2) ?? cubit.tasaBcvVigente?.toStringAsFixed(2) ?? '');
+    final tasaUsdController = TextEditingController(text: compra?.tasaUsd.toStringAsFixed(2) ?? '');
 
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
-      builder: (ctx) => Padding(
-        padding: EdgeInsets.only(
-          bottom: MediaQuery.of(ctx).viewInsets.bottom + AppSpacing.lg,
-          left: AppSpacing.lg,
-          right: AppSpacing.lg,
-          top: AppSpacing.lg,
-        ),
-        child: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    isEditing ? 'Editar Orden ($id)' : 'Registrar Compra de Divisas',
-                    style: AppTypography.titleLarge.copyWith(fontSize: 17),
-                  ),
-                  IconButton(
-                    icon: const Icon(CupertinoIcons.xmark_circle_fill, color: AppPalette.textSecondary),
-                    onPressed: () => Navigator.pop(ctx),
-                  ),
-                ],
-              ),
-              const SizedBox(height: AppSpacing.md),
-              Row(
-                children: [
-                  Expanded(
-                    child: AppTextField(
-                      label: 'Número de Orden',
-                      controller: ordenController,
+      builder: (ctx) => LiberarControladores(
+        controladores: [
+          ordenController,
+          capitalController,
+          comisionController,
+          plataformaController,
+          vendedorController,
+          tasaBcvController,
+          tasaUsdController
+        ],
+        child: Padding(
+          padding: EdgeInsets.only(
+            bottom: MediaQuery.of(ctx).viewInsets.bottom + AppSpacing.lg,
+            left: AppSpacing.lg,
+            right: AppSpacing.lg,
+            top: AppSpacing.lg,
+          ),
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Expanded(
+                      child: Text(
+                        isEditing ? 'Editar Orden ($id)' : 'Registrar Compra de Divisas',
+                        style: AppTypography.titleLarge.copyWith(fontSize: 17),
+                        overflow: TextOverflow.ellipsis,
+                      ),
                     ),
-                  ),
-                  const SizedBox(width: AppSpacing.md),
-                  Expanded(
-                    child: AppTextField(
-                      label: 'Plataforma',
-                      controller: plataformaController,
+                    IconButton(
+                      icon: const Icon(CupertinoIcons.xmark_circle_fill, color: AppPalette.textSecondary),
+                      onPressed: () => Navigator.pop(ctx),
                     ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: AppSpacing.sm),
-              Row(
-                children: [
-                  Expanded(
-                    child: AppTextField(
-                      label: 'Capital (USD)',
-                      controller: capitalController,
-                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  ],
+                ),
+                const SizedBox(height: AppSpacing.md),
+                Row(
+                  children: [
+                    Expanded(
+                      child: AppTextField(
+                        label: 'Número de Orden',
+                        controller: ordenController,
+                      ),
                     ),
-                  ),
-                  const SizedBox(width: AppSpacing.md),
-                  Expanded(
-                    child: AppTextField(
-                      label: 'Comisión (USD)',
-                      controller: comisionController,
-                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                    const SizedBox(width: AppSpacing.md),
+                    Expanded(
+                      child: AppTextField(
+                        label: 'Plataforma',
+                        controller: plataformaController,
+                      ),
                     ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: AppSpacing.sm),
-              AppTextField(
-                label: 'Vendedor / Contraparte',
-                controller: vendedorController,
-              ),
-              const SizedBox(height: AppSpacing.sm),
-              Row(
-                children: [
-                  Expanded(
-                    child: AppTextField(
-                      label: 'Tasa BCV',
-                      controller: tasaBcvController,
-                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  ],
+                ),
+                const SizedBox(height: AppSpacing.sm),
+                Row(
+                  children: [
+                    Expanded(
+                      child: AppTextField(
+                        label: 'Capital (USD)',
+                        controller: capitalController,
+                        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                      ),
                     ),
-                  ),
-                  const SizedBox(width: AppSpacing.md),
-                  Expanded(
-                    child: AppTextField(
-                      label: 'Tasa Efectiva USD',
-                      controller: tasaUsdController,
-                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                    const SizedBox(width: AppSpacing.md),
+                    Expanded(
+                      child: AppTextField(
+                        label: 'Comisión (USD)',
+                        controller: comisionController,
+                        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                      ),
                     ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: AppSpacing.lg),
-              Row(
-                children: [
-                  Expanded(
-                    child: AppOutlinedButton(label: 'Cancelar', onPressed: () => Navigator.pop(ctx)),
-                  ),
-                  const SizedBox(width: AppSpacing.md),
-                  Expanded(
-                    child: AppButton(
-                      label: isEditing ? 'Guardar Cambios' : 'Registrar Compra',
-                      icon: CupertinoIcons.check_mark,
-                      onPressed: () {
-                        final c = CompraDivisa(
-                          id: id,
-                          fechaCompra: compra?.fechaCompra ?? DateTime.now(),
-                          fechaEntrega: compra?.fechaEntrega ?? DateTime.now(),
-                          capitalUsd: double.tryParse(capitalController.text.replaceAll(',', '.')) ?? 0.0,
-                          comisionBinanceUsd: double.tryParse(comisionController.text.replaceAll(',', '.')) ?? 0.0,
-                          numeroOrden: ordenController.text.trim(),
-                          plataforma: plataformaController.text.trim(),
-                          vendedor: vendedorController.text.trim(),
-                          tasaBcv: double.tryParse(tasaBcvController.text.replaceAll(',', '.')) ?? 474.0,
-                          tasaUsd: double.tryParse(tasaUsdController.text.replaceAll(',', '.')) ?? 480.0,
-                          validacion: 'OK',
-                        );
+                  ],
+                ),
+                const SizedBox(height: AppSpacing.sm),
+                AppTextField(
+                  label: 'Vendedor / Contraparte',
+                  controller: vendedorController,
+                ),
+                const SizedBox(height: AppSpacing.sm),
+                Row(
+                  children: [
+                    Expanded(
+                      child: AppTextField(
+                        label: 'Tasa BCV',
+                        controller: tasaBcvController,
+                        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                      ),
+                    ),
+                    const SizedBox(width: AppSpacing.md),
+                    Expanded(
+                      child: AppTextField(
+                        label: 'Tasa Efectiva USD',
+                        controller: tasaUsdController,
+                        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: AppSpacing.lg),
+                Row(
+                  children: [
+                    Expanded(
+                      child: AppOutlinedButton(label: 'Cancelar', onPressed: () => Navigator.pop(ctx)),
+                    ),
+                    const SizedBox(width: AppSpacing.md),
+                    Expanded(
+                      child: AppButton(
+                        label: isEditing ? 'Guardar Cambios' : 'Registrar Compra',
+                        icon: CupertinoIcons.check_mark,
+                        onPressed: () {
+                          final armada = TreasuryCubit.construirCompra(
+                            id: id,
+                            fechaCompra: compra?.fechaCompra ?? DateTime.now(),
+                            fechaEntrega: compra?.fechaEntrega ?? DateTime.now(),
+                            numeroOrden: ordenController.text,
+                            capital: capitalController.text,
+                            comision: comisionController.text,
+                            plataforma: plataformaController.text,
+                            vendedor: vendedorController.text,
+                            tasaBcv: tasaBcvController.text,
+                            tasaUsd: tasaUsdController.text,
+                          );
+                          var error = armada.error;
+                          if (error == null && cubit.ordenRepetida(ordenController.text, excluirId: compra?.id)) {
+                            error = 'Ya existe una compra con el número de orden ${ordenController.text.trim()}.';
+                          }
+                          final c = armada.compra;
+                          if (error != null || c == null) {
+                            showDialog(
+                              context: ctx,
+                              builder: (dCtx) => AlertDialog(
+                                title: const Text('Revisá los datos'),
+                                content: Text(error!),
+                                actions: [
+                                  TextButton(onPressed: () => Navigator.pop(dCtx), child: const Text('Entendido')),
+                                ],
+                              ),
+                            );
+                            return;
+                          }
 
-                        if (isEditing) {
-                          cubit.updateCompra(c);
-                        } else {
-                          cubit.addCompra(c);
-                        }
-                        Navigator.pop(ctx);
-                      },
+                          if (isEditing) {
+                            cubit.updateCompra(c);
+                          } else {
+                            cubit.addCompra(c);
+                          }
+                          Navigator.pop(ctx);
+                        },
+                      ),
                     ),
-                  ),
-                ],
-              ),
-            ],
+                  ],
+                ),
+              ],
+            ),
           ),
         ),
       ),

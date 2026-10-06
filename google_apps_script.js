@@ -38,8 +38,22 @@ const ID_PREFIXES = {
   moneda_organizacion: "mo",
   creditos_clientes: "cr",
   "codigo de telefonos": "ct",
-  "tipo de documento": "td"
+  "tipo de documento": "td",
+  resumen_diario: "rd",
+  "metodo pago": "mp",
+  usuario_organizacion: "uo",
+  seguridad: "sg",
+  checklist_iso: "ck",
+  cuarentena: "cq",
+  audit_log: "al",
+  reporte_migracion: "rm"
 };
+
+/** Hojas que originalmente no tenían columna id (ver migrarEsquema). */
+const HOJAS_MIGRABLES = [
+  "resumen_diario", "usuario_organizacion", "seguridad", "checklist_iso",
+  "cuarentena", "audit_log", "reporte_migracion"
+];
 
 function _siguienteIdServidor(sheet, prefijo) {
   const lastRow = sheet.getLastRow();
@@ -148,6 +162,10 @@ function doPost(e) {
     // =========================================================================
     // ACCIÓN ESPECIAL: EJECUCIÓN ATÓMICA POR LOTES (ALL-OR-NOTHING BATCH)
     // =========================================================================
+    if (action === "migrar_esquema") {
+      return respond(migrarEsquema(ss));
+    }
+
     if (action === "batch") {
       const batchResult = _handleBatch(ss, payload);
       return respond(batchResult, batchResult.status === "error" ? 400 : 200);
@@ -168,8 +186,15 @@ function doPost(e) {
     if (!sheet) {
       return respond({ status: "error", message: "Hoja '" + sheetName + "' no encontrada" }, 404);
     }
+    _asegurarEsquema(sheet, sheetName);
 
     let result = {};
+
+    // "resumen_diario" no tiene columna de ID: cada cierre se identifica por
+    // fecha + organización (ver _handleResumenDiario).
+    if (sheetName === "resumen_diario" && ["create", "update", "delete"].indexOf(action) !== -1) {
+      return respond(_handleResumenDiario(ss, sheet, action, id, data));
+    }
 
     switch (action) {
       case "create":
@@ -181,11 +206,11 @@ function doPost(e) {
         break;
 
       case "delete":
-        result = _handleDelete(ss, sheet, sheetName, id);
+        result = _handleDelete(ss, sheet, sheetName, id, data);
         break;
 
       case "toggle_checklist":
-        result = _handleToggleChecklist(ss, sheet, payload.nro, payload.estado);
+        result = _handleToggleChecklist(ss, sheet, payload.id, payload.nro, payload.estado);
         break;
 
       case "set_metodo_seguridad":
@@ -229,6 +254,12 @@ function doPost(e) {
 // HANDLER DE TRANSACCIONES ATÓMICAS POR LOTES (ALL-OR-NOTHING BATCH)
 // =============================================================================
 
+/** Columnas (1-based) que una operación "increment" del lote puede tocar. */
+const COLUMNAS_INCREMENTABLES = {
+  inventario: { cantidad: 2 },
+  clientes: { saldo_deuda_usd: 5 }
+};
+
 function _handleBatch(ss, payload) {
   const operations = payload.operations;
   const transactionId = payload.transactionId || ("tx_" + new Date().getTime());
@@ -265,6 +296,7 @@ function _handleBatch(ss, payload) {
       if (!sh) {
         throw new Error("Hoja '" + op.sheet + "' no encontrada en operación #" + (i + 1));
       }
+      _asegurarEsquema(sh, op.sheet);
     }
 
     // 2. Ejecutar cada operación en orden secuencial registrando puntos de rollback
@@ -390,6 +422,36 @@ function _handleBatch(ss, payload) {
         }
 
         results.push({ opIndex: i, action: opAction, sheet: op.sheet, id: targetId, row: rowIndex });
+
+      } else if (opAction === "increment") {
+        // Suma op.delta al valor ACTUAL de la celda (no a un valor calculado
+        // en el teléfono): dos dispositivos que descuentan stock o deuda a la
+        // vez no se pisan. Solo columnas declaradas en COLUMNAS_INCREMENTABLES.
+        const columna = (COLUMNAS_INCREMENTABLES[op.sheet] || {})[op.field];
+        if (!columna) {
+          throw new Error("No se puede incrementar " + op.sheet + "." + op.field);
+        }
+        const delta = Number(op.delta);
+        if (!isFinite(delta)) {
+          throw new Error("Incremento inválido en " + op.sheet + "." + op.field);
+        }
+        const rowIndex = _findRowById(targetSheet, op.id);
+        if (rowIndex === -1) {
+          throw new Error("Registro con ID '" + op.id + "' no encontrado en " + op.sheet);
+        }
+        const lastCol = Math.max(targetSheet.getLastColumn(), 1);
+        rollbackTasks.push({
+          type: "restore_row",
+          sheet: targetSheet,
+          row: rowIndex,
+          values: targetSheet.getRange(rowIndex, 1, 1, lastCol).getValues()[0]
+        });
+        const celda = targetSheet.getRange(rowIndex, columna);
+        const actual = Number(celda.getValue()) || 0;
+        let nuevo = Math.round((actual + delta) * 100) / 100;
+        if (op.min !== undefined && op.min !== null && nuevo < Number(op.min)) nuevo = Number(op.min);
+        celda.setValue(nuevo);
+        results.push({ opIndex: i, action: "increment", sheet: op.sheet, id: op.id, field: op.field, value: nuevo });
 
       } else if (opAction === "delete") {
         const targetId = op.id;
@@ -547,7 +609,7 @@ function _handleCreate(ss, sheet, sheetName, data, skipAudit) {
       data.fecha_registro || Utilities.formatDate(new Date(), "GMT-4", "yyyy-MM-dd"),
       data.organizacion_id || ORGANIZACION_ID_DEFAULT,
       data.tipo_documento || "V",
-      data.cedula || ""
+      _comoTexto(data.cedula)
     ];
   } else if (sheetName === "inventario") {
     // foto_id es una FK a "galeria".id (nunca la URL directa) — la columna
@@ -561,9 +623,9 @@ function _handleCreate(ss, sheet, sheetName, data, skipAudit) {
       data.id,
       data.cantidad || 0,
       data.nombre || "",
-      data.marca || "",
-      data.modelo || "",
-      data.talla || "",
+      _comoTexto(data.marca),
+      _comoTexto(data.modelo),
+      _comoTexto(data.talla),
       data.precio_usd || 0.0,
       fotoId,
       fotoFormula,
@@ -655,9 +717,9 @@ function _handleCreate(ss, sheet, sheetName, data, skipAudit) {
       data.fecha_entrega || Utilities.formatDate(new Date(), "GMT-4", "yyyy-MM-dd"),
       data.capital_usd || 0.0,
       data.comision_binance_usd || 0.0,
-      data.numero_orden || "",
+      _comoTexto(data.numero_orden),
       data.plataforma || "",
-      data.vendedor || "",
+      _comoTexto(data.vendedor),
       data.tasa_bcv || 0.0,
       data.tasa_usd || 0.0,
       data.validacion || "OK",
@@ -669,7 +731,7 @@ function _handleCreate(ss, sheet, sheetName, data, skipAudit) {
       (data.email || "").toString().trim().toLowerCase(),
       data.nombre || "",
       data.tipo_documento || "V",
-      data.cedula || ""
+      _comoTexto(data.cedula)
     ];
   } else if (sheetName === "organizaciones") {
     rowValues = [
@@ -685,13 +747,77 @@ function _handleCreate(ss, sheet, sheetName, data, skipAudit) {
     ];
   } else if (sheetName === "usuario_organizacion") {
     rowValues = [
+      data.id,
       (data.usuario_email || "").toString().trim().toLowerCase(),
       data.organizacion_id || ""
+    ];
+  } else if (sheetName === "checklist_iso") {
+    // El nro lo asigna el servidor (máximo + 1): contarlo en la app repetía
+    // números cuando había huecos o varias organizaciones.
+    rowValues = [
+      data.id,
+      _siguienteNroChecklist(sheet),
+      data.control || "",
+      data.norma || "",
+      data.estado || "☐",
+      data.evidencia || "",
+      data.timestamp || new Date().toISOString(),
+      data.organizacion_id || ORGANIZACION_ID_DEFAULT
+    ];
+  } else if (sheetName === "cuarentena") {
+    rowValues = [
+      data.id,
+      data.id_registro_original || "",
+      data.hoja_origen || "",
+      data.fecha_deteccion || new Date().toISOString(),
+      data.motivo_cuarentena || "",
+      data.datos_originales_json || "",
+      data.estado || "PENDIENTE_REVISION",
+      data.resolucion || "",
+      data.hash_evidencia || "",
+      data.organizacion_id || ORGANIZACION_ID_DEFAULT
+    ];
+  } else if (sheetName === "audit_log") {
+    rowValues = [
+      data.id,
+      data.timestamp_iso8601 || new Date().toISOString(),
+      data.usuario || "",
+      data.hoja || "",
+      data.celda || "",
+      data.valor_anterior || "",
+      data.valor_nuevo || "",
+      data.accion || "",
+      data.norma_aplicada || "",
+      data.observaciones || "",
+      data.organizacion_id || ""
+    ];
+  } else if (sheetName === "reporte_migracion") {
+    rowValues = [
+      data.id,
+      data.metrica || "",
+      data.valor_estado || "",
+      data.norma_aplicada || "",
+      data.observaciones || "",
+      data.organizacion_id || ORGANIZACION_ID_DEFAULT
     ];
   } else if (sheetName === "metodo pago") {
     rowValues = [
       data.id,
       data.nombre || "",
+      data.status !== undefined ? data.status : true
+    ];
+  } else if (sheetName === "codigo de telefonos") {
+    // El código va con comilla: sin ella appendRow convierte "0414" en 414.
+    rowValues = [
+      data.id,
+      "'" + _normalizarCodigoTelefono(data.codigo),
+      data.status !== undefined ? data.status : true
+    ];
+  } else if (sheetName === "tipo de documento") {
+    rowValues = [
+      data.id,
+      (data.tipo || "").toString().trim().toUpperCase(),
+      data.descripcion || "",
       data.status !== undefined ? data.status : true
     ];
   } else if (sheetName === "creditos_clientes") {
@@ -715,6 +841,7 @@ function _handleCreate(ss, sheet, sheetName, data, skipAudit) {
   }
 
   sheet.appendRow(rowValues);
+  if (sheetName === "codigo de telefonos") _repararColumnaCodigosTelefono(sheet);
 
   // Sincronizar abono acumulado en la cabecera de la factura si se creó un abono
   if (sheetName === "abonos" && data.venta_id && data.monto !== undefined) {
@@ -764,13 +891,13 @@ function _handleUpdate(ss, sheet, sheetName, id, data, skipAudit) {
     if (data.email !== undefined) sheet.getRange(rowIndex, 4).setValue(data.email);
     if (data.saldo_deuda_usd !== undefined) sheet.getRange(rowIndex, 5).setValue(data.saldo_deuda_usd);
     if (data.tipo_documento !== undefined) sheet.getRange(rowIndex, 8).setValue(data.tipo_documento);
-    if (data.cedula !== undefined) sheet.getRange(rowIndex, 9).setValue(data.cedula);
+    if (data.cedula !== undefined) sheet.getRange(rowIndex, 9).setValue(_comoTexto(data.cedula));
   } else if (sheetName === "inventario") {
     if (data.cantidad !== undefined) sheet.getRange(rowIndex, 2).setValue(data.cantidad);
     if (data.nombre !== undefined) sheet.getRange(rowIndex, 3).setValue(data.nombre);
-    if (data.marca !== undefined) sheet.getRange(rowIndex, 4).setValue(data.marca);
-    if (data.modelo !== undefined) sheet.getRange(rowIndex, 5).setValue(data.modelo);
-    if (data.talla !== undefined) sheet.getRange(rowIndex, 6).setValue(data.talla);
+    if (data.marca !== undefined) sheet.getRange(rowIndex, 4).setValue(_comoTexto(data.marca));
+    if (data.modelo !== undefined) sheet.getRange(rowIndex, 5).setValue(_comoTexto(data.modelo));
+    if (data.talla !== undefined) sheet.getRange(rowIndex, 6).setValue(_comoTexto(data.talla));
     if (data.precio_usd !== undefined) sheet.getRange(rowIndex, 7).setValue(data.precio_usd);
     if (data.foto_id !== undefined) {
       sheet.getRange(rowIndex, 8).setValue(data.foto_id);
@@ -797,16 +924,16 @@ function _handleUpdate(ss, sheet, sheetName, id, data, skipAudit) {
     if (data.fecha_entrega !== undefined) sheet.getRange(rowIndex, 3).setValue(data.fecha_entrega);
     if (data.capital_usd !== undefined) sheet.getRange(rowIndex, 4).setValue(data.capital_usd);
     if (data.comision_binance_usd !== undefined) sheet.getRange(rowIndex, 5).setValue(data.comision_binance_usd);
-    if (data.numero_orden !== undefined) sheet.getRange(rowIndex, 6).setValue(data.numero_orden);
+    if (data.numero_orden !== undefined) sheet.getRange(rowIndex, 6).setValue(_comoTexto(data.numero_orden));
     if (data.plataforma !== undefined) sheet.getRange(rowIndex, 7).setValue(data.plataforma);
-    if (data.vendedor !== undefined) sheet.getRange(rowIndex, 8).setValue(data.vendedor);
+    if (data.vendedor !== undefined) sheet.getRange(rowIndex, 8).setValue(_comoTexto(data.vendedor));
     if (data.tasa_bcv !== undefined) sheet.getRange(rowIndex, 9).setValue(data.tasa_bcv);
     if (data.tasa_usd !== undefined) sheet.getRange(rowIndex, 10).setValue(data.tasa_usd);
   } else if (sheetName === "usuarios") {
     if (data.email !== undefined) sheet.getRange(rowIndex, 2).setValue(data.email.toString().trim().toLowerCase());
     if (data.nombre !== undefined) sheet.getRange(rowIndex, 3).setValue(data.nombre);
     if (data.tipo_documento !== undefined) sheet.getRange(rowIndex, 4).setValue(data.tipo_documento);
-    if (data.cedula !== undefined) sheet.getRange(rowIndex, 5).setValue(data.cedula);
+    if (data.cedula !== undefined) sheet.getRange(rowIndex, 5).setValue(_comoTexto(data.cedula));
   } else if (sheetName === "organizaciones") {
     if (data.nombre !== undefined) sheet.getRange(rowIndex, 2).setValue(data.nombre);
   } else if (sheetName === "moneda_organizacion") {
@@ -819,10 +946,42 @@ function _handleUpdate(ss, sheet, sheetName, id, data, skipAudit) {
     if (data.fuente !== undefined) sheet.getRange(rowIndex, 5).setValue(data.fuente);
     if (data.organizacion_id !== undefined) sheet.getRange(rowIndex, 6).setValue(data.organizacion_id);
   } else if (sheetName === "usuario_organizacion") {
-    if (data.organizacion_id !== undefined) sheet.getRange(rowIndex, 2).setValue(data.organizacion_id);
+    if (data.organizacion_id !== undefined) sheet.getRange(rowIndex, 3).setValue(data.organizacion_id);
+  } else if (sheetName === "checklist_iso") {
+    const errOrg = _verificarOrganizacion(sheet, rowIndex, 8, data);
+    if (errOrg) return errOrg;
+    if (data.control !== undefined) sheet.getRange(rowIndex, 3).setValue(data.control);
+    if (data.norma !== undefined) sheet.getRange(rowIndex, 4).setValue(data.norma);
+    if (data.estado !== undefined) sheet.getRange(rowIndex, 5).setValue(data.estado);
+    if (data.evidencia !== undefined) sheet.getRange(rowIndex, 6).setValue(data.evidencia);
+    if (data.timestamp !== undefined) sheet.getRange(rowIndex, 7).setValue(data.timestamp);
+  } else if (sheetName === "cuarentena") {
+    const errOrg = _verificarOrganizacion(sheet, rowIndex, 10, data);
+    if (errOrg) return errOrg;
+    if (data.estado !== undefined) sheet.getRange(rowIndex, 7).setValue(data.estado);
+    if (data.resolucion !== undefined) sheet.getRange(rowIndex, 8).setValue(data.resolucion);
+  } else if (sheetName === "reporte_migracion") {
+    const errOrg = _verificarOrganizacion(sheet, rowIndex, 6, data);
+    if (errOrg) return errOrg;
+    if (data.metrica !== undefined) sheet.getRange(rowIndex, 2).setValue(data.metrica);
+    if (data.valor_estado !== undefined) sheet.getRange(rowIndex, 3).setValue(data.valor_estado);
+    if (data.norma_aplicada !== undefined) sheet.getRange(rowIndex, 4).setValue(data.norma_aplicada);
+    if (data.observaciones !== undefined) sheet.getRange(rowIndex, 5).setValue(data.observaciones);
+  } else if (sheetName === "audit_log") {
+    return { status: "error", message: "La bitácora de auditoría es inmutable: no se puede editar." };
   } else if (sheetName === "metodo pago") {
     if (data.nombre !== undefined) sheet.getRange(rowIndex, 2).setValue(data.nombre);
     if (data.status !== undefined) sheet.getRange(rowIndex, 3).setValue(data.status);
+  } else if (sheetName === "codigo de telefonos") {
+    if (data.codigo !== undefined) {
+      sheet.getRange(rowIndex, 2).setValue("'" + _normalizarCodigoTelefono(data.codigo));
+    }
+    if (data.status !== undefined) sheet.getRange(rowIndex, 3).setValue(data.status);
+    _repararColumnaCodigosTelefono(sheet);
+  } else if (sheetName === "tipo de documento") {
+    if (data.tipo !== undefined) sheet.getRange(rowIndex, 2).setValue(data.tipo.toString().trim().toUpperCase());
+    if (data.descripcion !== undefined) sheet.getRange(rowIndex, 3).setValue(data.descripcion);
+    if (data.status !== undefined) sheet.getRange(rowIndex, 4).setValue(data.status);
   } else if (sheetName === "creditos_clientes") {
     if (data.estado !== undefined) sheet.getRange(rowIndex, 6).setValue(data.estado);
     if (data.aplicado_a_venta_id !== undefined) sheet.getRange(rowIndex, 8).setValue(data.aplicado_a_venta_id);
@@ -850,10 +1009,18 @@ function _handleUpdate(ss, sheet, sheetName, id, data, skipAudit) {
   return { status: "success", message: "Registro " + id + " actualizado correctamente" };
 }
 
-function _handleDelete(ss, sheet, sheetName, id) {
+function _handleDelete(ss, sheet, sheetName, id, data) {
+  if (sheetName === "audit_log") {
+    return { status: "error", message: "La bitácora de auditoría es inmutable: no se puede eliminar." };
+  }
   const rowIndex = _findRowById(sheet, id);
   if (rowIndex === -1) {
     return { status: "error", message: "Registro con ID '" + id + "' no encontrado en " + sheetName };
+  }
+  const colOrg = { checklist_iso: 8, cuarentena: 10, reporte_migracion: 6 }[sheetName];
+  if (colOrg) {
+    const errOrg = _verificarOrganizacion(sheet, rowIndex, colOrg, data || {});
+    if (errOrg) return errOrg;
   }
 
   sheet.deleteRow(rowIndex);
@@ -871,32 +1038,35 @@ function _handleDelete(ss, sheet, sheetName, id) {
   return { status: "success", message: "Registro " + id + " eliminado correctamente" };
 }
 
-function _handleToggleChecklist(ss, sheet, nro, nuevoEstado) {
-  const data = sheet.getDataRange().getValues();
-  for (let i = 1; i < data.length; i++) {
-    if (data[i][0] == nro) {
-      sheet.getRange(i + 1, 4).setValue(nuevoEstado);
-      sheet.getRange(i + 1, 6).setValue(new Date().toISOString());
+function _handleToggleChecklist(ss, sheet, id, nro, nuevoEstado) {
+  // Por id (app actual); por nro solo para builds viejas, que no envían id.
+  const filas = sheet.getDataRange().getValues();
+  for (let i = 1; i < filas.length; i++) {
+    const coincide = id ? String(filas[i][0]).trim() === String(id).trim() : filas[i][1] == nro;
+    if (coincide) {
+      sheet.getRange(i + 1, 5).setValue(nuevoEstado);
+      sheet.getRange(i + 1, 7).setValue(new Date().toISOString());
 
       _appendAuditLog(ss, {
         hoja: "checklist_iso",
-        celda: "D" + (i + 1),
-        valorAnterior: data[i][3],
+        celda: "E" + (i + 1),
+        valorAnterior: filas[i][4],
         valorNuevo: nuevoEstado,
         accion: "toggle_checklist_iso",
-        norma: data[i][2] || "ISO/IEC 27001",
-        observaciones: "Control #" + nro + " actualizado a " + nuevoEstado
+        norma: filas[i][3] || "ISO/IEC 27001",
+        observaciones: "Control " + filas[i][0] + " (#" + filas[i][1] + ") actualizado a " + nuevoEstado,
+        organizacionId: filas[i][7]
       });
 
-      return { status: "success", message: "Checklist #" + nro + " actualizado a " + nuevoEstado };
+      return { status: "success", message: "Control " + filas[i][0] + " actualizado a " + nuevoEstado };
     }
   }
-  return { status: "error", message: "Control #" + nro + " no encontrado" };
+  return { status: "error", message: "Control " + (id || ("#" + nro)) + " no encontrado." };
 }
 
 function _handleSetMetodoSeguridad(ss, sheet, biometrico, desbloqueoFacial, dosFactores, usuarioEmail) {
   const email = (usuarioEmail || "").toString().trim().toLowerCase();
-  const rowIndex = _findRowByColumnValue(sheet, 4, email);
+  const rowIndex = _findRowByColumnValue(sheet, 5, email);
   // IMPORTANTE: Range.setValues() en Apps Script auto-convierte las cadenas
   // "TRUE"/"FALSE" a boolean nativo de Sheets igual que si se pasara un
   // boolean de JS directamente — no hay forma de forzar texto plano acá. Por
@@ -911,11 +1081,11 @@ function _handleSetMetodoSeguridad(ss, sheet, biometrico, desbloqueoFacial, dosF
 
   let anterior = "desconocido";
   if (rowIndex !== -1) {
-    const prev = sheet.getRange(rowIndex, 1, 1, 3).getValues()[0];
+    const prev = sheet.getRange(rowIndex, 2, 1, 3).getValues()[0];
     anterior = JSON.stringify(prev);
-    sheet.getRange(rowIndex, 1, 1, 4).setValues([rowValues]);
+    sheet.getRange(rowIndex, 2, 1, 4).setValues([rowValues]);
   } else {
-    sheet.appendRow(rowValues);
+    sheet.appendRow([_siguienteIdServidor(sheet, ID_PREFIXES.seguridad)].concat(rowValues));
   }
 
   const etiquetas = { biometrico: "Biométrico", desbloqueo_facial: "Desbloqueo facial", dos_factores: "2FA" };
@@ -975,16 +1145,19 @@ function _appendAuditLog(ss, log) {
   try {
     const auditSheet = ss.getSheetByName("audit_log");
     if (!auditSheet) return;
+    _asegurarEsquema(auditSheet, "audit_log");
     auditSheet.appendRow([
+      _siguienteIdServidor(auditSheet, ID_PREFIXES.audit_log),
       new Date().toISOString(),
-      "Operador App Móvil (Apps Script)",
+      log.usuario || "Sistema (Apps Script)",
       log.hoja,
       log.celda,
       log.valorAnterior,
       log.valorNuevo,
       log.accion,
       log.norma,
-      log.observaciones
+      log.observaciones,
+      log.organizacionId || ""
     ]);
   } catch (e) {
     // Evitar romper la transacción si falla el log
@@ -1187,10 +1360,11 @@ function auditarIntegridadReferencial() {
   if (!cuarentenaSheet) {
     cuarentenaSheet = ss.insertSheet('cuarentena');
     cuarentenaSheet.appendRow([
-      'id_registro_original', 'hoja_origen', 'fecha_deteccion', 'motivo_cuarentena',
+      'id', 'id_registro_original', 'hoja_origen', 'fecha_deteccion', 'motivo_cuarentena',
       'datos_originales_json', 'estado', 'resolucion', 'hash_evidencia', 'organizacion_id'
     ]);
   }
+  _asegurarEsquema(cuarentenaSheet, 'cuarentena');
 
   let totalCuarentena = 0;
 
@@ -1202,6 +1376,7 @@ function auditarIntegridadReferencial() {
       Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, json)
     );
     cuarentenaSheet.appendRow([
+      _siguienteIdServidor(cuarentenaSheet, ID_PREFIXES.cuarentena),
       fila[0], sheetName, new Date().toISOString(), motivo,
       json, 'PENDIENTE_REVISION', '', hash, registro['organizacion_id'] || ''
     ]);
@@ -1278,4 +1453,247 @@ function _sanitizarContraFormulas(valor) {
     return limpio;
   }
   return valor;
+}
+
+// =============================================================================
+// CÓDIGOS DE TELÉFONO Y CÉDULAS COMO TEXTO
+// =============================================================================
+// Sheets convierte "0414" en el número 414 al escribirlo. Además la app lee
+// las hojas por gviz CSV, que tipa cada columna por mayoría y devuelve VACÍOS
+// los valores del tipo minoritario: no alcanza con guardar los códigos nuevos
+// como texto, toda la columna tiene que ser texto. Por eso cada escritura en
+// "codigo de telefonos" repara la columna completa.
+
+/**
+ * Fuerza texto plano en una celda: sin la comilla, Sheets convierte
+ * "070133805" (RIF) en el número 70133805 y se pierde el 0 inicial.
+ * Vacío queda vacío.
+ */
+function _comoTexto(valor) {
+  const s = (valor === null || valor === undefined ? "" : valor).toString().trim();
+  if (s === "") return "";
+  return s.charAt(0) === "'" ? s : "'" + s;
+}
+
+/** "414" / 414 → "0414". Deja intacto lo que no sea un número de 1 a 3 dígitos. */
+function _normalizarCodigoTelefono(valor) {
+  const s = (valor === null || valor === undefined ? "" : valor).toString().trim();
+  return /^\d{1,3}$/.test(s) ? ("0000" + s).slice(-4) : s;
+}
+
+/** Pone la columna B (código) en formato texto y restaura el 0 inicial perdido. */
+function _repararColumnaCodigosTelefono(sheet) {
+  const ultimaFila = sheet.getLastRow();
+  if (ultimaFila < 2) return;
+  const rango = sheet.getRange(2, 2, ultimaFila - 1, 1);
+  const valores = rango.getValues().map(function (fila) {
+    return [_normalizarCodigoTelefono(fila[0])];
+  });
+  rango.setNumberFormat("@");
+  rango.setValues(valores);
+}
+
+/**
+ * Reparación manual (una sola vez, desde el editor de Apps Script):
+ * convierte a texto los códigos que Sheets ya guardó como número.
+ */
+function repararCodigosTelefono() {
+  const sheet = getSpreadsheet().getSheetByName("codigo de telefonos");
+  if (!sheet) throw new Error('No existe la hoja "codigo de telefonos"');
+  _repararColumnaCodigosTelefono(sheet);
+}
+
+// =============================================================================
+// RESUMEN DIARIO (CIERRES)
+// =============================================================================
+// Columnas: id | fecha | nro_ventas | total_bs | total_usd | tasa_bcv |
+//           tasa_usd | usd_comprados | usd_vendidos | organizacion_id
+// El id (rd00000001…) lo genera el servidor. Además, solo puede haber un
+// cierre por (fecha, organizacion_id).
+
+const _COL_FECHA_RESUMEN = 2;
+const _COL_ORG_RESUMEN = 10;
+
+/** Fila (1-based) del cierre de [fecha] para [organizacionId], o -1. */
+function _filaResumenPorFecha(ss, sheet, fecha, organizacionId) {
+  const filas = sheet.getDataRange().getValues();
+  for (let i = 1; i < filas.length; i++) {
+    if (_fechaComoString(ss, filas[i][_COL_FECHA_RESUMEN - 1]) === fecha &&
+        String(filas[i][_COL_ORG_RESUMEN - 1]).trim() === organizacionId) {
+      return i + 1;
+    }
+  }
+  return -1;
+}
+
+/**
+ * La fecha se guarda como texto ISO (yyyy-MM-dd): si Sheets la convierte en
+ * fecha, gviz la devuelve con el formato local (p. ej. 6/10/2026) y la app no
+ * la puede leer. Además gviz devuelve vacíos si la columna mezcla tipos, así
+ * que se normaliza la columna completa.
+ */
+function _repararColumnaFechasResumen(ss, sheet) {
+  const ultimaFila = sheet.getLastRow();
+  if (ultimaFila < 2) return;
+  const rango = sheet.getRange(2, _COL_FECHA_RESUMEN, ultimaFila - 1, 1);
+  const valores = rango.getValues().map(function (fila) {
+    return [fila[0] === "" ? "" : _fechaComoString(ss, fila[0])];
+  });
+  rango.setNumberFormat("@");
+  rango.setValues(valores);
+}
+
+function _handleResumenDiario(ss, sheet, action, id, data) {
+  _asegurarEsquema(sheet, "resumen_diario");
+
+  const organizacionId = (data.organizacion_id || "").toString().trim();
+  if (!organizacionId) {
+    return { status: "error", message: "Cierre inválido: falta organizacion_id." };
+  }
+  const valores = [
+    data.nro_ventas || 0,
+    data.total_bs || 0,
+    data.total_usd || 0,
+    data.tasa_bcv || 0,
+    data.tasa_usd || 0,
+    data.usd_comprados || 0,
+    data.usd_vendidos || 0
+  ];
+
+  let fila;
+  let idCierre = (id || data.id || "").toString().trim();
+  let fecha;
+
+  if (action === "create") {
+    fecha = (data.fecha || "").toString().trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(fecha)) {
+      return { status: "error", message: "Cierre inválido: la fecha debe ser yyyy-MM-dd." };
+    }
+    if (_filaResumenPorFecha(ss, sheet, fecha, organizacionId) !== -1) {
+      return { status: "error", message: "Ya existe un cierre para " + fecha + " en esta organización." };
+    }
+    idCierre = _siguienteIdServidor(sheet, ID_PREFIXES.resumen_diario);
+    sheet.appendRow([idCierre, "'" + fecha].concat(valores).concat([organizacionId]));
+    fila = sheet.getLastRow();
+  } else {
+    fila = idCierre ? _findRowById(sheet, idCierre) : -1;
+    const actual = fila === -1 ? null : sheet.getRange(fila, 1, 1, _COL_ORG_RESUMEN).getValues()[0];
+    // Un cierre de otra organización se trata como inexistente.
+    if (!actual || String(actual[_COL_ORG_RESUMEN - 1]).trim() !== organizacionId) {
+      return { status: "error", message: "No existe el cierre " + idCierre + " en esta organización." };
+    }
+    fecha = _fechaComoString(ss, actual[_COL_FECHA_RESUMEN - 1]);
+    if (action === "update") {
+      // La fecha y la organización no cambian: solo los montos.
+      sheet.getRange(fila, 3, 1, valores.length).setValues([valores]);
+    } else {
+      sheet.deleteRow(fila);
+    }
+  }
+  _repararColumnaFechasResumen(ss, sheet);
+
+  _appendAuditLog(ss, {
+    hoja: "resumen_diario",
+    celda: "A" + fila,
+    valorAnterior: action === "create" ? "null" : idCierre,
+    valorNuevo: action === "delete" ? "ELIMINADO" : idCierre + " " + fecha + ": USD " + (data.total_usd || 0),
+    accion: action === "create" ? "cierre_diario" : (action === "update" ? "actualizacion_resumen_diario" : "eliminacion_resumen_diario"),
+    norma: "COBIT 2019",
+    observaciones: "Cierre " + idCierre + " (" + fecha + ", " + organizacionId + ") vía App Móvil"
+  });
+  return { status: "success", message: "Cierre " + idCierre + " guardado", id: idCierre };
+}
+
+// =============================================================================
+// MIGRACIÓN DE ESQUEMA: COLUMNA id EN TODAS LAS HOJAS (docs/estandar-hojas.md)
+// =============================================================================
+
+/** Migra [sheet] si es una de HOJAS_MIGRABLES y todavía no tiene columna id. */
+function _asegurarEsquema(sheet, sheetName) {
+  if (HOJAS_MIGRABLES.indexOf(sheetName) === -1) return;
+  if (sheetName === "reporte_migracion") _quitarFilasDeTituloReporte(sheet);
+  _migrarColumnaId(sheet, ID_PREFIXES[sheetName]);
+}
+
+/**
+ * Si la columna A no es "id", la inserta y numera las filas existentes
+ * (<prefijo>00000001…). Idempotente: no hace nada si ya está migrada.
+ */
+function _migrarColumnaId(sheet, prefijo) {
+  const encabezado = String(sheet.getRange(1, 1).getValue()).trim().toLowerCase();
+  if (encabezado === "id") return false;
+  sheet.insertColumnBefore(1);
+  sheet.getRange(1, 1).setValue("id");
+  const ultimaFila = sheet.getLastRow();
+  if (ultimaFila >= 2) {
+    const ids = [];
+    for (let i = 0; i < ultimaFila - 1; i++) {
+      ids.push([prefijo + String(i + 1).padStart(8, "0")]);
+    }
+    sheet.getRange(2, 1, ids.length, 1).setValues(ids);
+  }
+  return true;
+}
+
+/**
+ * "reporte_migracion" empezaba con 2 filas de título antes del encabezado.
+ * Se convierten en filas de datos (métrica "Título" / "Estándares") para que
+ * la hoja sea una tabla y no se pierda el texto. El encabezado pasa a
+ * snake_case como el resto de las hojas.
+ */
+function _quitarFilasDeTituloReporte(sheet) {
+  const valores = sheet.getDataRange().getValues();
+  let fila = -1;
+  for (let i = 0; i < valores.length; i++) {
+    const a = String(valores[i][0]).trim().toLowerCase();
+    if (a === "id" || a === "metrica") return; // ya es una tabla
+    if (a.indexOf("métrica") === 0 || a.indexOf("metrica") === 0) { fila = i; break; }
+  }
+  if (fila <= 0) return;
+  const etiquetas = ["Título del reporte", "Estándares aplicados"];
+  const titulos = valores.slice(0, fila)
+    .map(function (r, i) {
+      return [etiquetas[i] || "Encabezado", String(r[0]), "", "", ORGANIZACION_ID_DEFAULT];
+    })
+    .filter(function (r) { return r[1].trim() !== ""; });
+  sheet.deleteRows(1, fila);
+  sheet.getRange(1, 1, 1, 5).setValues([["metrica", "valor_estado", "norma_aplicada", "observaciones", "organizacion_id"]]);
+  if (titulos.length) {
+    sheet.insertRowsAfter(1, titulos.length);
+    sheet.getRange(2, 1, titulos.length, 5).setValues(titulos);
+  }
+}
+
+/** Corre todas las migraciones pendientes. Idempotente. */
+function migrarEsquema(ss) {
+  ss = ss || getSpreadsheet();
+  const migradas = [];
+  HOJAS_MIGRABLES.forEach(function (nombre) {
+    const sheet = ss.getSheetByName(nombre);
+    if (!sheet) return;
+    const antes = String(sheet.getRange(1, 1).getValue()).trim().toLowerCase();
+    _asegurarEsquema(sheet, nombre);
+    if (antes !== "id") migradas.push(nombre);
+  });
+  return { status: "success", message: "Esquema al día", migradas: migradas };
+}
+
+/** Error si la fila [rowIndex] no pertenece a data.organizacion_id. */
+function _verificarOrganizacion(sheet, rowIndex, columna, data) {
+  const esperada = (data.organizacion_id || "").toString().trim();
+  const actual = String(sheet.getRange(rowIndex, columna).getValue()).trim();
+  if (!esperada || esperada !== actual) {
+    return { status: "error", message: "El registro no pertenece a esta organización." };
+  }
+  return null;
+}
+
+/** Siguiente nro de control del checklist (máximo + 1, columna B). */
+function _siguienteNroChecklist(sheet) {
+  const ultimaFila = sheet.getLastRow();
+  if (ultimaFila < 2) return 1;
+  const nros = sheet.getRange(2, 2, ultimaFila - 1, 1).getValues();
+  let max = 0;
+  nros.forEach(function (r) { const n = parseInt(r[0], 10); if (!isNaN(n) && n > max) max = n; });
+  return max + 1;
 }

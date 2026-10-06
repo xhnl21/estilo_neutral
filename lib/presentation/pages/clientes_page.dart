@@ -1,5 +1,6 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 import '../../app/di/injection.dart';
@@ -12,6 +13,8 @@ import '../../models/models.dart';
 import '../../shared/shared.dart';
 import '../cubits/clientes/clientes_cubit.dart';
 import '../cubits/clientes/clientes_state.dart';
+import '../cubits/cliente_form/cliente_form_cubit.dart';
+import '../cubits/cliente_form/cliente_form_state.dart';
 
 /// Vista de Clientes (hoja: clientes)
 /// Implementada con arquitectura BLoC/Cubit, reactividad pura y CERO setState().
@@ -36,17 +39,15 @@ class _ClientesView extends StatelessWidget {
   Widget build(BuildContext context) {
     return BlocConsumer<ClientesCubit, ClientesState>(
       listenWhen: (prev, curr) =>
-          curr.actionSuccessMessage != null &&
-          prev.actionSuccessMessage != curr.actionSuccessMessage,
+          (curr.actionSuccessMessage != null &&
+              prev.actionSuccessMessage != curr.actionSuccessMessage) ||
+          (curr.errorMessage != null && prev.errorMessage != curr.errorMessage),
       listener: (context, state) {
-        if (state.actionSuccessMessage != null) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              backgroundColor: AppPalette.success,
-              content: Text(state.actionSuccessMessage!),
-              duration: const Duration(seconds: 2),
-            ),
-          );
+        final error = state.errorMessage;
+        if (error != null) {
+          _showMessage(context, error, ClienteFormResultType.error);
+        } else if (state.actionSuccessMessage != null) {
+          _showMessage(context, state.actionSuccessMessage!, ClienteFormResultType.success);
         }
       },
       builder: (context, state) {
@@ -88,7 +89,7 @@ class _ClientesView extends StatelessWidget {
                 ),
                 child: AppTextField(
                   label: 'Buscar cliente',
-                  hint: 'Nombre, teléfono (+58...) o ID...',
+                  hint: 'Nombre, cédula/RIF, teléfono o ID...',
                   prefixIcon: CupertinoIcons.search,
                   onChanged: (val) => cubit.search(val),
                 ),
@@ -158,40 +159,10 @@ class _ClientesView extends StatelessWidget {
                                   },
                                   children:
                                       clientes.map<ExpansionPanel>((cliente) {
-                                    final ventasDelCliente =
-                                        cubit.dataService.ventas.where(
-                                            (v) => v.clienteId == cliente.id);
-                                    final deudaReal = ventasDelCliente
-                                        .fold<double>(
-                                            0.0,
-                                            (sum, v) =>
-                                                sum +
-                                                (v.deudaUsd > 0
-                                                    ? v.deudaUsd
-                                                    : 0.0));
-                                    final hasDebt = deudaReal > 0;
-                                    final clientCredits = ServiceLocator()
-                                        .creditsDataSource
-                                        .credits
-                                        .where((c) =>
-                                            c.clienteId == cliente.id &&
-                                            c.isAvailable)
-                                        .toList();
-                                    final totalCredito =
-                                        clientCredits.fold<double>(
-                                            0.0, (sum, c) => sum + c.saldoUsd);
-                                    final hasCreditLedger = ServiceLocator()
-                                        .creditsDataSource
-                                        .credits
-                                        .any((c) => c.clienteId == cliente.id);
-                                    final excedente =
-                                        ventasDelCliente.fold<double>(0.0,
-                                            (sum, v) => sum + v.excedenteUsd);
-                                    final saldoAFavor = hasCreditLedger
-                                        ? totalCredito
-                                        : (totalCredito > 0
-                                            ? totalCredito
-                                            : excedente);
+                                    final resumen = state.resumenDe(cliente.id);
+                                    final deudaReal = resumen.deudaUsd;
+                                    final hasDebt = resumen.hasDebt;
+                                    final saldoAFavor = resumen.saldoAFavorUsd;
                                     final isExpanded =
                                         state.expandedClienteId == cliente.id;
 
@@ -393,7 +364,11 @@ class _ClientesView extends StatelessWidget {
                                                   TextSpan(
                                                       text: cliente.telefono
                                                               .isNotEmpty
-                                                          ? cliente.telefono
+                                                          ? (TelefonoVe.parse(
+                                                                      cliente
+                                                                          .telefono)
+                                                                  ?.legible ??
+                                                              cliente.telefono)
                                                           : 'No registrado'),
                                                   const TextSpan(
                                                       text: '\n✉️ Email: ',
@@ -471,12 +446,21 @@ class _ClientesView extends StatelessWidget {
                                                     amount: saldoAFavor,
                                                     isCredit: true,
                                                     onTap: () {
+                                                      final usuarioEmail =
+                                                          state.usuarioEmail;
+                                                      if (usuarioEmail ==
+                                                          null) {
+                                                        _showMessage(
+                                                          context,
+                                                          'No hay un usuario identificado: no se puede aplicar el crédito.',
+                                                          ClienteFormResultType
+                                                              .error,
+                                                        );
+                                                        return;
+                                                      }
                                                       final pendingVentas =
-                                                          ventasDelCliente
-                                                              .where((v) =>
-                                                                  v.deudaUsd >
-                                                                  0)
-                                                              .toList();
+                                                          resumen
+                                                              .ventasPendientes;
                                                       if (pendingVentas
                                                           .isNotEmpty) {
                                                         final targetVenta =
@@ -502,14 +486,10 @@ class _ClientesView extends StatelessWidget {
                                                                   .deudaUsd,
                                                           totalCreditoDisponible:
                                                               saldoAFavor,
-                                                          origenVentaId:
-                                                              clientCredits
-                                                                  .firstOrNull
-                                                                  ?.origenVentaId,
-                                                          userEmail: cubit
-                                                                  .dataService
-                                                                  .currentUsuarioEmail ??
-                                                              'Antigravity Senior Agent',
+                                                          origenVentaId: resumen
+                                                              .origenVentaIdCredito,
+                                                          userEmail:
+                                                              usuarioEmail,
                                                         );
                                                       }
                                                     },
@@ -606,12 +586,10 @@ class _ClientesView extends StatelessWidget {
   }
 
   void _showClienteDialog(BuildContext context, {Cliente? cliente}) {
-    final cubit = context.read<ClientesCubit>();
-    final isEditing = cliente != null;
-    final id = isEditing ? cliente.id : cubit.dataService.nextClienteId;
+    final dataService = context.read<ClientesCubit>().dataService;
 
     Logger.info(
-      'ClientesPage: Abriendo diálogo para ${isEditing ? "editar cliente ${cliente.id}" : "crear nuevo cliente ($id)"}',
+      'ClientesPage: Abriendo diálogo para ${cliente != null ? "editar cliente ${cliente.id}" : "crear nuevo cliente"}',
     );
 
     showModalBottomSheet(
@@ -620,16 +598,38 @@ class _ClientesView extends StatelessWidget {
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
       ),
-      builder: (_) => _ClienteModalSheet(
-        cliente: cliente,
-        nextId: id,
-        cubit: cubit,
+      builder: (_) => BlocProvider(
+        create: (_) =>
+            ClienteFormCubit(dataService: dataService, cliente: cliente),
+        child: const _ClienteModalSheet(),
       ),
     );
   }
 
   void _confirmDelete(BuildContext context, Cliente cliente) {
     final cubit = context.read<ClientesCubit>();
+    final motivo = cubit.motivoNoEliminable(cliente.id);
+    if (motivo != null) {
+      Logger.info(
+        'ClientesPage: Eliminación de ${cliente.id} bloqueada: $motivo',
+      );
+      showDialog(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('No se puede eliminar'),
+          content: Text(
+            '${cliente.nombre} (${cliente.id}) no se puede desincorporar. $motivo',
+          ),
+          actions: [
+            FilledButton(
+              child: const Text('Entendido'),
+              onPressed: () => Navigator.pop(ctx),
+            ),
+          ],
+        ),
+      );
+      return;
+    }
     Logger.info(
       'ClientesPage: Diálogo de confirmación para eliminar cliente: ${cliente.id} (${cliente.nombre})',
     );
@@ -662,16 +662,32 @@ class _ClientesView extends StatelessWidget {
   }
 }
 
-class _ClienteModalSheet extends StatefulWidget {
-  final Cliente? cliente;
-  final String nextId;
-  final ClientesCubit cubit;
+void _showMessage(
+  BuildContext context,
+  String message,
+  ClienteFormResultType type,
+) {
+  final color = switch (type) {
+    ClienteFormResultType.success => AppPalette.success,
+    ClienteFormResultType.warning => AppPalette.warning,
+    ClienteFormResultType.error => AppPalette.error,
+  };
+  ScaffoldMessenger.of(context).showSnackBar(
+    SnackBar(
+      backgroundColor: color,
+      content: Text(message),
+      duration: Duration(
+        seconds: type == ClienteFormResultType.success ? 2 : 4,
+      ),
+    ),
+  );
+}
 
-  const _ClienteModalSheet({
-    this.cliente,
-    required this.nextId,
-    required this.cubit,
-  });
+/// Formulario de alta/edición. Solo los `TextEditingController` viven en el
+/// widget (estado visual efímero); catálogos, dropdowns, validación y estado
+/// de guardado viven en [ClienteFormCubit].
+class _ClienteModalSheet extends StatefulWidget {
+  const _ClienteModalSheet();
 
   @override
   State<_ClienteModalSheet> createState() => _ClienteModalSheetState();
@@ -679,52 +695,21 @@ class _ClienteModalSheet extends StatefulWidget {
 
 class _ClienteModalSheetState extends State<_ClienteModalSheet> {
   late final TextEditingController _nombreController;
-  late String _tipoDocumento;
   late final TextEditingController _cedulaController;
-  late String _codigoTelefono;
   late final TextEditingController _telefonoNumeroController;
   late final TextEditingController _emailController;
   late final TextEditingController _deudaController;
-  bool _isProcessing = false;
 
   @override
   void initState() {
     super.initState();
-    final client = widget.cliente;
-    _nombreController = TextEditingController(text: client?.nombre ?? '');
-    _tipoDocumento = client != null && client.tipoDocumento.isNotEmpty
-        ? client.tipoDocumento
-        : 'V';
-    _cedulaController = TextEditingController(text: client?.cedula ?? '');
-
-    final codigos = widget.cubit.dataService.codigosTelefonoActivos;
-    String initialCodigo = codigos.isNotEmpty ? codigos.first : '0414';
-    String initialNumero = '';
-    final rawTel = client?.telefono.trim() ?? '';
-    if (rawTel.isNotEmpty) {
-      String cleanTel = rawTel;
-      if (cleanTel.startsWith('+58')) {
-        cleanTel = '0${cleanTel.substring(3)}';
-      }
-      for (final cod in codigos) {
-        if (cleanTel.startsWith(cod)) {
-          initialCodigo = cod;
-          initialNumero =
-              cleanTel.substring(cod.length).replaceAll(RegExp(r'[^0-9]'), '');
-          break;
-        }
-      }
-      if (initialNumero.isEmpty) {
-        initialNumero = rawTel.replaceAll(RegExp(r'[^0-9]'), '');
-      }
-    }
-    _codigoTelefono = initialCodigo;
-    _telefonoNumeroController = TextEditingController(text: initialNumero);
-
-    _emailController = TextEditingController(text: client?.email ?? '');
-    _deudaController = TextEditingController(
-      text: client?.saldoDeudaUsd.toStringAsFixed(2) ?? '0.00',
-    );
+    final initial = context.read<ClienteFormCubit>().state;
+    _nombreController = TextEditingController(text: initial.nombreInicial);
+    _cedulaController = TextEditingController(text: initial.cedulaInicial);
+    _telefonoNumeroController =
+        TextEditingController(text: initial.telefonoNumeroInicial);
+    _emailController = TextEditingController(text: initial.emailInicial);
+    _deudaController = TextEditingController(text: '0.00');
   }
 
   @override
@@ -737,258 +722,291 @@ class _ClienteModalSheetState extends State<_ClienteModalSheet> {
     super.dispose();
   }
 
+  void _submit(ClienteFormCubit cubit) {
+    cubit.submit(
+      nombre: _nombreController.text,
+      cedula: _cedulaController.text,
+      telefonoNumero: _telefonoNumeroController.text,
+      email: _emailController.text,
+      deuda: _deudaController.text,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    final isEditing = widget.cliente != null;
-    final id = isEditing ? widget.cliente!.id : widget.nextId;
-    final tiposDoc = widget.cubit.dataService.tiposDocumentoActivos;
-    final codigos = widget.cubit.dataService.codigosTelefonoActivos;
+    return BlocConsumer<ClienteFormCubit, ClienteFormState>(
+      listenWhen: (prev, curr) =>
+          prev.status != curr.status &&
+          (curr.status == ClienteFormStatus.success ||
+              curr.status == ClienteFormStatus.failure),
+      listener: (context, state) {
+        final message = state.resultMessage;
+        if (message != null) {
+          _showMessage(context, message, state.resultType);
+        }
+        if (state.status == ClienteFormStatus.success) {
+          Navigator.of(context).pop();
+        }
+      },
+      builder: (context, state) {
+        final cubit = context.read<ClienteFormCubit>();
+        final isProcessing = state.isSubmitting;
+        final tiposDoc = state.tiposDocumento;
+        final codigos = state.codigosTelefono;
 
-    return PopScope(
-      canPop: !_isProcessing,
-      child: Padding(
-        padding: EdgeInsets.only(
-          bottom: MediaQuery.of(context).viewInsets.bottom + AppSpacing.lg,
-          left: AppSpacing.lg,
-          right: AppSpacing.lg,
-          top: AppSpacing.lg,
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(
-                  isEditing
-                      ? 'Editar Cliente ($id)'
-                      : 'Registrar Nuevo Cliente',
-                  style: AppTypography.titleLarge.copyWith(fontSize: 17),
-                ),
-                IconButton(
-                  icon: const Icon(
-                    CupertinoIcons.xmark_circle_fill,
-                    color: AppPalette.textSecondary,
-                  ),
-                  onPressed:
-                      _isProcessing ? null : () => Navigator.pop(context),
-                ),
-              ],
+        return PopScope(
+          canPop: !isProcessing,
+          child: Padding(
+            padding: EdgeInsets.only(
+              bottom: MediaQuery.of(context).viewInsets.bottom + AppSpacing.lg,
+              left: AppSpacing.lg,
+              right: AppSpacing.lg,
+              top: AppSpacing.lg,
             ),
-            const SizedBox(height: AppSpacing.md),
-            AppTextField(
-              label: 'Nombre Completo',
-              controller: _nombreController,
-              hint: 'Ej: Juan Pérez',
-            ),
-            const SizedBox(height: AppSpacing.sm),
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                SizedBox(
-                  width: 90,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      // Text('Tipo Doc.', style: AppTypography.labelSmall),
-                      // const SizedBox(height: 6),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 10),
-                        decoration: BoxDecoration(
-                          color: AppPalette.surface,
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(color: AppPalette.divider),
+                      Expanded(
+                        child: Text(
+                          state.isEditing
+                              ? 'Editar Cliente (${state.id})'
+                              : 'Registrar Nuevo Cliente',
+                          style:
+                              AppTypography.titleLarge.copyWith(fontSize: 17),
+                          overflow: TextOverflow.ellipsis,
                         ),
-                        child: DropdownButtonHideUnderline(
-                          child: DropdownButton<String>(
-                            value: tiposDoc.contains(_tipoDocumento)
-                                ? _tipoDocumento
-                                : tiposDoc.first,
-                            isExpanded: true,
-                            items: tiposDoc
-                                .map((t) =>
-                                    DropdownMenuItem(value: t, child: Text(t)))
-                                .toList(),
-                            onChanged: _isProcessing
-                                ? null
-                                : (v) {
-                                    if (v != null) {
-                                      setState(() => _tipoDocumento = v);
-                                    }
-                                  },
-                          ),
+                      ),
+                      IconButton(
+                        icon: const Icon(
+                          CupertinoIcons.xmark_circle_fill,
+                          color: AppPalette.textSecondary,
                         ),
+                        onPressed:
+                            isProcessing ? null : () => Navigator.pop(context),
                       ),
                     ],
                   ),
-                ),
-                const SizedBox(width: AppSpacing.sm),
-                Expanded(
-                  child: AppTextField(
-                    label: 'Cédula / Documento',
-                    controller: _cedulaController,
-                    hint: '12345678',
-                    keyboardType: TextInputType.number,
+                  const SizedBox(height: AppSpacing.md),
+                  AppTextField(
+                    label: 'Nombre Completo',
+                    controller: _nombreController,
+                    hint: 'Ej: Juan Pérez',
+                    textCapitalization: TextCapitalization.words,
+                    textInputAction: TextInputAction.next,
+                    errorText: state.errors[ClienteFormField.nombre],
+                    onChanged: (_) =>
+                        cubit.fieldChanged(ClienteFormField.nombre),
                   ),
-                ),
-              ],
-            ),
-            const SizedBox(height: AppSpacing.sm),
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                SizedBox(
-                  width: 105,
-                  child: Column(
+                  const SizedBox(height: AppSpacing.sm),
+                  Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      // Text('Código', style: AppTypography.labelSmall),
-                      // const SizedBox(height: 6),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 10),
-                        decoration: BoxDecoration(
-                          color: AppPalette.surface,
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(color: AppPalette.divider),
-                        ),
-                        child: DropdownButtonHideUnderline(
-                          child: DropdownButton<String>(
-                            value: codigos.contains(_codigoTelefono)
-                                ? _codigoTelefono
-                                : codigos.first,
-                            isExpanded: true,
-                            items: codigos
-                                .map((c) =>
-                                    DropdownMenuItem(value: c, child: Text(c)))
-                                .toList(),
-                            onChanged: _isProcessing
-                                ? null
-                                : (v) {
-                                    if (v != null) {
-                                      setState(() => _codigoTelefono = v);
-                                    }
-                                  },
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(width: AppSpacing.sm),
-                Expanded(
-                  child: AppTextField(
-                    label: 'Número de Teléfono',
-                    controller: _telefonoNumeroController,
-                    hint: '1234567',
-                    keyboardType: TextInputType.phone,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: AppSpacing.sm),
-            AppTextField(
-              label: 'Correo Electrónico',
-              controller: _emailController,
-              hint: 'cliente@ejemplo.com',
-              keyboardType: TextInputType.emailAddress,
-            ),
-            const SizedBox(height: AppSpacing.sm),
-            AppTextField(
-              label: 'Saldo Deuda Inicial (USD)',
-              controller: _deudaController,
-              keyboardType:
-                  const TextInputType.numberWithOptions(decimal: true),
-            ),
-            const SizedBox(height: AppSpacing.lg),
-            Row(
-              children: [
-                Expanded(
-                  child: AppOutlinedButton(
-                    label: 'Cancelar',
-                    onPressed:
-                        _isProcessing ? null : () => Navigator.pop(context),
-                  ),
-                ),
-                const SizedBox(width: AppSpacing.md),
-                Expanded(
-                  child: AppButton(
-                    label: _isProcessing
-                        ? 'Guardando...'
-                        : (isEditing ? 'Guardar Cambios' : 'Registrar'),
-                    icon: _isProcessing
-                        ? null
-                        : (isEditing
-                            ? CupertinoIcons.check_mark
-                            : CupertinoIcons.add),
-                    onPressed: _isProcessing
-                        ? null
-                        : () async {
-                            final nombre = _nombreController.text.trim();
-                            if (nombre.isEmpty) {
-                              Logger.warning(
-                                'ClientesPage: Intento de guardar cliente con nombre vacío',
-                              );
-                              return;
-                            }
-
-                            final numTel =
-                                _telefonoNumeroController.text.trim();
-                            final telefonoCompleto = numTel.isNotEmpty
-                                ? '$_codigoTelefono$numTel'
-                                : '';
-
-                            final nuevoCliente = Cliente(
-                              id: id,
-                              nombre: nombre,
-                              telefono: telefonoCompleto,
-                              email: _emailController.text.trim(),
-                              saldoDeudaUsd: double.tryParse(
-                                    _deudaController.text.replaceAll(',', '.'),
-                                  ) ??
-                                  0.0,
-                              fechaRegistro: widget.cliente?.fechaRegistro ??
-                                  DateTime.now(),
-                              tipoDocumento: _tipoDocumento,
-                              cedula: _cedulaController.text.trim(),
-                            );
-
-                            Logger.info(
-                              'ClientesPage: Guardando cliente: ${nuevoCliente.id} (${nuevoCliente.nombre})',
-                            );
-                            Logger.object(
-                                'Cliente Datos', nuevoCliente.toMap());
-
-                            final navigator = Navigator.of(context);
-                            final messenger = ScaffoldMessenger.of(context);
-
-                            setState(() => _isProcessing = true);
-                            try {
-                              if (isEditing) {
-                                widget.cubit.updateCliente(nuevoCliente);
-                              } else {
-                                await widget.cubit.addCliente(nuevoCliente);
-                              }
-                              if (!mounted) return;
-                              navigator.pop();
-                            } catch (e) {
-                              if (!mounted) return;
-                              setState(() => _isProcessing = false);
-                              messenger.showSnackBar(
-                                SnackBar(
-                                  content: Text('Error al guardar cliente: $e'),
-                                  backgroundColor: AppPalette.error,
+                      SizedBox(
+                        width: 90,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            // Text('Tipo Doc.', style: AppTypography.labelSmall),
+                            // const SizedBox(height: 6),
+                            Container(
+                              padding:
+                                  const EdgeInsets.symmetric(horizontal: 10),
+                              decoration: BoxDecoration(
+                                color: AppPalette.surface,
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(color: AppPalette.divider),
+                              ),
+                              child: DropdownButtonHideUnderline(
+                                child: DropdownButton<String>(
+                                  value: tiposDoc.contains(state.tipoDocumento)
+                                      ? state.tipoDocumento
+                                      : tiposDoc.first,
+                                  isExpanded: true,
+                                  items: tiposDoc
+                                      .map((t) => DropdownMenuItem(
+                                          value: t, child: Text(t)))
+                                      .toList(),
+                                  onChanged: isProcessing
+                                      ? null
+                                      : (v) {
+                                          if (v != null) {
+                                            cubit.tipoDocumentoChanged(v);
+                                          }
+                                        },
                                 ),
-                              );
-                            }
-                          },
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: AppSpacing.sm),
+                      Expanded(
+                        child: AppTextField(
+                          label: 'Cédula / Documento',
+                          controller: _cedulaController,
+                          hint: DocumentoIdentidad.esRif(state.tipoDocumento)
+                              ? '123456789'
+                              : '12345678',
+                          keyboardType:
+                              DocumentoIdentidad.esNumerico(state.tipoDocumento)
+                                  ? TextInputType.number
+                                  : TextInputType.text,
+                          textCapitalization: TextCapitalization.characters,
+                          textInputAction: TextInputAction.next,
+                          inputFormatters: [
+                            if (DocumentoIdentidad.esNumerico(
+                                state.tipoDocumento))
+                              FilteringTextInputFormatter.digitsOnly
+                            else
+                              FilteringTextInputFormatter.allow(
+                                  RegExp(r'[A-Za-z0-9]')),
+                            LengthLimitingTextInputFormatter(15),
+                          ],
+                          errorText: state.errors[ClienteFormField.cedula],
+                          onChanged: (_) =>
+                              cubit.fieldChanged(ClienteFormField.cedula),
+                        ),
+                      ),
+                    ],
                   ),
-                ),
-              ],
+                  const SizedBox(height: AppSpacing.sm),
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      SizedBox(
+                        width: 105,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            // Text('Código', style: AppTypography.labelSmall),
+                            // const SizedBox(height: 6),
+                            Container(
+                              padding:
+                                  const EdgeInsets.symmetric(horizontal: 10),
+                              decoration: BoxDecoration(
+                                color: AppPalette.surface,
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(color: AppPalette.divider),
+                              ),
+                              child: DropdownButtonHideUnderline(
+                                child: DropdownButton<String>(
+                                  value: codigos.contains(state.codigoTelefono)
+                                      ? state.codigoTelefono
+                                      : codigos.first,
+                                  isExpanded: true,
+                                  items: codigos
+                                      .map((c) => DropdownMenuItem(
+                                          value: c, child: Text(c)))
+                                      .toList(),
+                                  onChanged: isProcessing
+                                      ? null
+                                      : (v) {
+                                          if (v != null) {
+                                            cubit.codigoTelefonoChanged(v);
+                                          }
+                                        },
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: AppSpacing.sm),
+                      Expanded(
+                        child: AppTextField(
+                          label: 'Número de Teléfono',
+                          controller: _telefonoNumeroController,
+                          hint: '1234567',
+                          keyboardType: TextInputType.phone,
+                          textInputAction: TextInputAction.next,
+                          inputFormatters: [
+                            FilteringTextInputFormatter.digitsOnly,
+                            LengthLimitingTextInputFormatter(7),
+                          ],
+                          errorText: state.errors[ClienteFormField.telefono],
+                          onChanged: (_) =>
+                              cubit.fieldChanged(ClienteFormField.telefono),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: AppSpacing.sm),
+                  AppTextField(
+                    label: 'Correo Electrónico',
+                    controller: _emailController,
+                    hint: 'cliente@ejemplo.com',
+                    keyboardType: TextInputType.emailAddress,
+                    // En una edición es el último campo: "Listo" guarda.
+                    textInputAction: state.isEditing
+                        ? TextInputAction.done
+                        : TextInputAction.next,
+                    onFieldSubmitted: state.isEditing && !isProcessing
+                        ? (_) => _submit(cubit)
+                        : null,
+                    errorText: state.errors[ClienteFormField.email],
+                    onChanged: (_) =>
+                        cubit.fieldChanged(ClienteFormField.email),
+                  ),
+                  // El saldo inicial solo se captura en el alta: en una edición
+                  // la deuda real se deriva de las ventas del cliente.
+                  if (!state.isEditing) ...[
+                    const SizedBox(height: AppSpacing.sm),
+                    AppTextField(
+                      label: 'Saldo Deuda Inicial (USD)',
+                      controller: _deudaController,
+                      keyboardType:
+                          const TextInputType.numberWithOptions(decimal: true),
+                      textInputAction: TextInputAction.done,
+                      inputFormatters: [
+                        FilteringTextInputFormatter.allow(RegExp(r'[0-9.,]')),
+                      ],
+                      onFieldSubmitted:
+                          isProcessing ? null : (_) => _submit(cubit),
+                      errorText: state.errors[ClienteFormField.deuda],
+                      onChanged: (_) =>
+                          cubit.fieldChanged(ClienteFormField.deuda),
+                    ),
+                  ],
+                  const SizedBox(height: AppSpacing.lg),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: AppOutlinedButton(
+                          label: 'Cancelar',
+                          onPressed: isProcessing
+                              ? null
+                              : () => Navigator.pop(context),
+                        ),
+                      ),
+                      const SizedBox(width: AppSpacing.md),
+                      Expanded(
+                        child: AppButton(
+                          label: isProcessing
+                              ? 'Guardando...'
+                              : (state.isEditing
+                                  ? 'Guardar Cambios'
+                                  : 'Registrar'),
+                          icon: isProcessing
+                              ? null
+                              : (state.isEditing
+                                  ? CupertinoIcons.check_mark
+                                  : CupertinoIcons.add),
+                          onPressed: isProcessing ? null : () => _submit(cubit),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
             ),
-          ],
-        ),
-      ),
+          ),
+        );
+      },
     );
   }
 }

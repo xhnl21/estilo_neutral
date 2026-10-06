@@ -154,6 +154,25 @@ class SheetsDataService extends ChangeNotifier {
   /// Resuelve la organización a la que pertenece [email] a través de la hoja
   /// de relación "usuario_organizacion" (relación 1:N organización→usuarios).
   /// Devuelve `null` si el usuario no tiene ninguna membresía registrada.
+  /// Decide si [email] puede entrar a la app: tiene que estar en la hoja
+  /// `usuarios` y tener membresía (`usuario_organizacion`) en una
+  /// organización existente. Es el único control de acceso: "Autorizar
+  /// acceso" y "Quitar acceso" en Usuarios lo modifican.
+  ({String? organizacionId, String? motivo}) resolverAcceso(String email) {
+    final normalized = email.trim().toLowerCase();
+    if (!_usuarios.any((u) => u.email.trim().toLowerCase() == normalized)) {
+      return (organizacionId: null, motivo: 'La cuenta $normalized no está registrada como usuario del sistema.');
+    }
+    final organizacionId = organizacionIdForUsuario(normalized);
+    if (organizacionId == null || organizacionId.trim().isEmpty) {
+      return (organizacionId: null, motivo: 'La cuenta $normalized no pertenece a ninguna organización.');
+    }
+    if (!_organizaciones.any((o) => o.id == organizacionId)) {
+      return (organizacionId: null, motivo: 'La organización asignada a $normalized ya no existe.');
+    }
+    return (organizacionId: organizacionId, motivo: null);
+  }
+
   String? organizacionIdForUsuario(String email) {
     final normalized = email.trim().toLowerCase();
     for (final rel in _usuarioOrganizaciones) {
@@ -313,8 +332,27 @@ class SheetsDataService extends ChangeNotifier {
     await fetchAllSheets();
   }
 
+  /// Carga en curso, para que [esperarCargaInicial] pueda esperarla.
+  Future<void>? _fetchEnCurso;
+
+  /// Espera a que haya terminado al menos una carga desde Google Sheets
+  /// (la de [initialize] se lanza sin `await`). Si esa carga falla, quedan
+  /// los datos de respaldo de [_seedFallbackData].
+  Future<void> esperarCargaInicial() async {
+    if (_lastSync != null) return;
+    await (_fetchEnCurso ?? fetchAllSheets());
+  }
+
   /// Carga bajo demanda de las 10 hojas desde Google Sheets mediante el endpoint GViz
-  Future<void> fetchAllSheets({bool silent = false}) async {
+  Future<void> fetchAllSheets({bool silent = false}) {
+    final enCurso = _fetchEnCurso;
+    if (enCurso != null) return enCurso;
+    final carga = _fetchAllSheets(silent: silent);
+    _fetchEnCurso = carga;
+    return carga.whenComplete(() => _fetchEnCurso = null);
+  }
+
+  Future<void> _fetchAllSheets({bool silent = false}) async {
     if (!silent) {
       _isLoading = true;
       _errorMessage = null;
@@ -344,8 +382,12 @@ class SheetsDataService extends ChangeNotifier {
 
     try {
       await Future.wait([
-        safeFetch('clientes', _parseClientes),
-        safeFetch('inventario', _parseProductos),
+        safeFetch('clientes', _parseClientes, expectedHeaders: const [
+          'id', 'nombre', 'telefono', 'email', 'saldo_deuda_usd', 'fecha_registro', 'organizacion_id',
+        ]),
+        safeFetch('inventario', _parseProductos, expectedHeaders: const [
+          'id', 'cantidad', 'nombre', 'marca', 'modelo', 'talla', 'precio_usd',
+        ]),
         // Catálogo de fotos — inventario.foto_id apunta acá por FK, nunca
         // guarda la URL directa (ver GaleriaItem/fotoUrlPorId).
         safeFetch(
@@ -373,17 +415,32 @@ class SheetsDataService extends ChangeNotifier {
           _parseAbonos,
           expectedHeaders: const ['id', 'venta_id', 'fecha', 'monto', 'metodo_pago', 'tasa_id'],
         ),
-        safeFetch('compras_divisas', _parseCompras),
-        safeFetch('resumen_diario', _parseResumenes),
-        safeFetch('cuarentena', _parseCuarentenas),
-        safeFetch('audit_log', _parseAuditLogs),
-        safeFetch('reporte_migracion', _parseReportes),
-        safeFetch('checklist_iso', _parseChecklists),
+        safeFetch('compras_divisas', _parseCompras, expectedHeaders: const [
+          'id', 'fecha_compra', 'fecha_entrega', 'capital_usd', 'comision_binance_usd', 'numero_orden',
+        ]),
+        safeFetch('resumen_diario', _parseResumenes, expectedHeaders: const [
+          'id', 'fecha', 'nro_ventas', 'total_bs', 'total_usd', 'tasa_bcv', 'tasa_usd',
+          'usd_comprados', 'usd_vendidos', 'organizacion_id',
+        ]),
+        safeFetch('cuarentena', _parseCuarentenas, expectedHeaders: const [
+          'id', 'id_registro_original', 'hoja_origen', 'fecha_deteccion', 'motivo_cuarentena',
+          'datos_originales_json', 'estado', 'resolucion', 'hash_evidencia', 'organizacion_id',
+        ]),
+        safeFetch('audit_log', _parseAuditLogs, expectedHeaders: const [
+          'id', 'timestamp_iso8601', 'usuario', 'hoja', 'celda', 'valor_anterior', 'valor_nuevo',
+          'accion', 'norma_aplicada', 'observaciones',
+        ]),
+        safeFetch('reporte_migracion', _parseReportes, expectedHeaders: const [
+          'id', 'metrica', 'valor_estado', 'norma_aplicada', 'observaciones', 'organizacion_id',
+        ]),
+        safeFetch('checklist_iso', _parseChecklists, expectedHeaders: const [
+          'id', 'nro', 'control', 'norma', 'estado', 'evidencia', 'timestamp', 'organizacion_id',
+        ]),
         // Estos 4 tienen esquema nuevo (ver docs/google/multi-organizacion.md):
         // se valida el encabezado para no aceptar filas de otra hoja si el
         // Sheet real todavía no fue migrado.
         safeFetch('seguridad', _parseSeguridad, expectedHeaders: const [
-          'biometrico', 'desbloqueo_facial', 'dos_factores', 'usuario_email',
+          'id', 'biometrico', 'desbloqueo_facial', 'dos_factores', 'usuario_email',
         ]),
         safeFetch('usuarios', _parseUsuarios, expectedHeaders: const ['id', 'email', 'nombre']),
         safeFetch(
@@ -395,7 +452,7 @@ class SheetsDataService extends ChangeNotifier {
         safeFetch(
           'usuario_organizacion',
           _parseUsuarioOrganizaciones,
-          expectedHeaders: const ['usuario_email', 'organizacion_id'],
+          expectedHeaders: const ['id', 'usuario_email', 'organizacion_id'],
         ),
         safeFetch(
           'metodo pago',
@@ -483,7 +540,9 @@ class SheetsDataService extends ChangeNotifier {
   }) async {
     final cleanId = SheetsConfig.extractSpreadsheetId(spreadsheetId);
     final url = Uri.parse(
-      'https://docs.google.com/spreadsheets/d/$cleanId/gviz/tq?tqx=out:csv&sheet=$sheetName',
+      // headers=1: la fila 1 es el encabezado. Sin esto gviz lo adivina y, en
+      // hojas solo de texto (p. ej. audit_log), fusiona filas de datos con él.
+      'https://docs.google.com/spreadsheets/d/$cleanId/gviz/tq?tqx=out:csv&headers=1&sheet=$sheetName',
     );
     final response = await _dio.get<String>(
       url.toString(),
@@ -510,11 +569,13 @@ class SheetsDataService extends ChangeNotifier {
       // `sheetName`, mezclando columnas de una hoja con las de otra.
       if (expectedHeaders != null) {
         final header = rows.first.map((h) => h.trim().toLowerCase()).toList();
-        final matches = header.length >= expectedHeaders.length &&
-            List.generate(
-              expectedHeaders.length,
-              (i) => header[i] == expectedHeaders[i].toLowerCase(),
-            ).every((ok) => ok);
+        bool empiezaCon(List<String> esperado) =>
+            header.length >= esperado.length &&
+            List.generate(esperado.length, (i) => header[i] == esperado[i].toLowerCase()).every((ok) => ok);
+        // También se acepta el formato anterior a la columna `id` (hoja que
+        // todavía no se migró): los modelos leen ambos (ver FilaHoja).
+        final matches = empiezaCon(expectedHeaders) ||
+            (expectedHeaders.first == 'id' && empiezaCon(expectedHeaders.sublist(1)));
         if (!matches) {
           throw Exception(
             'La hoja "$sheetName" no tiene el encabezado esperado ${expectedHeaders.join("/")} '
@@ -617,17 +678,36 @@ class SheetsDataService extends ChangeNotifier {
 
   void _parseCompras(List<List<String>> rows) {
     if (rows.isEmpty) return;
-    final cloud = rows
-        .where((r) => r.isNotEmpty && r.first.isNotEmpty)
-        .map((r) => CompraDivisa.fromRow(r))
-        .toList();
+    final cloud = _filasLegibles(
+      'compras_divisas',
+      rows.where((r) => r.isNotEmpty && r.first.isNotEmpty),
+      CompraDivisa.fromRow,
+    );
     final localPending = _comprasDivisas.where((local) => !cloud.any((c) => c.id == local.id)).toList();
     _comprasDivisas = [...cloud, ...localPending];
   }
 
   void _parseResumenes(List<List<String>> rows) {
     if (rows.isEmpty) return;
-    _resumenesDiarios = rows.map((r) => ResumenDiario.fromRow(r)).toList();
+    _resumenesDiarios = _filasLegibles(
+      'resumen_diario',
+      rows.where((r) => r.any((c) => c.trim().isNotEmpty)),
+      ResumenDiario.fromRow,
+    );
+  }
+
+  /// Convierte las filas con [leer] y descarta (con advertencia en el log)
+  /// las que tienen una fecha ilegible, en vez de leerlas como "hoy".
+  List<T> _filasLegibles<T>(String hoja, Iterable<List<String>> filas, T Function(List<String>) leer) {
+    final resultado = <T>[];
+    for (final fila in filas) {
+      try {
+        resultado.add(leer(fila));
+      } on FormatException catch (e) {
+        Logger.warning('SheetsDataService: fila de $hoja descartada (${e.message}: "${e.source}"): $fila');
+      }
+    }
+    return resultado;
   }
 
   void _parseCuarentenas(List<List<String>> rows) {
@@ -767,7 +847,8 @@ class SheetsDataService extends ChangeNotifier {
   }) {
     final log = AuditLog(
       timestampIso8601: DateTime.now(),
-      usuario: 'Operador App (CRUD Móvil)',
+      // Sin usuario identificado queda vacío: no se inventa un autor (R7).
+      usuario: _currentUsuarioEmail ?? '',
       hoja: hoja,
       celda: celda,
       valorAnterior: valorAnterior,
@@ -849,7 +930,13 @@ class SheetsDataService extends ChangeNotifier {
   }
 
   /// Sincroniza de forma asíncrona la acción con la Web App de Google Apps Script (Opción A)
-  Future<bool> _postToAppsScript(Map<String, dynamic> payload) async {
+  /// Con [exigirConfirmacion], solo cuenta como OK una respuesta
+  /// `{status: "success"}` del script: una respuesta `{status: "error"}`
+  /// (p. ej. "Registro no encontrado") es un fallo.
+  Future<bool> _postToAppsScript(
+    Map<String, dynamic> payload, {
+    bool exigirConfirmacion = false,
+  }) async {
     final url = appsScriptUrl;
     if (url == null || url.trim().isEmpty) {
       Logger.warning(
@@ -878,7 +965,10 @@ class SheetsDataService extends ChangeNotifier {
       // OK si se pudo confirmar la respuesta, o si al menos Apps Script
       // aceptó el POST (302) aunque no se haya podido leer el eco — la
       // acción ya quedó en cola/procesada del lado del servidor.
-      final isOk = resultado.data != null || resultado.huboRedirect;
+      final data = resultado.data;
+      final isOk = exigirConfirmacion
+          ? (data != null ? data['status'] == 'success' : resultado.huboRedirect)
+          : (data != null || resultado.huboRedirect);
       if (isOk) {
         Logger.success('SheetsDataService: Sincronización exitosa en Google Sheets (Hoja: $sheet, Acción: $action).');
         return true;
@@ -1035,26 +1125,29 @@ class SheetsDataService extends ChangeNotifier {
     _galeria.insert(0, nuevo);
     notifyListeners();
 
-    final idReal = await _crearEnServidor('galeria', nuevo.toMap());
-    if (idReal == null) {
-      Logger.warning('SheetsDataService: foto subida a Drive pero no se pudo registrar en "galeria" (${nuevo.id}).');
-      return nuevo.id;
+    // Sin la fila en "galeria", `Producto.fotoId` apuntaría a algo que no
+    // existe: si no se confirma, se descarta (la foto queda solo en Drive).
+    final String idReal;
+    try {
+      idReal = await _crearConRollback(
+        'galeria',
+        Map.of(nuevo.toMap())..remove('id'),
+        revertir: () => _galeria.remove(nuevo),
+      );
+    } on StateError {
+      Logger.warning('SheetsDataService: foto subida a Drive pero no se pudo registrar en "galeria".');
+      return null;
     }
-    if (idReal != nuevo.id) {
-      // Colisión de ID resuelta por el servidor — hay que devolver el ID
-      // real, si no `Producto.fotoId` termina apuntando a una fila de
-      // "galeria" que no existe.
-      final idx = _galeria.indexWhere((g) => g.id == nuevo.id);
-      if (idx != -1) {
-        _galeria[idx] = GaleriaItem(
-          id: idReal,
-          url: nuevo.url,
-          driveFileId: nuevo.driveFileId,
-          nombreArchivo: nuevo.nombreArchivo,
-          fechaSubida: nuevo.fechaSubida,
-        );
-        notifyListeners();
-      }
+    final idx = _galeria.indexOf(nuevo);
+    if (idx != -1) {
+      _galeria[idx] = GaleriaItem(
+        id: idReal,
+        url: nuevo.url,
+        driveFileId: nuevo.driveFileId,
+        nombreArchivo: nuevo.nombreArchivo,
+        fechaSubida: nuevo.fechaSubida,
+      );
+      notifyListeners();
     }
     return idReal;
   }
@@ -1072,107 +1165,99 @@ class SheetsDataService extends ChangeNotifier {
     return 'c${(maxId + 1).toString().padLeft(8, '0')}';
   }
 
-  Future<bool> addCliente(Cliente cliente) async {
-    final stamped = Cliente(
-      id: cliente.id,
-      nombre: cliente.nombre,
-      telefono: cliente.telefono,
-      email: cliente.email,
-      saldoDeudaUsd: cliente.saldoDeudaUsd,
-      fechaRegistro: cliente.fechaRegistro,
-      organizacionId: _currentOrganizacionId ?? '67774411-6aa1-4aa3-a4b2-d3fc6913b768',
-      tipoDocumento: cliente.tipoDocumento,
-      cedula: cliente.cedula,
-    );
-    Logger.info('SheetsDataService: Registrando nuevo cliente localmente: ${stamped.id} (${stamped.nombre})');
+  /// Registra el cliente en la organización actual. El ID lo asigna el
+  /// servidor. Lanza [StateError] (y no deja nada en el teléfono) si Sheets
+  /// no lo confirma.
+  Future<void> addCliente(Cliente cliente) async {
+    final stamped = cliente.copyWith(organizacionId: _orgActualOrDefault);
     _clientes.add(stamped);
+    notifyListeners();
+    final idReal = await _crearConRollback(
+      'clientes',
+      Map.of(stamped.toMap())..remove('id'),
+      revertir: () => _clientes.remove(stamped),
+    );
+    final idx = _clientes.indexOf(stamped);
+    if (idx != -1) _clientes[idx] = stamped.copyWith(id: idReal);
     _logAudit(
       hoja: 'clientes',
       celda: 'A${_clientes.length + 1}',
       valorAnterior: 'null',
-      valorNuevo: '${stamped.id} (${stamped.nombre})',
+      valorNuevo: '$idReal (${stamped.nombre})',
       accion: 'creacion_cliente',
       norma: 'ISO 8000 §4.2',
       observaciones: 'Alta de cliente con teléfono ${stamped.telefono}',
     );
     notifyListeners();
-    Logger.info('SheetsDataService: Despachando inserción a Google Sheets para cliente ${stamped.id}...');
-    final idReal = await _crearEnServidor('clientes', stamped.toMap());
-    final synced = idReal != null;
-    if (synced && idReal != stamped.id) {
-      // El servidor asignó un ID distinto al que se calculó acá (otra sesión
-      // ya había avanzado la secuencia) — corregir la copia local para que
-      // coincida con lo que realmente quedó guardado.
-      final idx = _clientes.indexWhere((c) => c.id == stamped.id);
-      if (idx != -1) {
-        _clientes[idx] = Cliente(
-          id: idReal,
-          nombre: stamped.nombre,
-          telefono: stamped.telefono,
-          email: stamped.email,
-          saldoDeudaUsd: stamped.saldoDeudaUsd,
-          fechaRegistro: stamped.fechaRegistro,
-          organizacionId: stamped.organizacionId,
-          tipoDocumento: stamped.tipoDocumento,
-          cedula: stamped.cedula,
-        );
-        notifyListeners();
-      }
-    }
-    if (synced) {
-      Logger.success('SheetsDataService: Cliente ${stamped.id} sincronizado exitosamente en Google Sheets.');
-    } else {
-      Logger.warning('SheetsDataService: Cliente ${stamped.id} guardado localmente pero no sincronizado con Google Sheets.');
-    }
-    return synced;
   }
 
-  void updateCliente(Cliente cliente) {
-    Logger.info('SheetsDataService: Actualizando cliente localmente: ${cliente.id} (${cliente.nombre})');
+  /// Actualiza el cliente. Conserva su organización y fecha de registro.
+  /// Lanza [StateError] (y revierte) si Sheets no lo confirma.
+  Future<void> updateCliente(Cliente cliente) async {
     final index = _clientes.indexWhere((c) => c.id == cliente.id);
-    if (index != -1) {
-      final old = _clientes[index];
-      _clientes[index] = cliente;
-      _logAudit(
-        hoja: 'clientes',
-        celda: 'A${index + 2}',
-        valorAnterior: '${old.nombre} | ${old.telefono} | ${old.email}',
-        valorNuevo: '${cliente.nombre} | ${cliente.telefono} | ${cliente.email}',
-        accion: 'actualizacion_cliente',
-        norma: 'ISO 8000 §4.2',
-        observaciones: 'Modificación de datos de cliente ${cliente.id}',
-      );
-      _postToAppsScript({
-        'action': 'update',
-        'sheet': 'clientes',
-        'id': cliente.id,
-        'data': cliente.toMap(),
-      });
-      notifyListeners();
-    }
+    if (index == -1) throw ArgumentError('No se encontró el cliente ${cliente.id}.');
+    final old = _clientes[index];
+    final actualizado = cliente.copyWith(
+      organizacionId: old.organizacionId,
+      fechaRegistro: old.fechaRegistro,
+    );
+    _clientes[index] = actualizado;
+    _logAudit(
+      hoja: 'clientes',
+      celda: 'A${index + 2}',
+      valorAnterior: '${old.nombre} | ${old.telefono} | ${old.email}',
+      valorNuevo: '${actualizado.nombre} | ${actualizado.telefono} | ${actualizado.email}',
+      accion: 'actualizacion_cliente',
+      norma: 'ISO 8000 §4.2',
+      observaciones: 'Modificación de datos de cliente ${actualizado.id}',
+    );
+    notifyListeners();
+    await _sincronizarConRollback(
+      {'action': 'update', 'sheet': 'clientes', 'id': actualizado.id, 'data': actualizado.toMap()},
+      revertir: () {
+        final i = _clientes.indexOf(actualizado);
+        if (i != -1) _clientes[i] = old;
+      },
+    );
   }
 
-  void deleteCliente(String id) {
-    Logger.warning('SheetsDataService: Solicitada baja de cliente con ID: $id');
-    final index = _clientes.indexWhere((c) => c.id == id);
-    if (index != -1) {
-      final old = _clientes.removeAt(index);
-      _logAudit(
-        hoja: 'clientes',
-        celda: 'A${index + 2}',
-        valorAnterior: '${old.id}: ${old.nombre}',
-        valorNuevo: 'ELIMINADO',
-        accion: 'eliminacion_cliente',
-        norma: 'GDPR Art. 17 / ISO 27001',
-        observaciones: 'Baja del cliente $id',
-      );
-      _postToAppsScript({
-        'action': 'delete',
-        'sheet': 'clientes',
-        'id': id,
-      });
-      notifyListeners();
+  /// Motivo por el que un cliente no se puede eliminar, o `null` si se puede.
+  /// Un cliente con ventas o con historial de saldo a favor no se borra:
+  /// esas filas lo referencian por FK y quedarían huérfanas.
+  String? motivoNoEliminableCliente(String id) {
+    final ventas = _ventas.where((v) => v.clienteId == id).length;
+    if (ventas > 0) {
+      return 'Tiene $ventas ${ventas == 1 ? 'venta registrada' : 'ventas registradas'}.';
     }
+    if (_creditosClientes.any((c) => c.clienteId == id)) {
+      return 'Tiene historial de saldo a favor.';
+    }
+    return null;
+  }
+
+  /// Elimina el cliente. Lanza [ArgumentError] si no existe o si
+  /// [motivoNoEliminableCliente] lo impide, y [StateError] (revirtiendo) si
+  /// Sheets no lo confirma.
+  Future<void> deleteCliente(String id) async {
+    final motivo = motivoNoEliminableCliente(id);
+    if (motivo != null) throw ArgumentError('No se puede eliminar el cliente. $motivo');
+    final index = _clientes.indexWhere((c) => c.id == id);
+    if (index == -1) throw ArgumentError('No se encontró el cliente $id.');
+    final old = _clientes.removeAt(index);
+    _logAudit(
+      hoja: 'clientes',
+      celda: 'A${index + 2}',
+      valorAnterior: '${old.id}: ${old.nombre}',
+      valorNuevo: 'ELIMINADO',
+      accion: 'eliminacion_cliente',
+      norma: 'GDPR Art. 17 / ISO 27001',
+      observaciones: 'Baja del cliente $id',
+    );
+    notifyListeners();
+    await _sincronizarConRollback(
+      {'action': 'delete', 'sheet': 'clientes', 'id': id},
+      revertir: () => _clientes.insert(index.clamp(0, _clientes.length), old),
+    );
   }
 
   // ===========================================================================
@@ -1188,130 +1273,180 @@ class SheetsDataService extends ChangeNotifier {
     return 'p${(maxId + 1).toString().padLeft(8, '0')}';
   }
 
-  Future<bool> addProducto(Producto producto) async {
-    final stamped = Producto(
-      id: producto.id,
-      cantidad: producto.cantidad,
-      nombre: producto.nombre,
-      marca: producto.marca,
-      modelo: producto.modelo,
-      talla: producto.talla,
-      precioUsd: producto.precioUsd,
-      fotoId: producto.fotoId,
-      organizacionId: _currentOrganizacionId ?? '67774411-6aa1-4aa3-a4b2-d3fc6913b768',
-    );
+  /// Registra el producto en la organización actual. El ID lo asigna el
+  /// servidor. Lanza [StateError] (sin dejar nada) si Sheets no lo confirma.
+  Future<void> addProducto(Producto producto) async {
+    final stamped = producto.copyWith(organizacionId: _orgActualOrDefault);
     _productos.add(stamped);
+    notifyListeners();
+    final idReal = await _crearConRollback(
+      'inventario',
+      Map.of(stamped.toMap())..remove('id'),
+      revertir: () => _productos.remove(stamped),
+    );
+    final idx = _productos.indexOf(stamped);
+    if (idx != -1) _productos[idx] = stamped.copyWith(id: idReal);
     _logAudit(
       hoja: 'inventario',
       celda: 'A${_productos.length + 1}',
       valorAnterior: 'null',
-      valorNuevo: '${stamped.id} (${stamped.nombre})',
+      valorNuevo: '$idReal (${stamped.nombre})',
       accion: 'creacion_producto',
       norma: 'ISO 8000 §4.2',
       observaciones: 'Nuevo producto en inventario. Stock inicial: ${stamped.cantidad}',
     );
     notifyListeners();
-    final idReal = await _crearEnServidor('inventario', stamped.toMap());
-    if (idReal != null && idReal != stamped.id) {
-      // Mismo caso que addCliente: el servidor corrigió una colisión de ID.
-      final idx = _productos.indexWhere((p) => p.id == stamped.id);
-      if (idx != -1) {
-        _productos[idx] = Producto(
-          id: idReal,
-          cantidad: stamped.cantidad,
-          nombre: stamped.nombre,
-          marca: stamped.marca,
-          modelo: stamped.modelo,
-          talla: stamped.talla,
-          precioUsd: stamped.precioUsd,
-          fotoId: stamped.fotoId,
-          organizacionId: stamped.organizacionId,
-        );
-        notifyListeners();
-      }
-    }
-    return idReal != null;
   }
 
-  void updateProducto(Producto producto) {
-    final index = _productos.indexWhere((p) => p.id == producto.id);
-    if (index != -1) {
-      final old = _productos[index];
-      _productos[index] = producto;
-      _logAudit(
-        hoja: 'inventario',
-        celda: 'A${index + 2}',
-        valorAnterior: '${old.nombre}, ${old.talla}, USD ${old.precioUsd}',
-        valorNuevo: '${producto.nombre}, ${producto.talla}, USD ${producto.precioUsd}',
+  /// Aplica [cambio] sobre el producto [id] y envía solo [datos] (los campos
+  /// que cambian): mandar el producto completo pisaba el stock con un valor
+  /// viejo si otro dispositivo había vendido en el ínterin.
+  Future<void> _actualizarProducto(
+    String id,
+    Producto Function(Producto actual) cambio,
+    Map<String, dynamic> Function(Producto nuevo) datos, {
+    required String accion,
+    required String observaciones,
+  }) async {
+    final index = _productos.indexWhere((p) => p.id == id);
+    if (index == -1) throw ArgumentError('No se encontró el producto $id.');
+    final old = _productos[index];
+    final nuevo = cambio(old).copyWith(id: old.id, organizacionId: old.organizacionId);
+    _productos[index] = nuevo;
+    _logAudit(
+      hoja: 'inventario',
+      celda: 'A${index + 2}',
+      valorAnterior: '${old.nombre}, ${old.talla}, USD ${old.precioUsd}, stock ${old.cantidad}',
+      valorNuevo: '${nuevo.nombre}, ${nuevo.talla}, USD ${nuevo.precioUsd}, stock ${nuevo.cantidad}',
+      accion: accion,
+      norma: 'ISO 8000 §4.2',
+      observaciones: observaciones,
+    );
+    notifyListeners();
+    await _sincronizarConRollback(
+      {'action': 'update', 'sheet': 'inventario', 'id': id, 'data': datos(nuevo)},
+      revertir: () {
+        final i = _productos.indexOf(nuevo);
+        if (i != -1) _productos[i] = old;
+      },
+    );
+  }
+
+  /// Edita los datos del producto desde el formulario (incluida la cantidad
+  /// que escribió el usuario). Conserva ID y organización.
+  Future<void> updateProducto(Producto producto) => _actualizarProducto(
+        producto.id,
+        (actual) => producto,
+        (p) => {
+          'cantidad': p.cantidad,
+          'nombre': p.nombre,
+          'marca': p.marca,
+          'modelo': p.modelo,
+          'talla': p.talla,
+          'precio_usd': p.precioUsd,
+          'foto_id': p.fotoId ?? '',
+        },
         accion: 'actualizacion_producto',
-        norma: 'ISO 8000 §4.2',
         observaciones: 'Actualización de producto ${producto.id}',
       );
-      _postToAppsScript({
-        'action': 'update',
-        'sheet': 'inventario',
-        'id': producto.id,
-        'data': producto.toMap(),
-      });
+
+  /// Cambia solo la foto del producto.
+  Future<void> actualizarFotoProducto(String id, String? fotoId) => _actualizarProducto(
+        id,
+        (actual) => actual.copyWith(fotoId: fotoId, borrarFoto: fotoId == null),
+        (p) => {'foto_id': p.fotoId ?? ''},
+        accion: 'actualizacion_foto_producto',
+        observaciones: 'Cambio de foto del producto $id',
+      );
+
+  /// Ajustes de stock enviados y todavía sin respuesta, por producto.
+  final Map<String, int> _ajustesStockEnCurso = {};
+
+  /// Suma [delta] al stock. Se envía la DIFERENCIA (operación `increment`):
+  /// el servidor la aplica sobre el stock que tenga en ese momento, así un
+  /// ajuste no pisa una venta hecha desde otro dispositivo ni otro toque
+  /// rápido que llegue desordenado. Si Sheets no lo confirma, se deshace
+  /// solo este ajuste y se lanza [StateError].
+  Future<void> adjustStock(String id, int delta) async {
+    final index = _productos.indexWhere((p) => p.id == id);
+    if (index == -1) throw ArgumentError('No se encontró el producto $id.');
+    if (delta == 0) return;
+    final old = _productos[index];
+    final aplicado = (old.cantidad + delta).clamp(0, 999999) - old.cantidad;
+    _productos[index] = old.copyWith(cantidad: old.cantidad + aplicado);
+    _ajustesStockEnCurso[id] = (_ajustesStockEnCurso[id] ?? 0) + 1;
+    _logAudit(
+      hoja: 'inventario',
+      celda: 'B${index + 2}',
+      valorAnterior: 'stock ${old.cantidad}',
+      valorNuevo: 'stock ${old.cantidad + aplicado}',
+      accion: 'ajuste_stock',
+      norma: 'ISO 8000 §4.2',
+      observaciones: 'Ajuste manual de stock ($delta) del producto $id',
+    );
+    notifyListeners();
+
+    final res = await executeBatchTransaction(BatchTransaction(
+      transactionId: 'tx_stock_${id}_${DateTime.now().microsecondsSinceEpoch}',
+      operations: [
+        BatchOperation.increment(sheet: 'inventario', id: id, field: 'cantidad', delta: delta, min: 0),
+      ],
+    ));
+    final restantes = (_ajustesStockEnCurso[id] ?? 1) - 1;
+    if (restantes <= 0) {
+      _ajustesStockEnCurso.remove(id);
+    } else {
+      _ajustesStockEnCurso[id] = restantes;
+    }
+    final i = _productos.indexWhere((p) => p.id == id);
+
+    if (!res.isSuccess) {
+      if (i != -1) {
+        final p = _productos[i];
+        _productos[i] = p.copyWith(cantidad: (p.cantidad - aplicado).clamp(0, 999999));
+      }
+      notifyListeners();
+      await _lanzarErrorDeLote(res, 'ajustar el stock', 'revisá el stock del producto');
+    }
+
+    // Con otros ajustes todavía en viaje, el valor del servidor no los
+    // incluye: se deja el local, y lo corrige la última respuesta.
+    final enServidor = res.valorIncrementado('inventario', id)?.toInt();
+    if (i != -1 && restantes <= 0 && enServidor != null) {
+      _productos[i] = _productos[i].copyWith(cantidad: enServidor);
       notifyListeners();
     }
   }
 
-  void adjustStock(String id, int delta) {
-    final index = _productos.indexWhere((p) => p.id == id);
-    if (index != -1) {
-      final old = _productos[index];
-      final newQty = (old.cantidad + delta).clamp(0, 999999);
-      _productos[index] = Producto(
-        id: old.id,
-        cantidad: newQty,
-        nombre: old.nombre,
-        marca: old.marca,
-        modelo: old.modelo,
-        talla: old.talla,
-        precioUsd: old.precioUsd,
-        fotoId: old.fotoId,
-        organizacionId: old.organizacionId,
-      );
-      _logAudit(
-        hoja: 'inventario',
-        celda: 'B${index + 2}',
-        valorAnterior: 'Stock: ${old.cantidad}',
-        valorNuevo: 'Stock: $newQty',
-        accion: 'ajuste_stock',
-        norma: 'ISO 8000 §4.2',
-        observaciones: 'Ajuste manual de stock ($delta)',
-      );
-      _postToAppsScript({
-        'action': 'update',
-        'sheet': 'inventario',
-        'id': id,
-        'data': {'cantidad': newQty},
-      });
-      notifyListeners();
-    }
+  /// Motivo por el que un producto no se puede eliminar, o `null`: un
+  /// producto vendido quedaría huérfano en las facturas (venta_items).
+  String? motivoNoEliminableProducto(String id) {
+    final vendidos = _ventaItems.where((vi) => vi.itemId == id).length;
+    return vendidos > 0
+        ? 'Figura en $vendidos ${vendidos == 1 ? 'renglón de factura' : 'renglones de facturas'}.'
+        : null;
   }
 
-  void deleteProducto(String id) {
+  Future<void> deleteProducto(String id) async {
+    final motivo = motivoNoEliminableProducto(id);
+    if (motivo != null) throw ArgumentError('No se puede eliminar el producto. $motivo');
     final index = _productos.indexWhere((p) => p.id == id);
-    if (index != -1) {
-      final old = _productos.removeAt(index);
-      _logAudit(
-        hoja: 'inventario',
-        celda: 'A${index + 2}',
-        valorAnterior: '${old.id}: ${old.nombre}',
-        valorNuevo: 'ELIMINADO',
-        accion: 'eliminacion_producto',
-        norma: 'ISO 8000',
-        observaciones: 'Desincorporación de producto $id',
-      );
-      _postToAppsScript({
-        'action': 'delete',
-        'sheet': 'inventario',
-        'id': id,
-      });
-      notifyListeners();
-    }
+    if (index == -1) throw ArgumentError('No se encontró el producto $id.');
+    final old = _productos.removeAt(index);
+    _logAudit(
+      hoja: 'inventario',
+      celda: 'A${index + 2}',
+      valorAnterior: '${old.id}: ${old.nombre}',
+      valorNuevo: 'ELIMINADO',
+      accion: 'eliminacion_producto',
+      norma: 'ISO 8000',
+      observaciones: 'Desincorporación de producto $id',
+    );
+    notifyListeners();
+    await _sincronizarConRollback(
+      {'action': 'delete', 'sheet': 'inventario', 'id': id},
+      revertir: () => _productos.insert(index.clamp(0, _productos.length), old),
+    );
   }
 
   // ===========================================================================
@@ -1345,220 +1480,33 @@ class SheetsDataService extends ChangeNotifier {
     return 'ab${(maxId + 1).toString().padLeft(8, '0')}';
   }
 
-  /// Registra una factura completa: una venta (header) con uno o más ítems.
-  /// [items] es la lista de productos del carrito, cada uno con la cantidad
-  /// y el precio unitario a cobrar (capturado en el momento de la venta).
-  Future<bool> addVenta({
-    required String clienteId,
-    required List<({String productoId, int cantidad, double precioUsd})> items,
-    required String metodoPagoId,
-    double comisionPagoMovilBs = 0.0,
-    required double abonoUsd,
-    bool usarTasaManual = false,
-  }) async {
-    assert(items.isNotEmpty, 'Una factura necesita al menos un ítem');
-
-    // La tasa Bs./USD de la factura ya no se tipea a mano: es la misma que
-    // se resuelve para el abono (BCV automática del día, o la manual de la
-    // organización si el usuario la eligió) — una sola fuente de verdad
-    // para toda la transacción, no dos números sueltos por venta.
-    final tasaBcv = tasaPorId(_resolverTasaAplicada(usarTasaManual))?.valor ?? 0.0;
-
-    final ventaId = nextVentaId;
-    final montoUsd = items.fold<double>(0.0, (sum, it) => sum + it.cantidad * it.precioUsd);
-    final montoBs = montoUsd * tasaBcv;
-    final deudaUsd = (montoUsd - abonoUsd).clamp(0.0, double.infinity);
-    final estado = deudaUsd <= 0 ? EstadoVenta.pagada : EstadoVenta.pendiente;
-
-    final venta = Venta(
-      id: ventaId,
-      fecha: DateTime.now(),
-      clienteId: clienteId,
-      tasaBcv: tasaBcv,
-      tasaUsd: tasaBcv,
-      metodoPagoId: metodoPagoId,
-      comisionPagoMovilBs: comisionPagoMovilBs,
-      montoBs: montoBs,
-      montoUsd: montoUsd,
-      abonoUsd: abonoUsd,
-      deudaUsd: deudaUsd,
-      totalPagarUsd: montoUsd,
-      validacion: 'OK',
-      estado: estado,
-      organizacionId: _currentOrganizacionId ?? '67774411-6aa1-4aa3-a4b2-d3fc6913b768',
-    );
-    _ventas.insert(0, venta);
-
-    final nuevosItems = <VentaItem>[];
-    for (final it in items) {
-      final ventaItem = VentaItem(
-        id: nextVentaItemId,
-        ventaId: ventaId,
-        itemId: it.productoId,
-        cantidad: it.cantidad,
-        precioUsd: it.precioUsd,
-        subtotalUsd: it.cantidad * it.precioUsd,
-      );
-      _ventaItems.insert(0, ventaItem);
-      nuevosItems.add(ventaItem);
-      adjustStock(it.productoId, -it.cantidad);
-    }
-
-    // Ajustar saldo de deuda del cliente si queda saldo pendiente
-    if (venta.deudaUsd > 0) {
-      final cIdx = _clientes.indexWhere((c) => c.id == clienteId);
-      if (cIdx != -1) {
-        final c = _clientes[cIdx];
-        _clientes[cIdx] = Cliente(
-          id: c.id,
-          nombre: c.nombre,
-          telefono: c.telefono,
-          email: c.email,
-          saldoDeudaUsd: c.saldoDeudaUsd + venta.deudaUsd,
-          fechaRegistro: c.fechaRegistro,
-          organizacionId: c.organizacionId,
-        );
-      }
-    }
-
-    _logAudit(
-      hoja: 'ventas',
-      celda: 'A${_ventas.length + 1}',
-      valorAnterior: 'null',
-      valorNuevo: '${venta.id} por USD ${venta.totalPagarUsd.toStringAsFixed(2)} (${items.length} ítems)',
-      accion: 'creacion_venta',
-      norma: 'ISO 8000 §5.3',
-      observaciones: 'Factura registrada a cliente $clienteId',
-    );
-
-    // El abono inicial (si lo hay) es, en sí mismo, el primer pago de la
-    // factura — se registra como el primer renglón del historial de abonos,
-    // no solo como un número acumulado en el header.
-    Abono? abonoInicial;
-    if (abonoUsd > 0) {
-      abonoInicial = Abono(
-        id: nextAbonoId,
-        ventaId: ventaId,
-        fecha: venta.fecha,
-        monto: abonoUsd,
-        metodoPagoId: metodoPagoId,
-        tasaId: _resolverTasaAplicada(usarTasaManual),
-      );
-      _abonos.insert(0, abonoInicial);
-    }
-
-    // El header se sincroniza PRIMERO y solo, no en paralelo con los ítems:
-    // el servidor puede reasignarle un ID distinto si hubo una colisión con
-    // otra sesión (ver ID_PREFIXES en google_apps_script.js), y venta_items/
-    // abonos referencian ese ID por FK — si se mandaran en paralelo con un
-    // ID todavía no confirmado, la validación de integridad referencial del
-    // servidor los rechazaría en cuanto el ID real no coincidiera.
-    final ventaIdReal = await _crearEnServidor('ventas', venta.toMap());
-    if (ventaIdReal == null) {
-      notifyListeners();
-      return false;
-    }
-
-    if (ventaIdReal != ventaId) {
-      final idx = _ventas.indexWhere((v) => v.id == ventaId);
-      if (idx != -1) {
-        final v = _ventas[idx];
-        _ventas[idx] = Venta(
-          id: ventaIdReal,
-          fecha: v.fecha,
-          clienteId: v.clienteId,
-          tasaBcv: v.tasaBcv,
-          tasaUsd: v.tasaUsd,
-          metodoPagoId: v.metodoPagoId,
-          comisionPagoMovilBs: v.comisionPagoMovilBs,
-          montoBs: v.montoBs,
-          montoUsd: v.montoUsd,
-          abonoUsd: v.abonoUsd,
-          deudaUsd: v.deudaUsd,
-          totalPagarUsd: v.totalPagarUsd,
-          validacion: v.validacion,
-          estado: v.estado,
-          organizacionId: v.organizacionId,
-        );
-      }
-      for (var i = 0; i < nuevosItems.length; i++) {
-        final vi = nuevosItems[i];
-        final corregido = VentaItem(
-          id: vi.id,
-          ventaId: ventaIdReal,
-          itemId: vi.itemId,
-          cantidad: vi.cantidad,
-          precioUsd: vi.precioUsd,
-          subtotalUsd: vi.subtotalUsd,
-        );
-        nuevosItems[i] = corregido;
-        final idxVi = _ventaItems.indexWhere((x) => x.id == vi.id);
-        if (idxVi != -1) _ventaItems[idxVi] = corregido;
-      }
-      if (abonoInicial != null) {
-        final corregido = Abono(
-          id: abonoInicial.id,
-          ventaId: ventaIdReal,
-          fecha: abonoInicial.fecha,
-          monto: abonoInicial.monto,
-          metodoPagoId: abonoInicial.metodoPagoId,
-          tasaId: abonoInicial.tasaId,
-        );
-        final idxAb = _abonos.indexWhere((a) => a.id == abonoInicial!.id);
-        if (idxAb != -1) _abonos[idxAb] = corregido;
-        abonoInicial = corregido;
-      }
-    }
-
-    // Ítems y abono sí se mandan en paralelo entre sí — no hay FKs cruzadas
-    // entre ellos, solo dependen de la venta ya confirmada arriba.
-    final idsReales = await Future.wait([
-      for (final vi in nuevosItems) _crearEnServidor('venta_items', vi.toMap()),
-      if (abonoInicial != null) _crearEnServidor('abonos', abonoInicial.toMap()),
-    ]);
-
-    for (var i = 0; i < nuevosItems.length; i++) {
-      final real = idsReales[i];
-      if (real != null && real != nuevosItems[i].id) {
-        final vi = nuevosItems[i];
-        final idxVi = _ventaItems.indexWhere((x) => x.id == vi.id);
-        if (idxVi != -1) {
-          _ventaItems[idxVi] = VentaItem(
-            id: real,
-            ventaId: vi.ventaId,
-            itemId: vi.itemId,
-            cantidad: vi.cantidad,
-            precioUsd: vi.precioUsd,
-            subtotalUsd: vi.subtotalUsd,
-          );
-        }
-      }
-    }
-    if (abonoInicial != null) {
-      final real = idsReales.last;
-      if (real != null && real != abonoInicial.id) {
-        final idxAb = _abonos.indexWhere((a) => a.id == abonoInicial!.id);
-        if (idxAb != -1) {
-          _abonos[idxAb] = Abono(
-            id: real,
-            ventaId: abonoInicial.ventaId,
-            fecha: abonoInicial.fecha,
-            monto: abonoInicial.monto,
-            metodoPagoId: abonoInicial.metodoPagoId,
-            tasaId: abonoInicial.tasaId,
-          );
-        }
-      }
-    }
-
-    notifyListeners();
-    return idsReales.every((id) => id != null);
-  }
-
   /// Registra una venta completa con sus ítems, ajuste de inventario y abono inicial
   /// en un único lote atómico transaccional (All-or-Nothing).
   /// Si falla la red o el backend rechaza la transacción, la memoria local queda intacta.
-  Future<bool> addVentaAtomica({
+  /// Alias de [addVenta] (nombre anterior).
+  Future<void> addVentaAtomica({
+    required String clienteId,
+    required List<({String productoId, int cantidad, double precioUsd})> items,
+    required String metodoPagoId,
+    double comisionPagoMovilBs = 0.0,
+    required double abonoUsd,
+    bool usarTasaManual = false,
+  }) =>
+      addVenta(
+        clienteId: clienteId,
+        items: items,
+        metodoPagoId: metodoPagoId,
+        comisionPagoMovilBs: comisionPagoMovilBs,
+        abonoUsd: abonoUsd,
+        usarTasaManual: usarTasaManual,
+      );
+
+  /// Registra una venta (cabecera, ítems, descuento de stock, deuda del
+  /// cliente, abono inicial y auditoría) en UN lote atómico: o se guarda
+  /// todo en Sheets o nada. Los datos del teléfono se tocan solo después de
+  /// la confirmación. Lanza [StateError] si el lote falla; si no hubo
+  /// respuesta, antes relee Sheets (pudo haberse aplicado).
+  Future<void> addVenta({
     required String clienteId,
     required List<({String productoId, int cantidad, double precioUsd})> items,
     required String metodoPagoId,
@@ -1594,7 +1542,7 @@ class SheetsDataService extends ChangeNotifier {
     );
 
     final nuevosItems = <VentaItem>[];
-    final stockUpdates = <String, int>{};
+    final unidadesVendidas = <String, int>{};
     for (final it in items) {
       nuevosItems.add(VentaItem(
         id: nextVentaItemId,
@@ -1604,17 +1552,7 @@ class SheetsDataService extends ChangeNotifier {
         precioUsd: it.precioUsd,
         subtotalUsd: it.cantidad * it.precioUsd,
       ));
-      final pIdx = _productos.indexWhere((p) => p.id == it.productoId);
-      final stockActual = pIdx != -1 ? _productos[pIdx].cantidad : 0;
-      stockUpdates[it.productoId] = (stockActual - it.cantidad).clamp(0, 999999);
-    }
-
-    double? nuevoSaldoDeuda;
-    if (deudaUsd > 0) {
-      final cIdx = _clientes.indexWhere((c) => c.id == clienteId);
-      if (cIdx != -1) {
-        nuevoSaldoDeuda = _clientes[cIdx].saldoDeudaUsd + deudaUsd;
-      }
+      unidadesVendidas[it.productoId] = (unidadesVendidas[it.productoId] ?? 0) + it.cantidad;
     }
 
     Abono? abonoInicial;
@@ -1631,7 +1569,7 @@ class SheetsDataService extends ChangeNotifier {
 
     final auditLog = AuditLog(
       timestampIso8601: DateTime.now(),
-      usuario: 'Operador App (Transacción Atómica)',
+      usuario: _currentUsuarioEmail ?? '',
       hoja: 'ventas',
       celda: 'A${_ventas.length + 1}',
       valorAnterior: 'null',
@@ -1645,8 +1583,8 @@ class SheetsDataService extends ChangeNotifier {
     final transaction = SheetsBatchExecutor.buildVentaBatch(
       venta: venta,
       items: nuevosItems,
-      stockUpdates: stockUpdates,
-      nuevoSaldoDeudaCliente: nuevoSaldoDeuda,
+      unidadesVendidas: unidadesVendidas,
+      deudaAgregadaCliente: deudaUsd,
       abonoInicial: abonoInicial,
       auditLog: auditLog,
     );
@@ -1655,7 +1593,7 @@ class SheetsDataService extends ChangeNotifier {
     final res = await executeBatchTransaction(transaction);
     if (!res.isSuccess) {
       Logger.error('SheetsDataService: Falló lote atómico de venta (${res.transactionId}): ${res.message}');
-      return false;
+      await _lanzarErrorDeLote(res, 'registrar la venta', 'revisá Ventas antes de reintentar');
     }
 
     // 2. ÉXITO: Asentar de forma atómica en memoria local en un solo ciclo
@@ -1694,22 +1632,23 @@ class SheetsDataService extends ChangeNotifier {
             )
           : it;
       _ventaItems.insert(0, viFinal);
-      adjustStock(it.itemId, -it.cantidad);
     }
+    // El lote ya descontó el stock y sumó la deuda en Sheets: acá solo se
+    // refleja localmente, con el valor que quedó en el servidor.
+    unidadesVendidas.forEach((productoId, unidades) {
+      final pIdx = _productos.indexWhere((p) => p.id == productoId);
+      if (pIdx == -1) return;
+      final p = _productos[pIdx];
+      final enServidor = res.valorIncrementado('inventario', productoId)?.toInt();
+      _productos[pIdx] = p.copyWith(cantidad: enServidor ?? (p.cantidad - unidades).clamp(0, 999999));
+    });
 
-    if (nuevoSaldoDeuda != null) {
+    if (deudaUsd > 0) {
       final cIdx = _clientes.indexWhere((c) => c.id == clienteId);
       if (cIdx != -1) {
         final c = _clientes[cIdx];
-        _clientes[cIdx] = Cliente(
-          id: c.id,
-          nombre: c.nombre,
-          telefono: c.telefono,
-          email: c.email,
-          saldoDeudaUsd: nuevoSaldoDeuda,
-          fechaRegistro: c.fechaRegistro,
-          organizacionId: c.organizacionId,
-        );
+        final enServidor = res.valorIncrementado('clientes', clienteId)?.toDouble();
+        _clientes[cIdx] = c.copyWith(saldoDeudaUsd: enServidor ?? c.saldoDeudaUsd + deudaUsd);
       }
     }
 
@@ -1730,7 +1669,17 @@ class SheetsDataService extends ChangeNotifier {
     _auditLogs.insert(0, auditLog);
 
     notifyListeners();
-    return true;
+  }
+
+  /// Lanza el [StateError] de un lote fallido. Si no hubo respuesta (no se
+  /// sabe si se aplicó), primero relee Sheets para mostrar lo que quedó.
+  Future<Never> _lanzarErrorDeLote(BatchTransactionResult res, String operacion, String sugerencia) async {
+    final hayUrl = (appsScriptUrl ?? '').trim().isNotEmpty;
+    if (res.sinRespuesta && hayUrl) {
+      await fetchAllSheets(silent: true);
+      throw StateError('No se pudo confirmar si se pudo $operacion. Se recargaron los datos: $sugerencia.');
+    }
+    throw StateError('No se pudo $operacion en Google Sheets${res.message != null ? ': ${res.message}' : ''}.');
   }
 
   /// Registra un abono (pago parcial) a una factura: crea una fila propia en
@@ -1738,14 +1687,20 @@ class SheetsDataService extends ChangeNotifier {
   /// abonado/deuda/estado del header. El `metodoPago` de la factura (el de
   /// la venta original) no se toca — el método de cada pago individual vive
   /// en su propia fila de [abonos], no se pisa el de la venta.
-  Future<bool> registrarAbono(
+  ///
+  /// El cambio se aplica en local de inmediato y se envía como lote atómico.
+  /// Si el lote falla, el cambio local se revierte: de lo contrario, al
+  /// reintentar, el abono se sumaría dos veces a la cabecera de la venta.
+  /// Si no hubo respuesta del servidor (no se sabe si se aplicó), además se
+  /// releen los datos de Sheets para mostrar lo que realmente quedó guardado.
+  Future<ResultadoAbono> registrarAbono(
     String ventaId,
     double montoAbono, {
     required String metodoPagoId,
     bool usarTasaManual = false,
   }) async {
     final index = _ventas.indexWhere((v) => v.id == ventaId);
-    if (index == -1) return false;
+    if (index == -1) return ResultadoAbono.rechazado;
 
     final old = _ventas[index];
     final nuevoAbono = old.abonoUsd + montoAbono;
@@ -1780,19 +1735,14 @@ class SheetsDataService extends ChangeNotifier {
     );
     _abonos.insert(0, abono);
 
-    // Reducir saldo de deuda del cliente
+    // Reducir la deuda del cliente solo en lo que el abono cubre de esta
+    // factura (el excedente es saldo a favor, no reduce otra deuda).
+    final deudaCubierta = montoAbono.clamp(0.0, old.deudaUsd).toDouble();
     final cIdx = _clientes.indexWhere((c) => c.id == old.clienteId);
-    if (cIdx != -1) {
-      final c = _clientes[cIdx];
-      _clientes[cIdx] = Cliente(
-        id: c.id,
-        nombre: c.nombre,
-        telefono: c.telefono,
-        email: c.email,
-        saldoDeudaUsd: (c.saldoDeudaUsd - montoAbono).clamp(0.0, double.infinity),
-        fechaRegistro: c.fechaRegistro,
-        organizacionId: c.organizacionId,
-      );
+    final clienteAntes = cIdx != -1 ? _clientes[cIdx] : null;
+    if (clienteAntes != null) {
+      _clientes[cIdx] = clienteAntes.copyWith(
+          saldoDeudaUsd: (clienteAntes.saldoDeudaUsd - deudaCubierta).clamp(0.0, double.infinity));
     }
 
     final nombreMetodo = metodoPagoNombre(metodoPagoId);
@@ -1809,9 +1759,9 @@ class SheetsDataService extends ChangeNotifier {
     ClientCredit? nuevoCredito;
     if (nuevoAbono > old.totalPagarUsd) {
       final excedenteMonto = nuevoAbono - old.totalPagarUsd;
-      final creditNum = (_creditosClientes.length + 1).toString().padLeft(8, '0');
+      // ID provisorio: el real lo genera el servidor (R1 del estándar).
       nuevoCredito = ClientCredit(
-        id: CreditId('cr$creditNum'),
+        id: CreditId('cr00000000'),
         clienteId: old.clienteId,
         fecha: DateTime.now(),
         montoUsd: CreditAmount(excedenteMonto),
@@ -1819,9 +1769,8 @@ class SheetsDataService extends ChangeNotifier {
         estado: CreditStatus.disponible,
         organizacionId: old.organizacionId,
         saldoUsd: excedenteMonto,
-        usuarioEmail: _currentUsuarioEmail ?? 'Antigravity Senior Agent',
+        usuarioEmail: _currentUsuarioEmail,
       );
-      addCreditoClienteLocal(nuevoCredito);
     }
 
     final batchOps = <BatchOperation>[
@@ -1832,15 +1781,23 @@ class SheetsDataService extends ChangeNotifier {
       ),
       BatchOperation.create(
         sheet: 'abonos',
-        data: abono.toMap(),
+        data: Map.of(abono.toMap())..remove('id'),
       ),
+      if (clienteAntes != null && deudaCubierta > 0)
+        BatchOperation.increment(
+          sheet: 'clientes',
+          id: clienteAntes.id,
+          field: 'saldo_deuda_usd',
+          delta: -deudaCubierta,
+          min: 0,
+        ),
     ];
 
     if (nuevoCredito != null) {
       batchOps.add(
         BatchOperation.create(
           sheet: 'creditos_clientes',
-          data: ClientCreditModel.toMap(nuevoCredito),
+          data: Map.of(ClientCreditModel.toMap(nuevoCredito))..remove('id'),
         ),
       );
     }
@@ -1850,27 +1807,114 @@ class SheetsDataService extends ChangeNotifier {
       operations: batchOps,
     );
 
-    final txResult = await executeBatchTransaction(tx);
     notifyListeners();
-    return txResult.isSuccess;
+    final txResult = await executeBatchTransaction(tx);
+    if (txResult.isSuccess) {
+      final idAbono = txResult.generatedIds['abonos'] as String?;
+      if (idAbono != null) {
+        final iAbono = _abonos.indexWhere((a) => identical(a, abono));
+        if (iAbono != -1) _abonos[iAbono] = abono.copyWith(id: idAbono);
+      }
+      final credito = nuevoCredito;
+      final idCredito = txResult.generatedIds['creditos_clientes'] as String?;
+      if (credito != null) {
+        addCreditoClienteLocal(idCredito != null ? credito.copyWith(id: CreditId(idCredito)) : credito);
+      }
+      if (clienteAntes != null) {
+        final enServidor = txResult.valorIncrementado('clientes', clienteAntes.id)?.toDouble();
+        final iCliente = _clientes.indexWhere((c) => c.id == clienteAntes.id);
+        if (enServidor != null && iCliente != -1) {
+          _clientes[iCliente] = _clientes[iCliente].copyWith(saldoDeudaUsd: enServidor);
+        }
+      }
+      notifyListeners();
+      return ResultadoAbono.registrado;
+    }
+
+    // Revertir el cambio local. Se busca por ID (no por índice): la lista
+    // pudo cambiar mientras se esperaba al servidor.
+    Logger.warning('SheetsDataService: abono a $ventaId no confirmado (${txResult.message}); se revierte el cambio local.');
+    final iVenta = _ventas.indexWhere((v) => v.id == ventaId);
+    if (iVenta != -1) _ventas[iVenta] = old;
+    _abonos.removeWhere((a) => a.id == abono.id);
+    if (clienteAntes != null) {
+      final iCliente = _clientes.indexWhere((c) => c.id == clienteAntes.id);
+      if (iCliente != -1) _clientes[iCliente] = clienteAntes;
+    }
+    _logAudit(
+      hoja: 'ventas',
+      celda: 'J${index + 2}',
+      valorAnterior: 'Abono +$montoAbono ($nombreMetodo)',
+      valorNuevo: 'Deuda: ${old.deudaUsd}',
+      accion: 'registro_abono_revertido',
+      norma: 'ISO 8000 §5.3',
+      observaciones: 'Abono a venta $ventaId no confirmado por el servidor: ${txResult.message}',
+    );
+    notifyListeners();
+
+    final hayUrl = (appsScriptUrl ?? '').trim().isNotEmpty;
+    if (txResult.sinRespuesta && hayUrl) {
+      // Pudo haberse aplicado igual: se toma lo que diga Sheets.
+      await fetchAllSheets(silent: true);
+      return ResultadoAbono.sinConfirmar;
+    }
+    return ResultadoAbono.rechazado;
   }
 
   /// Anula una factura completa: elimina la venta (header), todos sus ítems,
   /// y repone el stock que esos ítems habían descontado (espejo de [addVenta]).
   Future<void> deleteVenta(String id) async {
     final index = _ventas.indexWhere((v) => v.id == id);
-    if (index == -1) return;
-
-    final old = _ventas.removeAt(index);
+    if (index == -1) throw ArgumentError('No se encontró la venta $id.');
+    final old = _ventas[index];
     final items = _ventaItems.where((vi) => vi.ventaId == id).toList();
-    _ventaItems.removeWhere((vi) => vi.ventaId == id);
     final abonosVenta = _abonos.where((a) => a.ventaId == id).toList();
-    _abonos.removeWhere((a) => a.ventaId == id);
 
+    // Unidades a reponer, agrupadas por producto (solo los que siguen existiendo).
+    final stockRepuesto = <String, int>{};
     for (final vi in items) {
-      adjustStock(vi.itemId, vi.cantidad);
+      if (!_productos.any((p) => p.id == vi.itemId)) continue;
+      stockRepuesto[vi.itemId] = (stockRepuesto[vi.itemId] ?? 0) + vi.cantidad;
+    }
+    final deudaAQuitar = old.deudaUsd > 0 && _clientes.any((c) => c.id == old.clienteId) ? old.deudaUsd : 0.0;
+
+    // Un solo lote atómico: o se anula todo en Sheets o nada.
+    final res = await executeBatchTransaction(BatchTransaction(
+      transactionId: 'tx_anular_${id}_${DateTime.now().millisecondsSinceEpoch}',
+      operations: [
+        for (final a in abonosVenta) BatchOperation.delete(sheet: 'abonos', id: a.id),
+        for (final vi in items) BatchOperation.delete(sheet: 'venta_items', id: vi.id),
+        BatchOperation.delete(sheet: 'ventas', id: id),
+        for (final e in stockRepuesto.entries)
+          BatchOperation.increment(sheet: 'inventario', id: e.key, field: 'cantidad', delta: e.value),
+        if (deudaAQuitar > 0)
+          BatchOperation.increment(
+              sheet: 'clientes', id: old.clienteId, field: 'saldo_deuda_usd', delta: -deudaAQuitar, min: 0),
+      ],
+    ));
+    if (!res.isSuccess) {
+      await _lanzarErrorDeLote(res, 'anular la venta', 'revisá si la factura sigue en Ventas');
     }
 
+    _ventas.removeWhere((v) => v.id == id);
+    _ventaItems.removeWhere((vi) => vi.ventaId == id);
+    _abonos.removeWhere((a) => a.ventaId == id);
+    stockRepuesto.forEach((productoId, unidades) {
+      final pIdx = _productos.indexWhere((p) => p.id == productoId);
+      if (pIdx == -1) return;
+      final p = _productos[pIdx];
+      final enServidor = res.valorIncrementado('inventario', productoId)?.toInt();
+      _productos[pIdx] = p.copyWith(cantidad: enServidor ?? p.cantidad + unidades);
+    });
+    if (deudaAQuitar > 0) {
+      final cIdx = _clientes.indexWhere((c) => c.id == old.clienteId);
+      if (cIdx != -1) {
+        final c = _clientes[cIdx];
+        final enServidor = res.valorIncrementado('clientes', c.id)?.toDouble();
+        _clientes[cIdx] =
+            c.copyWith(saldoDeudaUsd: enServidor ?? (c.saldoDeudaUsd - deudaAQuitar).clamp(0.0, double.infinity));
+      }
+    }
     _logAudit(
       hoja: 'ventas',
       celda: 'A${index + 2}',
@@ -1880,14 +1924,9 @@ class SheetsDataService extends ChangeNotifier {
       norma: 'ISO 8000',
       observaciones: 'Venta $id anulada (${items.length} ítems repuestos a inventario, ${abonosVenta.length} abonos eliminados)',
     );
-
-    await Future.wait([
-      _postToAppsScript({'action': 'delete', 'sheet': 'ventas', 'id': id}),
-      for (final vi in items) _postToAppsScript({'action': 'delete', 'sheet': 'venta_items', 'id': vi.id}),
-      for (final a in abonosVenta) _postToAppsScript({'action': 'delete', 'sheet': 'abonos', 'id': a.id}),
-    ]);
     notifyListeners();
   }
+
 
   // ===========================================================================
   // CRUD 4: COMPRAS DIVISAS (hoja compras_divisas)
@@ -1902,191 +1941,223 @@ class SheetsDataService extends ChangeNotifier {
     return 'd${(maxId + 1).toString().padLeft(8, '0')}';
   }
 
-  Future<bool> addCompraDivisa(CompraDivisa compra) async {
-    final stamped = CompraDivisa(
-      id: compra.id,
-      fechaCompra: compra.fechaCompra,
-      fechaEntrega: compra.fechaEntrega,
-      capitalUsd: compra.capitalUsd,
-      comisionBinanceUsd: compra.comisionBinanceUsd,
-      numeroOrden: compra.numeroOrden,
-      plataforma: compra.plataforma,
-      vendedor: compra.vendedor,
-      tasaBcv: compra.tasaBcv,
-      tasaUsd: compra.tasaUsd,
-      validacion: compra.validacion,
-      organizacionId: _currentOrganizacionId ?? '67774411-6aa1-4aa3-a4b2-d3fc6913b768',
-    );
+  /// Registra la compra en la organización actual (ID del servidor). Lanza
+  /// [StateError] (sin dejar nada) si Sheets no la confirma.
+  Future<void> addCompraDivisa(CompraDivisa compra) async {
+    final stamped = compra.copyWith(organizacionId: _orgActualOrDefault);
     _comprasDivisas.insert(0, stamped);
+    notifyListeners();
+    final idReal = await _crearConRollback(
+      'compras_divisas',
+      Map.of(stamped.toMap())..remove('id'),
+      revertir: () => _comprasDivisas.remove(stamped),
+    );
+    final idx = _comprasDivisas.indexOf(stamped);
+    if (idx != -1) _comprasDivisas[idx] = stamped.copyWith(id: idReal);
     _logAudit(
       hoja: 'compras_divisas',
       celda: 'A${_comprasDivisas.length + 1}',
       valorAnterior: 'null',
-      valorNuevo: '${stamped.id}: USD ${stamped.capitalUsd}',
+      valorNuevo: '$idReal: USD ${stamped.capitalUsd}',
       accion: 'registro_compra_divisa',
       norma: 'ISO 8000 §4.2',
       observaciones: 'Compra cambiaria en ${stamped.plataforma} por ${stamped.vendedor}',
     );
     notifyListeners();
-    final idReal = await _crearEnServidor('compras_divisas', stamped.toMap());
-    if (idReal != null && idReal != stamped.id) {
-      final idx = _comprasDivisas.indexWhere((c) => c.id == stamped.id);
-      if (idx != -1) {
-        _comprasDivisas[idx] = CompraDivisa(
-          id: idReal,
-          fechaCompra: stamped.fechaCompra,
-          fechaEntrega: stamped.fechaEntrega,
-          capitalUsd: stamped.capitalUsd,
-          comisionBinanceUsd: stamped.comisionBinanceUsd,
-          numeroOrden: stamped.numeroOrden,
-          plataforma: stamped.plataforma,
-          vendedor: stamped.vendedor,
-          tasaBcv: stamped.tasaBcv,
-          tasaUsd: stamped.tasaUsd,
-          validacion: stamped.validacion,
-          organizacionId: stamped.organizacionId,
-        );
-        notifyListeners();
-      }
-    }
-    return idReal != null;
   }
 
-  void updateCompraDivisa(CompraDivisa compra) {
+  /// Edita la compra conservando ID, organización y validación.
+  Future<void> updateCompraDivisa(CompraDivisa compra) async {
     final index = _comprasDivisas.indexWhere((c) => c.id == compra.id);
-    if (index != -1) {
-      _comprasDivisas[index] = compra;
-      _logAudit(
-        hoja: 'compras_divisas',
-        celda: 'A${index + 2}',
-        valorAnterior: 'Orden ${compra.id}',
-        valorNuevo: 'Capital: ${compra.capitalUsd} | Com: ${compra.comisionBinanceUsd}',
-        accion: 'actualizacion_compra_divisa',
-        norma: 'ISO 8000 §4.2',
-        observaciones: 'Modificación en orden cambiaria ${compra.id}',
-      );
-      _postToAppsScript({
-        'action': 'update',
-        'sheet': 'compras_divisas',
-        'id': compra.id,
-        'data': compra.toMap(),
-      });
-      notifyListeners();
-    }
+    if (index == -1) throw ArgumentError('No se encontró la compra ${compra.id}.');
+    final old = _comprasDivisas[index];
+    final actualizada = compra.copyWith(organizacionId: old.organizacionId, validacion: old.validacion);
+    _comprasDivisas[index] = actualizada;
+    _logAudit(
+      hoja: 'compras_divisas',
+      celda: 'A${index + 2}',
+      valorAnterior: 'Capital: ${old.capitalUsd} | Com: ${old.comisionBinanceUsd}',
+      valorNuevo: 'Capital: ${actualizada.capitalUsd} | Com: ${actualizada.comisionBinanceUsd}',
+      accion: 'actualizacion_compra_divisa',
+      norma: 'ISO 8000 §4.2',
+      observaciones: 'Modificación en orden cambiaria ${actualizada.id}',
+    );
+    notifyListeners();
+    await _sincronizarConRollback(
+      {'action': 'update', 'sheet': 'compras_divisas', 'id': actualizada.id, 'data': actualizada.toMap()},
+      revertir: () {
+        final i = _comprasDivisas.indexOf(actualizada);
+        if (i != -1) _comprasDivisas[i] = old;
+      },
+    );
   }
 
-  void deleteCompraDivisa(String id) {
+  Future<void> deleteCompraDivisa(String id) async {
     final index = _comprasDivisas.indexWhere((c) => c.id == id);
-    if (index != -1) {
-      final old = _comprasDivisas.removeAt(index);
-      _logAudit(
-        hoja: 'compras_divisas',
-        celda: 'A${index + 2}',
-        valorAnterior: 'Orden ${old.id}',
-        valorNuevo: 'ELIMINADA',
-        accion: 'eliminacion_compra_divisa',
-        norma: 'ISO 8000',
-        observaciones: 'Orden cambiaria $id eliminada',
-      );
-      _postToAppsScript({
-        'action': 'delete',
-        'sheet': 'compras_divisas',
-        'id': id,
-      });
-      notifyListeners();
-    }
+    if (index == -1) throw ArgumentError('No se encontró la compra $id.');
+    final old = _comprasDivisas.removeAt(index);
+    _logAudit(
+      hoja: 'compras_divisas',
+      celda: 'A${index + 2}',
+      valorAnterior: 'Orden ${old.id}',
+      valorNuevo: 'ELIMINADA',
+      accion: 'eliminacion_compra_divisa',
+      norma: 'ISO 8000',
+      observaciones: 'Orden cambiaria $id eliminada',
+    );
+    notifyListeners();
+    await _sincronizarConRollback(
+      {'action': 'delete', 'sheet': 'compras_divisas', 'id': id},
+      revertir: () => _comprasDivisas.insert(index.clamp(0, _comprasDivisas.length), old),
+    );
   }
 
   // ===========================================================================
   // CRUD 5: RESUMEN DIARIO (hoja resumen_diario)
   // ===========================================================================
 
-  void addResumenDiario(ResumenDiario resumen) {
-    final stamped = ResumenDiario(
-      fecha: resumen.fecha,
-      nroVentas: resumen.nroVentas,
-      totalBs: resumen.totalBs,
-      totalUsd: resumen.totalUsd,
-      tasaBcv: resumen.tasaBcv,
-      tasaUsd: resumen.tasaUsd,
-      usdComprados: resumen.usdComprados,
-      usdVendidos: resumen.usdVendidos,
-      organizacionId: _currentOrganizacionId ?? '67774411-6aa1-4aa3-a4b2-d3fc6913b768',
+  /// Un cierre se identifica por fecha (sin hora) + organización.
+  static DateTime _soloFecha(DateTime d) => DateTime(d.year, d.month, d.day);
+
+  int _indiceResumen(DateTime fecha, String organizacionId) {
+    final dia = _soloFecha(fecha);
+    return _resumenesDiarios.indexWhere(
+        (r) => _soloFecha(r.fecha) == dia && r.organizacionId == organizacionId);
+  }
+
+  String get _orgActualOrDefault =>
+      _currentOrganizacionId ?? '67774411-6aa1-4aa3-a4b2-d3fc6913b768';
+
+  /// Registra el cierre del día para la organización actual. Falla si ya
+  /// existe uno para esa fecha (no lo sobrescribe en silencio). El ID
+  /// (rd00000001…) lo asigna el servidor.
+  Future<void> addResumenDiario(ResumenDiario resumen) async {
+    final stamped = resumen.copyWith(
+      id: '',
+      fecha: _soloFecha(resumen.fecha),
+      organizacionId: _orgActualOrDefault,
     );
-    final existingIdx = _resumenesDiarios.indexWhere((r) => r.fecha == stamped.fecha);
-    if (existingIdx != -1) {
-      _resumenesDiarios[existingIdx] = stamped;
-    } else {
-      _resumenesDiarios.insert(0, stamped);
+    final fechaTxt = stamped.fechaIso;
+    if (_indiceResumen(stamped.fecha, stamped.organizacionId) != -1) {
+      throw ArgumentError('Ya existe un cierre para $fechaTxt. Editalo en lugar de crear otro.');
     }
+    _resumenesDiarios.insert(0, stamped);
+    notifyListeners();
+
+    final idReal = await _crearConRollback(
+      'resumen_diario',
+      stamped.toMap(),
+      revertir: () => _resumenesDiarios.remove(stamped),
+    );
+    final i = _resumenesDiarios.indexOf(stamped);
+    final confirmado = stamped.copyWith(id: idReal);
+    if (i != -1) _resumenesDiarios[i] = confirmado;
     _logAudit(
       hoja: 'resumen_diario',
       celda: 'A${_resumenesDiarios.length + 1}',
       valorAnterior: 'null',
-      valorNuevo: 'Cierre ${stamped.fecha}: USD ${stamped.totalUsd}',
+      valorNuevo: '$idReal ($fechaTxt): USD ${confirmado.totalUsd}',
       accion: 'cierre_diario',
       norma: 'COBIT 2019 / ISO 27001',
-      observaciones: 'Registro de balance diario para ${stamped.fecha}',
+      observaciones: 'Registro de balance diario para $fechaTxt',
     );
     notifyListeners();
   }
 
-  void updateResumenDiario(ResumenDiario resumen) {
-    final index = _resumenesDiarios.indexWhere((r) => r.fecha == resumen.fecha);
-    if (index != -1) {
-      _resumenesDiarios[index] = resumen;
-      _logAudit(
-        hoja: 'resumen_diario',
-        celda: 'A${index + 2}',
-        valorAnterior: 'Balance ${resumen.fecha}',
-        valorNuevo: 'Actualizado: USD ${resumen.totalUsd}, Bs ${resumen.totalBs}',
-        accion: 'actualizacion_resumen_diario',
-        norma: 'COBIT 2019',
-        observaciones: 'Ajuste manual al cierre ${resumen.fecha}',
-      );
-      notifyListeners();
+  int _indiceResumenPorId(String id) =>
+      id.isEmpty ? -1 : _resumenesDiarios.indexWhere((r) => r.id == id);
+
+  /// Actualiza los montos del cierre [resumen].id. La fecha y la
+  /// organización no cambian.
+  Future<void> updateResumenDiario(ResumenDiario resumen) async {
+    final index = _indiceResumenPorId(resumen.id);
+    if (index == -1) {
+      throw ArgumentError('No se encontró el cierre. Actualizá la lista e intentá de nuevo.');
     }
+    final anterior = _resumenesDiarios[index];
+    final actualizado = resumen.copyWith(
+      fecha: anterior.fecha,
+      organizacionId: anterior.organizacionId,
+    );
+    _resumenesDiarios[index] = actualizado;
+    _logAudit(
+      hoja: 'resumen_diario',
+      celda: 'A${index + 2}',
+      valorAnterior: '${anterior.id}: USD ${anterior.totalUsd}, Bs ${anterior.totalBs}',
+      valorNuevo: '${actualizado.id}: USD ${actualizado.totalUsd}, Bs ${actualizado.totalBs}',
+      accion: 'actualizacion_resumen_diario',
+      norma: 'COBIT 2019',
+      observaciones: 'Ajuste manual al cierre ${actualizado.id} (${actualizado.fechaIso})',
+    );
+    notifyListeners();
+    await _sincronizarConRollback(
+      {'action': 'update', 'sheet': 'resumen_diario', 'id': actualizado.id, 'data': actualizado.toMap()},
+      revertir: () {
+        final i = _resumenesDiarios.indexOf(actualizado);
+        if (i != -1) _resumenesDiarios[i] = anterior;
+      },
+    );
   }
 
-  void deleteResumenDiario(DateTime fecha) {
-    final index = _resumenesDiarios.indexWhere((r) => r.fecha == fecha);
-    if (index != -1) {
-      _resumenesDiarios.removeAt(index);
-      _logAudit(
-        hoja: 'resumen_diario',
-        celda: 'A${index + 2}',
-        valorAnterior: 'Balance $fecha',
-        valorNuevo: 'ELIMINADO',
-        accion: 'eliminacion_resumen_diario',
-        norma: 'COBIT 2019',
-        observaciones: 'Eliminado cierre de fecha $fecha',
-      );
-      notifyListeners();
+  Future<void> deleteResumenDiario(String id) async {
+    final index = _indiceResumenPorId(id);
+    if (index == -1) {
+      throw ArgumentError('No se encontró el cierre a eliminar.');
     }
+    final eliminado = _resumenesDiarios.removeAt(index);
+    _logAudit(
+      hoja: 'resumen_diario',
+      celda: 'A${index + 2}',
+      valorAnterior: '${eliminado.id} (${eliminado.fechaIso})',
+      valorNuevo: 'ELIMINADO',
+      accion: 'eliminacion_resumen_diario',
+      norma: 'COBIT 2019',
+      observaciones: 'Eliminado cierre ${eliminado.id} de fecha ${eliminado.fechaIso}',
+    );
+    notifyListeners();
+    await _sincronizarConRollback(
+      {
+        'action': 'delete',
+        'sheet': 'resumen_diario',
+        'id': eliminado.id,
+        'data': {'organizacion_id': eliminado.organizacionId},
+      },
+      revertir: () => _resumenesDiarios.insert(index.clamp(0, _resumenesDiarios.length), eliminado),
+    );
   }
 
   // ===========================================================================
   // CRUD 6: CUARENTENA (hoja cuarentena)
   // ===========================================================================
 
-  void addCuarentena(RegistroCuarentena item) {
-    final stamped = RegistroCuarentena(
-      idRegistroOriginal: item.idRegistroOriginal,
-      hojaOrigen: item.hojaOrigen,
-      fechaDeteccion: item.fechaDeteccion,
-      motivoCuarentena: item.motivoCuarentena,
-      datosOriginalesJson: item.datosOriginalesJson,
-      estado: item.estado,
-      resolucion: item.resolucion,
-      hashEvidencia: item.hashEvidencia,
-      organizacionId: _currentOrganizacionId ?? '67774411-6aa1-4aa3-a4b2-d3fc6913b768',
-    );
+  int _indicePorId<T>(List<T> lista, String id, String Function(T) idDe) =>
+      id.isEmpty ? -1 : lista.indexWhere((e) => idDe(e) == id);
+
+  /// Error si [organizacionId] no es la organización actual (R6).
+  void _verificarOrganizacionActual(String organizacionId) {
+    if (organizacionId != _orgActualOrDefault) {
+      throw ArgumentError('El registro no pertenece a esta organización.');
+    }
+  }
+
+  Future<void> addCuarentena(RegistroCuarentena item) async {
+    final errores = item.errores;
+    if (errores.isNotEmpty) throw ArgumentError(errores.values.first);
+    final stamped = item.copyWith(id: '', organizacionId: _orgActualOrDefault);
     _cuarentenas.insert(0, stamped);
+    notifyListeners();
+    final id = await _crearConRollback(
+      'cuarentena',
+      stamped.toMap(),
+      revertir: () => _cuarentenas.remove(stamped),
+    );
+    final i = _cuarentenas.indexOf(stamped);
+    if (i != -1) _cuarentenas[i] = stamped.copyWith(id: id);
     _logAudit(
       hoja: 'cuarentena',
       celda: 'A${_cuarentenas.length + 1}',
       valorAnterior: 'null',
-      valorNuevo: '${stamped.idRegistroOriginal} (${stamped.motivoCuarentena})',
+      valorNuevo: '$id: ${stamped.idRegistroOriginal} (${stamped.motivoCuarentena})',
       accion: 'ingreso_cuarentena',
       norma: 'COBIT 2019 DSS05',
       observaciones: 'Anomalía aislada desde hoja ${stamped.hojaOrigen}',
@@ -2094,48 +2165,73 @@ class SheetsDataService extends ChangeNotifier {
     notifyListeners();
   }
 
-  void updateCuarentena(RegistroCuarentena item) {
-    final index = _cuarentenas.indexWhere((c) => c.idRegistroOriginal == item.idRegistroOriginal);
-    if (index != -1) {
-      _cuarentenas[index] = item;
-      _logAudit(
-        hoja: 'cuarentena',
-        celda: 'F${index + 2}',
-        valorAnterior: 'Estado previo',
-        valorNuevo: '${item.estado}: ${item.resolucion}',
-        accion: 'resolucion_cuarentena',
-        norma: 'COBIT 2019 DSS05',
-        observaciones: 'Actualizada resolución para registro ${item.idRegistroOriginal}',
-      );
-      notifyListeners();
-    }
+  /// Actualiza estado y resolución del registro [item].id.
+  Future<void> updateCuarentena(RegistroCuarentena item) async {
+    // Al resolver solo cambian estado y resolución: no se revalidan los datos
+    // originales (registros viejos pueden tener un JSON mal formado).
+    final errorEstado = item.errores['estado'];
+    if (errorEstado != null) throw ArgumentError(errorEstado);
+    final index = _indicePorId(_cuarentenas, item.id, (c) => c.id);
+    if (index == -1) throw ArgumentError('No se encontró el registro en cuarentena.');
+    final anterior = _cuarentenas[index];
+    _verificarOrganizacionActual(anterior.organizacionId);
+    final actualizado = anterior.copyWith(estado: item.estado, resolucion: item.resolucion);
+    _cuarentenas[index] = actualizado;
+    _logAudit(
+      hoja: 'cuarentena',
+      celda: 'G${index + 2}',
+      valorAnterior: '${anterior.estado}: ${anterior.resolucion}',
+      valorNuevo: '${actualizado.estado}: ${actualizado.resolucion}',
+      accion: 'resolucion_cuarentena',
+      norma: 'COBIT 2019 DSS05',
+      observaciones: 'Actualizada resolución del registro ${actualizado.id}',
+    );
+    notifyListeners();
+    await _sincronizarConRollback(
+      {'action': 'update', 'sheet': 'cuarentena', 'id': actualizado.id, 'data': actualizado.toMap()},
+      revertir: () {
+        final i = _cuarentenas.indexOf(actualizado);
+        if (i != -1) _cuarentenas[i] = anterior;
+      },
+    );
   }
 
-  void deleteCuarentena(String idOriginal) {
-    final index = _cuarentenas.indexWhere((c) => c.idRegistroOriginal == idOriginal);
-    if (index != -1) {
-      _cuarentenas.removeAt(index);
-      _logAudit(
-        hoja: 'cuarentena',
-        celda: 'A${index + 2}',
-        valorAnterior: 'Registro $idOriginal',
-        valorNuevo: 'PURGADO',
-        accion: 'descarte_cuarentena',
-        norma: 'COBIT 2019 DSS05',
-        observaciones: 'Registro purgado de cuarentena',
-      );
-      notifyListeners();
-    }
+  Future<void> deleteCuarentena(String id) async {
+    final index = _indicePorId(_cuarentenas, id, (c) => c.id);
+    if (index == -1) throw ArgumentError('No se encontró el registro en cuarentena.');
+    final eliminado = _cuarentenas[index];
+    _verificarOrganizacionActual(eliminado.organizacionId);
+    _cuarentenas.removeAt(index);
+    _logAudit(
+      hoja: 'cuarentena',
+      celda: 'A${index + 2}',
+      valorAnterior: 'Registro ${eliminado.id}',
+      valorNuevo: 'PURGADO',
+      accion: 'descarte_cuarentena',
+      norma: 'COBIT 2019 DSS05',
+      observaciones: 'Registro purgado de cuarentena',
+    );
+    notifyListeners();
+    await _sincronizarConRollback(
+      {'action': 'delete', 'sheet': 'cuarentena', 'id': id, 'data': {'organizacion_id': eliminado.organizacionId}},
+      revertir: () => _cuarentenas.insert(index.clamp(0, _cuarentenas.length), eliminado),
+    );
   }
 
   // ===========================================================================
-  // CRUD 7: AUDIT LOG (hoja audit_log)
+  // CRUD 7: AUDIT LOG (hoja audit_log) — inmutable: solo altas
   // ===========================================================================
 
-  void addAuditLogManual(AuditLog log) {
+  /// Registra una entrada manual en la bitácora. La bitácora no se edita ni
+  /// se borra (ISO/IEC 27001 §8.15): el script lo rechaza.
+  Future<void> addAuditLogManual(AuditLog log) async {
+    final usuario = _currentUsuarioEmail;
+    if (usuario == null) {
+      throw StateError('No hay un usuario identificado para firmar la entrada.');
+    }
     final stamped = AuditLog(
       timestampIso8601: log.timestampIso8601,
-      usuario: log.usuario,
+      usuario: usuario,
       hoja: log.hoja,
       celda: log.celda,
       valorAnterior: log.valorAnterior,
@@ -2143,56 +2239,56 @@ class SheetsDataService extends ChangeNotifier {
       accion: log.accion,
       normaAplicada: log.normaAplicada,
       observaciones: log.observaciones,
-      organizacionId: _currentOrganizacionId ?? '67774411-6aa1-4aa3-a4b2-d3fc6913b768',
+      organizacionId: _orgActualOrDefault,
     );
     _auditLogs.insert(0, stamped);
     notifyListeners();
-  }
-
-  void updateAuditLog(int index, String nuevasObservaciones) {
-    if (index >= 0 && index < _auditLogs.length) {
-      final old = _auditLogs[index];
-      _auditLogs[index] = AuditLog(
-        timestampIso8601: old.timestampIso8601,
-        usuario: old.usuario,
-        hoja: old.hoja,
-        celda: old.celda,
-        valorAnterior: old.valorAnterior,
-        valorNuevo: old.valorNuevo,
-        accion: old.accion,
-        normaAplicada: old.normaAplicada,
-        observaciones: nuevasObservaciones,
-        organizacionId: old.organizacionId,
+    final id = await _crearConRollback(
+      'audit_log',
+      stamped.toMap(),
+      revertir: () => _auditLogs.remove(stamped),
+    );
+    final i = _auditLogs.indexOf(stamped);
+    if (i != -1) {
+      _auditLogs[i] = AuditLog(
+        id: id,
+        timestampIso8601: stamped.timestampIso8601,
+        usuario: stamped.usuario,
+        hoja: stamped.hoja,
+        celda: stamped.celda,
+        valorAnterior: stamped.valorAnterior,
+        valorNuevo: stamped.valorNuevo,
+        accion: stamped.accion,
+        normaAplicada: stamped.normaAplicada,
+        observaciones: stamped.observaciones,
+        organizacionId: stamped.organizacionId,
       );
-      notifyListeners();
     }
-  }
-
-  void deleteAuditLog(int index) {
-    if (index >= 0 && index < _auditLogs.length) {
-      _auditLogs.removeAt(index);
-      notifyListeners();
-    }
+    notifyListeners();
   }
 
   // ===========================================================================
   // CRUD 8: REPORTE MIGRACIÓN (hoja reporte_migracion)
   // ===========================================================================
 
-  void addReporteMigracion(ReporteMigracion rep) {
-    final stamped = ReporteMigracion(
-      metrica: rep.metrica,
-      valorEstado: rep.valorEstado,
-      normaAplicada: rep.normaAplicada,
-      observaciones: rep.observaciones,
-      organizacionId: _currentOrganizacionId ?? '67774411-6aa1-4aa3-a4b2-d3fc6913b768',
-    );
+  Future<void> addReporteMigracion(ReporteMigracion rep) async {
+    final errores = rep.errores;
+    if (errores.isNotEmpty) throw ArgumentError(errores.values.first);
+    final stamped = rep.copyWith(id: '', organizacionId: _orgActualOrDefault);
     _reportesMigracion.add(stamped);
+    notifyListeners();
+    final id = await _crearConRollback(
+      'reporte_migracion',
+      stamped.toMap(),
+      revertir: () => _reportesMigracion.remove(stamped),
+    );
+    final i = _reportesMigracion.indexOf(stamped);
+    if (i != -1) _reportesMigracion[i] = stamped.copyWith(id: id);
     _logAudit(
       hoja: 'reporte_migracion',
       celda: 'A${_reportesMigracion.length + 1}',
       valorAnterior: 'null',
-      valorNuevo: '${stamped.metrica}: ${stamped.valorEstado}',
+      valorNuevo: '$id ${stamped.metrica}: ${stamped.valorEstado}',
       accion: 'alta_control_migracion',
       norma: stamped.normaAplicada,
       observaciones: stamped.observaciones,
@@ -2200,58 +2296,83 @@ class SheetsDataService extends ChangeNotifier {
     notifyListeners();
   }
 
-  void updateReporteMigracion(int index, ReporteMigracion rep) {
-    if (index >= 0 && index < _reportesMigracion.length) {
-      _reportesMigracion[index] = rep;
-      _logAudit(
-        hoja: 'reporte_migracion',
-        celda: 'B${index + 2}',
-        valorAnterior: 'Modificado',
-        valorNuevo: rep.valorEstado,
-        accion: 'actualizacion_control_migracion',
-        norma: rep.normaAplicada,
-        observaciones: 'Ajuste en ${rep.metrica}',
-      );
-      notifyListeners();
-    }
+  Future<void> updateReporteMigracion(ReporteMigracion rep) async {
+    final errores = rep.errores;
+    if (errores.isNotEmpty) throw ArgumentError(errores.values.first);
+    final index = _indicePorId(_reportesMigracion, rep.id, (r) => r.id);
+    if (index == -1) throw ArgumentError('No se encontró el control de migración.');
+    final anterior = _reportesMigracion[index];
+    _verificarOrganizacionActual(anterior.organizacionId);
+    final actualizado = rep.copyWith(organizacionId: anterior.organizacionId);
+    _reportesMigracion[index] = actualizado;
+    _logAudit(
+      hoja: 'reporte_migracion',
+      celda: 'C${index + 2}',
+      valorAnterior: anterior.valorEstado,
+      valorNuevo: actualizado.valorEstado,
+      accion: 'actualizacion_control_migracion',
+      norma: actualizado.normaAplicada,
+      observaciones: 'Ajuste en ${actualizado.metrica}',
+    );
+    notifyListeners();
+    await _sincronizarConRollback(
+      {'action': 'update', 'sheet': 'reporte_migracion', 'id': actualizado.id, 'data': actualizado.toMap()},
+      revertir: () {
+        final i = _reportesMigracion.indexOf(actualizado);
+        if (i != -1) _reportesMigracion[i] = anterior;
+      },
+    );
   }
 
-  void deleteReporteMigracion(int index) {
-    if (index >= 0 && index < _reportesMigracion.length) {
-      final old = _reportesMigracion.removeAt(index);
-      _logAudit(
-        hoja: 'reporte_migracion',
-        celda: 'A${index + 2}',
-        valorAnterior: old.metrica,
-        valorNuevo: 'ELIMINADO',
-        accion: 'baja_control_migracion',
-        norma: old.normaAplicada,
-        observaciones: 'Control retirado del cuadro de mando',
-      );
-      notifyListeners();
-    }
+  Future<void> deleteReporteMigracion(String id) async {
+    final index = _indicePorId(_reportesMigracion, id, (r) => r.id);
+    if (index == -1) throw ArgumentError('No se encontró el control de migración.');
+    final eliminado = _reportesMigracion[index];
+    _verificarOrganizacionActual(eliminado.organizacionId);
+    _reportesMigracion.removeAt(index);
+    _logAudit(
+      hoja: 'reporte_migracion',
+      celda: 'A${index + 2}',
+      valorAnterior: eliminado.metrica,
+      valorNuevo: 'ELIMINADO',
+      accion: 'baja_control_migracion',
+      norma: eliminado.normaAplicada,
+      observaciones: 'Control retirado del cuadro de mando',
+    );
+    notifyListeners();
+    await _sincronizarConRollback(
+      {'action': 'delete', 'sheet': 'reporte_migracion', 'id': id, 'data': {'organizacion_id': eliminado.organizacionId}},
+      revertir: () => _reportesMigracion.insert(index.clamp(0, _reportesMigracion.length), eliminado),
+    );
   }
 
   // ===========================================================================
   // CRUD 9: CHECKLIST ISO (hoja checklist_iso)
   // ===========================================================================
 
-  void addChecklistIso(ChecklistISO check) {
-    final stamped = ChecklistISO(
-      nro: check.nro,
-      control: check.control,
-      norma: check.norma,
-      estado: check.estado,
-      evidencia: check.evidencia,
-      timestamp: check.timestamp,
-      organizacionId: _currentOrganizacionId ?? '67774411-6aa1-4aa3-a4b2-d3fc6913b768',
-    );
+  /// Siguiente nro de control (máximo + 1 entre todas las organizaciones,
+  /// igual que el servidor, que es quien lo asigna en definitiva).
+  int get nextChecklistNro =>
+      _checklistIsos.fold<int>(0, (m, c) => c.nro > m ? c.nro : m) + 1;
+
+  Future<void> addChecklistIso(ChecklistISO check) async {
+    final errores = check.errores;
+    if (errores.isNotEmpty) throw ArgumentError(errores.values.first);
+    final stamped = check.copyWith(id: '', nro: nextChecklistNro, organizacionId: _orgActualOrDefault);
     _checklistIsos.add(stamped);
+    notifyListeners();
+    final id = await _crearConRollback(
+      'checklist_iso',
+      stamped.toMap(),
+      revertir: () => _checklistIsos.remove(stamped),
+    );
+    final i = _checklistIsos.indexOf(stamped);
+    if (i != -1) _checklistIsos[i] = stamped.copyWith(id: id);
     _logAudit(
       hoja: 'checklist_iso',
       celda: 'A${_checklistIsos.length + 1}',
       valorAnterior: 'null',
-      valorNuevo: '${stamped.control} (${stamped.norma})',
+      valorNuevo: '$id ${stamped.control} (${stamped.norma})',
       accion: 'alta_requisito_iso',
       norma: stamped.norma,
       observaciones: stamped.evidencia,
@@ -2259,71 +2380,89 @@ class SheetsDataService extends ChangeNotifier {
     notifyListeners();
   }
 
-  void toggleChecklistEstado(int nro) {
-    final index = _checklistIsos.indexWhere((c) => c.nro == nro);
-    if (index != -1) {
-      final old = _checklistIsos[index];
-      final nuevoEstado = old.estado == '☑' ? '☐' : '☑';
-      _checklistIsos[index] = ChecklistISO(
-        nro: old.nro,
-        control: old.control,
-        norma: old.norma,
-        estado: nuevoEstado,
-        evidencia: old.evidencia,
-        timestamp: DateTime.now(),
-        organizacionId: old.organizacionId,
-      );
-      _logAudit(
-        hoja: 'checklist_iso',
-        celda: 'D${index + 2}',
-        valorAnterior: old.estado,
-        valorNuevo: nuevoEstado,
-        accion: 'cambio_estado_conformidad',
-        norma: old.norma,
-        observaciones: 'Control #${old.nro} marcado como $nuevoEstado',
-      );
-      _postToAppsScript({
-        'action': 'toggle_checklist',
-        'sheet': 'checklist_iso',
-        'nro': nro,
-        'estado': nuevoEstado,
-      });
-      notifyListeners();
-    }
+  Future<void> toggleChecklistEstado(String id) async {
+    final index = _indicePorId(_checklistIsos, id, (c) => c.id);
+    if (index == -1) throw ArgumentError('No se encontró el control.');
+    final anterior = _checklistIsos[index];
+    _verificarOrganizacionActual(anterior.organizacionId);
+    final nuevoEstado = anterior.estado == '☑' ? '☐' : '☑';
+    final actualizado = anterior.copyWith(estado: nuevoEstado, timestamp: DateTime.now());
+    _checklistIsos[index] = actualizado;
+    _logAudit(
+      hoja: 'checklist_iso',
+      celda: 'E${index + 2}',
+      valorAnterior: anterior.estado,
+      valorNuevo: nuevoEstado,
+      accion: 'cambio_estado_conformidad',
+      norma: anterior.norma,
+      observaciones: 'Control #${anterior.nro} marcado como $nuevoEstado',
+    );
+    notifyListeners();
+    await _sincronizarConRollback(
+      {'action': 'toggle_checklist', 'sheet': 'checklist_iso', 'id': id, 'estado': nuevoEstado},
+      revertir: () {
+        final i = _checklistIsos.indexOf(actualizado);
+        if (i != -1) _checklistIsos[i] = anterior;
+      },
+    );
   }
 
-  void updateChecklistIso(ChecklistISO check) {
-    final index = _checklistIsos.indexWhere((c) => c.nro == check.nro);
-    if (index != -1) {
-      _checklistIsos[index] = check;
-      _logAudit(
-        hoja: 'checklist_iso',
-        celda: 'B${index + 2}',
-        valorAnterior: 'Control #${check.nro}',
-        valorNuevo: '${check.control} | ${check.estado}',
-        accion: 'actualizacion_checklist',
-        norma: check.norma,
-        observaciones: check.evidencia,
-      );
-      notifyListeners();
-    }
+  /// Actualiza control, norma, evidencia y estado. La fecha de verificación
+  /// solo cambia si cambia el estado (antes se ponía "ahora" siempre).
+  Future<void> updateChecklistIso(ChecklistISO check) async {
+    final errores = check.errores;
+    if (errores.isNotEmpty) throw ArgumentError(errores.values.first);
+    final index = _indicePorId(_checklistIsos, check.id, (c) => c.id);
+    if (index == -1) throw ArgumentError('No se encontró el control.');
+    final anterior = _checklistIsos[index];
+    _verificarOrganizacionActual(anterior.organizacionId);
+    final actualizado = anterior.copyWith(
+      control: check.control,
+      norma: check.norma,
+      evidencia: check.evidencia,
+      estado: check.estado,
+      timestamp: check.estado != anterior.estado ? DateTime.now() : anterior.timestamp,
+    );
+    _checklistIsos[index] = actualizado;
+    _logAudit(
+      hoja: 'checklist_iso',
+      celda: 'C${index + 2}',
+      valorAnterior: 'Control #${anterior.nro}',
+      valorNuevo: '${actualizado.control} (${actualizado.estado})',
+      accion: 'actualizacion_checklist',
+      norma: actualizado.norma,
+      observaciones: 'Control #${actualizado.nro} actualizado',
+    );
+    notifyListeners();
+    await _sincronizarConRollback(
+      {'action': 'update', 'sheet': 'checklist_iso', 'id': actualizado.id, 'data': actualizado.toMap()},
+      revertir: () {
+        final i = _checklistIsos.indexOf(actualizado);
+        if (i != -1) _checklistIsos[i] = anterior;
+      },
+    );
   }
 
-  void deleteChecklistIso(int nro) {
-    final index = _checklistIsos.indexWhere((c) => c.nro == nro);
-    if (index != -1) {
-      final old = _checklistIsos.removeAt(index);
-      _logAudit(
-        hoja: 'checklist_iso',
-        celda: 'A${index + 2}',
-        valorAnterior: 'Control #${old.nro}: ${old.control}',
-        valorNuevo: 'ELIMINADO',
-        accion: 'eliminacion_checklist',
-        norma: old.norma,
-        observaciones: 'Requisito retirado del checklist',
-      );
-      notifyListeners();
-    }
+  Future<void> deleteChecklistIso(String id) async {
+    final index = _indicePorId(_checklistIsos, id, (c) => c.id);
+    if (index == -1) throw ArgumentError('No se encontró el control.');
+    final eliminado = _checklistIsos[index];
+    _verificarOrganizacionActual(eliminado.organizacionId);
+    _checklistIsos.removeAt(index);
+    _logAudit(
+      hoja: 'checklist_iso',
+      celda: 'A${index + 2}',
+      valorAnterior: 'Control #${eliminado.nro}: ${eliminado.control}',
+      valorNuevo: 'ELIMINADO',
+      accion: 'eliminacion_checklist',
+      norma: eliminado.norma,
+      observaciones: 'Requisito retirado del checklist',
+    );
+    notifyListeners();
+    await _sincronizarConRollback(
+      {'action': 'delete', 'sheet': 'checklist_iso', 'id': id, 'data': {'organizacion_id': eliminado.organizacionId}},
+      revertir: () => _checklistIsos.insert(index.clamp(0, _checklistIsos.length), eliminado),
+    );
   }
 
   // ===========================================================================
@@ -2488,7 +2627,8 @@ class SheetsDataService extends ChangeNotifier {
 
     _resumenesDiarios = [
       ResumenDiario(
-        fecha: DateTime(2026, 4, 3),
+        id: 'rd00000001',
+fecha: DateTime(2026, 4, 3),
         nroVentas: 1,
         totalBs: 9480.0,
         totalUsd: 20.0,
@@ -2502,7 +2642,8 @@ class SheetsDataService extends ChangeNotifier {
 
     _cuarentenas = [
       RegistroCuarentena(
-        idRegistroOriginal: '3c82e14c',
+        id: 'cq00000001',
+idRegistroOriginal: '3c82e14c',
         hojaOrigen: 'registro de ventas diarias',
         fechaDeteccion: DateTime.parse('2026-09-14T09:01:55.343995-04:00'),
         motivoCuarentena: 'Registro agregado insertado en tabla transaccional sin desglose de ítems',
@@ -2513,7 +2654,8 @@ class SheetsDataService extends ChangeNotifier {
         organizacionId: '67774411-6aa1-4aa3-a4b2-d3fc6913b768',
       ),
       RegistroCuarentena(
-        idRegistroOriginal: 'c5fcc173',
+        id: 'cq00000002',
+idRegistroOriginal: 'c5fcc173',
         hojaOrigen: 'registro de compras de dolares',
         fechaDeteccion: DateTime.parse('2026-09-14T09:01:55.343995-04:00'),
         motivoCuarentena: 'Hoja erróneamente nombrada conteniendo venta de pantalón. monto_bs=0 para valor_usd=20',
@@ -2527,7 +2669,8 @@ class SheetsDataService extends ChangeNotifier {
 
     _auditLogs = [
       AuditLog(
-        timestampIso8601: DateTime.parse('2026-09-14T09:01:55.343995-04:00'),
+        id: 'al00000001',
+timestampIso8601: DateTime.parse('2026-09-14T09:01:55.343995-04:00'),
         usuario: 'Auditor Forense ISO',
         hoja: 'global',
         celda: 'A1',
@@ -2539,7 +2682,8 @@ class SheetsDataService extends ChangeNotifier {
         organizacionId: '67774411-6aa1-4aa3-a4b2-d3fc6913b768',
       ),
       AuditLog(
-        timestampIso8601: DateTime.parse('2026-09-14T09:01:55.343995-04:00'),
+        id: 'al00000002',
+timestampIso8601: DateTime.parse('2026-09-14T09:01:55.343995-04:00'),
         usuario: 'Auditor Forense ISO',
         hoja: 'clientes',
         celda: 'A1:F2',
@@ -2554,21 +2698,24 @@ class SheetsDataService extends ChangeNotifier {
 
     _reportesMigracion = [
       const ReporteMigracion(
-        metrica: 'Integridad Referencial (FKs)',
+        id: 'rm00000001',
+metrica: 'Integridad Referencial (FKs)',
         valorEstado: '100% Conforme',
         normaAplicada: 'ISO 8000 §4.2',
         observaciones: '0 referencias huérfanas en clientes e inventario',
         organizacionId: '67774411-6aa1-4aa3-a4b2-d3fc6913b768',
       ),
       const ReporteMigracion(
-        metrica: 'Cumplimiento Formatos Internacionales',
+        id: 'rm00000002',
+metrica: 'Cumplimiento Formatos Internacionales',
         valorEstado: 'E.164 y ISO 8601',
         normaAplicada: 'RFC 4180 / ISO 8601',
         observaciones: 'Fechas estandarizadas en YYYY-MM-DD y teléfonos con prefijo de país',
         organizacionId: '67774411-6aa1-4aa3-a4b2-d3fc6913b768',
       ),
       const ReporteMigracion(
-        metrica: 'Seguridad y Cero Polling',
+        id: 'rm00000003',
+metrica: 'Seguridad y Cero Polling',
         valorEstado: 'Activo',
         normaAplicada: 'ISO/IEC 25010 / ISO 27001',
         observaciones: 'Actualizaciones bajo demanda manual sin temporizadores periódicos',
@@ -2578,7 +2725,8 @@ class SheetsDataService extends ChangeNotifier {
 
     _checklistIsos = [
       ChecklistISO(
-        nro: 1,
+        id: 'ck00000001',
+nro: 1,
         control: 'Backup verificado en 3 formatos (XLSX, CSV, JSON)',
         norma: 'ISO/IEC 27001 §8.13',
         estado: '☑',
@@ -2587,7 +2735,8 @@ class SheetsDataService extends ChangeNotifier {
         organizacionId: '67774411-6aa1-4aa3-a4b2-d3fc6913b768',
       ),
       ChecklistISO(
-        nro: 2,
+        id: 'ck00000002',
+nro: 2,
         control: 'Hash SHA-256 original registrado en bitácora',
         norma: 'NIST SP 800-53',
         estado: '☑',
@@ -2596,7 +2745,8 @@ class SheetsDataService extends ChangeNotifier {
         organizacionId: '67774411-6aa1-4aa3-a4b2-d3fc6913b768',
       ),
       ChecklistISO(
-        nro: 3,
+        id: 'ck00000003',
+nro: 3,
         control: '0 encabezados duplicados en 9 hojas',
         norma: 'ISO 8000 §4.1',
         estado: '☑',
@@ -2605,7 +2755,8 @@ class SheetsDataService extends ChangeNotifier {
         organizacionId: '67774411-6aa1-4aa3-a4b2-d3fc6913b768',
       ),
       ChecklistISO(
-        nro: 4,
+        id: 'ck00000004',
+nro: 4,
         control: 'Accesibilidad y Tap Targets mínimos 48x48',
         norma: 'WCAG 2.2 AA',
         estado: '☑',
@@ -2617,7 +2768,8 @@ class SheetsDataService extends ChangeNotifier {
 
     _seguridad = [
       const Seguridad(
-        biometrico: true,
+        id: 'sg00000001',
+biometrico: true,
         desbloqueoFacial: false,
         dosFactores: false,
         usuarioEmail: 'neidapulgar1989@gmail.com',
@@ -2644,11 +2796,13 @@ class SheetsDataService extends ChangeNotifier {
 
     _usuarioOrganizaciones = [
       const UsuarioOrganizacion(
-        usuarioEmail: 'neidapulgar1989@gmail.com',
+        id: 'uo00000001',
+usuarioEmail: 'neidapulgar1989@gmail.com',
         organizacionId: '67774411-6aa1-4aa3-a4b2-d3fc6913b768',
       ),
       const UsuarioOrganizacion(
-        usuarioEmail: 'xhnl21@gmail.com',
+        id: 'uo00000002',
+usuarioEmail: 'xhnl21@gmail.com',
         organizacionId: '67774411-6aa1-4aa3-a4b2-d3fc6913b768',
       ),
     ];
@@ -2693,7 +2847,7 @@ class SheetsDataService extends ChangeNotifier {
   /// con Google, sin paso adicional). Es una preferencia por usuario, no por
   /// organización: así, un dispositivo incompatible de un usuario no afecta
   /// el método configurado por otros usuarios de la misma organización.
-  void setMetodoSeguridad(String? metodo) {
+  Future<void> setMetodoSeguridad(String? metodo) async {
     assert(
       metodo == null || _etiquetasMetodoSeguridad.containsKey(metodo),
       'Método de seguridad inválido: $metodo',
@@ -2701,6 +2855,7 @@ class SheetsDataService extends ChangeNotifier {
 
     final old = seguridad;
     final nuevo = Seguridad(
+      id: old.id,
       usuarioEmail: _currentUsuarioEmail ?? old.usuarioEmail,
       biometrico: metodo == 'biometrico',
       desbloqueoFacial: metodo == 'desbloqueo_facial',
@@ -2712,22 +2867,25 @@ class SheetsDataService extends ChangeNotifier {
     final actual = _etiquetasMetodoSeguridad[metodo] ?? 'Ninguno';
     _logAudit(
       hoja: 'seguridad',
-      celda: 'A2:C2',
+      celda: 'B2:D2',
       valorAnterior: anterior,
       valorNuevo: actual,
       accion: 'cambio_metodo_seguridad',
       norma: 'ISO/IEC 27001 §9.4',
       observaciones: 'Método de seguridad activo cambiado de "$anterior" a "$actual"',
     );
-    _postToAppsScript({
-      'action': 'set_metodo_seguridad',
-      'sheet': 'seguridad',
-      'biometrico': nuevo.biometrico,
-      'desbloqueo_facial': nuevo.desbloqueoFacial,
-      'dos_factores': nuevo.dosFactores,
-      'usuario_email': nuevo.usuarioEmail,
-    });
     notifyListeners();
+    await _sincronizarConRollback(
+      {
+        'action': 'set_metodo_seguridad',
+        'sheet': 'seguridad',
+        'biometrico': nuevo.biometrico,
+        'desbloqueo_facial': nuevo.desbloqueoFacial,
+        'dos_factores': nuevo.dosFactores,
+        'usuario_email': nuevo.usuarioEmail,
+      },
+      revertir: () => _replaceSeguridadForCurrentUsuario(old),
+    );
   }
 
   // ===========================================================================
@@ -2752,99 +2910,158 @@ class SheetsDataService extends ChangeNotifier {
   }
 
   /// Registra un nuevo usuario autorizado y su membresía a [organizacionId].
+  /// Devuelve `false` (sin dejar nada a medias) si Sheets no lo confirma.
   Future<bool> addUsuario(Usuario usuario, {required String organizacionId}) async {
-    _usuarios.add(usuario);
-    final membresia = UsuarioOrganizacion(usuarioEmail: usuario.email, organizacionId: organizacionId);
+    final provisional = usuario.copyWith(email: usuario.email.trim().toLowerCase());
+    if (!RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(provisional.email)) {
+      throw ArgumentError('Correo electrónico inválido: "${provisional.email}".');
+    }
+    if (_usuarios.any((u) => u.email.trim().toLowerCase() == provisional.email)) {
+      throw ArgumentError('El correo ${provisional.email} ya tiene acceso.');
+    }
+    if (!_organizaciones.any((o) => o.id == organizacionId)) {
+      throw ArgumentError('La organización elegida ya no existe.');
+    }
+    final membresia = UsuarioOrganizacion(usuarioEmail: provisional.email, organizacionId: organizacionId);
+    _usuarios.add(provisional);
     _usuarioOrganizaciones.add(membresia);
     _logAudit(
       hoja: 'usuarios',
       celda: 'A${_usuarios.length + 1}',
       valorAnterior: 'null',
-      valorNuevo: '${usuario.id} (${usuario.email})',
+      valorNuevo: provisional.email,
       accion: 'alta_usuario',
       norma: 'ISO/IEC 27001 §9.2',
       observaciones: 'Alta de usuario autorizado, organización $organizacionId',
     );
     notifyListeners();
 
-    final resultados = await Future.wait([
-      _crearEnServidor('usuarios', usuario.toMap()),
-      _postToAppsScript({'action': 'create', 'sheet': 'usuario_organizacion', 'data': membresia.toMap()}),
-    ]);
-    final idReal = resultados[0] as String?;
-    if (idReal != null && idReal != usuario.id) {
-      final idx = _usuarios.indexWhere((u) => u.id == usuario.id);
-      if (idx != -1) {
-        _usuarios[idx] = Usuario(
-          id: idReal,
-          nombre: usuario.nombre,
-          email: usuario.email,
-          tipoDocumento: usuario.tipoDocumento,
-          cedula: usuario.cedula,
-        );
-        notifyListeners();
-      }
+    void revertirTodo() {
+      _usuarios.remove(provisional);
+      _usuarioOrganizaciones.remove(membresia);
     }
-    return idReal != null && (resultados[1] as bool);
+
+    try {
+      final datosUsuario = Map.of(provisional.toMap())..remove('id'); // lo genera el servidor
+      final idUsuario = await _crearConRollback('usuarios', datosUsuario, revertir: revertirTodo);
+      final String idMembresia;
+      try {
+        idMembresia = await _crearConRollback('usuario_organizacion', membresia.toMap(), revertir: revertirTodo);
+      } on StateError {
+        // Sin membresía el usuario no puede entrar: se deshace también el alta.
+        try {
+          await _sincronizarConRollback(
+            {'action': 'delete', 'sheet': 'usuarios', 'id': idUsuario},
+            revertir: () {},
+          );
+        } on StateError {
+          Logger.error('SheetsDataService: quedó el usuario $idUsuario sin membresía en Sheets.');
+        }
+        return false;
+      }
+      final iU = _usuarios.indexOf(provisional);
+      if (iU != -1) _usuarios[iU] = provisional.copyWith(id: idUsuario);
+      final iM = _usuarioOrganizaciones.indexOf(membresia);
+      if (iM != -1) _usuarioOrganizaciones[iM] = membresia.copyWith(id: idMembresia);
+      notifyListeners();
+      return true;
+    } on StateError {
+      return false;
+    }
   }
 
-  /// Actualiza nombre y organización de un usuario existente. El email es
-  /// inmutable una vez creado (es la clave usada por `seguridad` y por el
-  /// login) para evitar dejar huérfanas otras filas que lo referencian.
+  /// Actualiza nombre/documento y organización de un usuario. El email es
+  /// inmutable (es la clave de `seguridad` y del login). Devuelve `false` si
+  /// Sheets no confirma alguno de los dos cambios (el que falló se revierte).
   Future<bool> updateUsuario(Usuario usuario, {required String organizacionId}) async {
     final index = _usuarios.indexWhere((u) => u.id == usuario.id);
     if (index == -1) return false;
-    _usuarios[index] = usuario;
+    if (!_organizaciones.any((o) => o.id == organizacionId)) {
+      throw ArgumentError('La organización elegida ya no existe.');
+    }
+    final anterior = _usuarios[index];
+    final actualizado = usuario.copyWith(email: anterior.email);
+    _usuarios[index] = actualizado;
 
-    final membresiaExistente = _membresiaDe(usuario.email);
-    final membresia = UsuarioOrganizacion(usuarioEmail: usuario.email, organizacionId: organizacionId);
-    final relIndex = _usuarioOrganizaciones.indexWhere((r) => r.usuarioEmail == usuario.email);
-    if (relIndex != -1) {
-      _usuarioOrganizaciones[relIndex] = membresia;
+    final membresiaAnterior = _membresiaDe(anterior.email);
+    final membresiaNueva = (membresiaAnterior ??
+            UsuarioOrganizacion(usuarioEmail: anterior.email, organizacionId: organizacionId))
+        .copyWith(organizacionId: organizacionId);
+    if (membresiaAnterior != null) {
+      _usuarioOrganizaciones[_usuarioOrganizaciones.indexOf(membresiaAnterior)] = membresiaNueva;
     } else {
-      _usuarioOrganizaciones.add(membresia);
+      _usuarioOrganizaciones.add(membresiaNueva);
     }
 
     _logAudit(
       hoja: 'usuarios',
       celda: 'A${index + 2}',
-      valorAnterior: usuario.id,
-      valorNuevo: '${usuario.nombre} → org $organizacionId',
+      valorAnterior: '${anterior.nombre} (org ${membresiaAnterior?.organizacionId ?? '-'})',
+      valorNuevo: '${actualizado.nombre} (org $organizacionId)',
       accion: 'actualizacion_usuario',
       norma: 'ISO/IEC 27001 §9.2',
       observaciones: 'Edición de usuario vía App Móvil',
     );
     notifyListeners();
 
-    final resultados = await Future.wait([
-      _postToAppsScript({
-        'action': 'update',
-        'sheet': 'usuarios',
-        'id': usuario.id,
-        'data': usuario.toMap(),
-      }),
-      _postToAppsScript({
-        'action': membresiaExistente != null ? 'update' : 'create',
-        'sheet': 'usuario_organizacion',
-        'id': usuario.email,
-        'data': membresia.toMap(),
-      }),
-    ]);
-    return resultados.every((ok) => ok);
+    void revertirMembresia() {
+      final i = _usuarioOrganizaciones.indexOf(membresiaNueva);
+      if (i == -1) return;
+      if (membresiaAnterior != null) {
+        _usuarioOrganizaciones[i] = membresiaAnterior;
+      } else {
+        _usuarioOrganizaciones.removeAt(i);
+      }
+    }
+
+    try {
+      await _sincronizarConRollback(
+        {'action': 'update', 'sheet': 'usuarios', 'id': actualizado.id, 'data': actualizado.toMap()},
+        revertir: () {
+          final i = _usuarios.indexOf(actualizado);
+          if (i != -1) _usuarios[i] = anterior;
+          revertirMembresia();
+        },
+      );
+      if (membresiaAnterior == null || membresiaAnterior.id.isEmpty) {
+        // Sin membresía confirmada en Sheets: se crea.
+        final id = await _crearConRollback('usuario_organizacion', membresiaNueva.copyWith(id: '').toMap(),
+            revertir: revertirMembresia);
+        final i = _usuarioOrganizaciones.indexOf(membresiaNueva);
+        if (i != -1) _usuarioOrganizaciones[i] = membresiaNueva.copyWith(id: id);
+        notifyListeners();
+      } else if (membresiaAnterior.organizacionId != organizacionId) {
+        await _sincronizarConRollback(
+          {
+            'action': 'update',
+            'sheet': 'usuario_organizacion',
+            'id': membresiaNueva.id,
+            'data': membresiaNueva.toMap(),
+          },
+          revertir: revertirMembresia,
+        );
+      }
+      return true;
+    } on StateError {
+      return false;
+    }
   }
 
-  /// Elimina un usuario y su membresía a organización. No elimina su fila de
-  /// `seguridad` (queda huérfana pero inofensiva: nadie puede volver a
-  /// loguearse con ese email para usarla).
+  /// Elimina un usuario y su membresía. Su fila de `seguridad` queda (es
+  /// inofensiva: sin usuario ni membresía nadie puede entrar con ese email).
+  /// Devuelve `false` si Sheets no lo confirma (y se revierte).
   Future<bool> deleteUsuario(Usuario usuario) async {
-    _usuarios.removeWhere((u) => u.id == usuario.id);
-    final teniaMembresia = _usuarioOrganizaciones.any((r) => r.usuarioEmail == usuario.email);
-    _usuarioOrganizaciones.removeWhere((r) => r.usuarioEmail == usuario.email);
+    final index = _usuarios.indexWhere((u) => u.id == usuario.id);
+    if (index == -1) return false;
+    final eliminado = _usuarios.removeAt(index);
+    final membresia = _membresiaDe(eliminado.email);
+    final indexMembresia = membresia == null ? -1 : _usuarioOrganizaciones.indexOf(membresia);
+    if (indexMembresia != -1) _usuarioOrganizaciones.removeAt(indexMembresia);
 
     _logAudit(
       hoja: 'usuarios',
-      celda: 'A-',
-      valorAnterior: '${usuario.id} (${usuario.email})',
+      celda: 'A${index + 2}',
+      valorAnterior: '${eliminado.id} (${eliminado.email})',
       valorNuevo: 'ELIMINADO',
       accion: 'eliminacion_usuario',
       norma: 'GDPR Art. 17 / ISO 27001',
@@ -2852,12 +3069,26 @@ class SheetsDataService extends ChangeNotifier {
     );
     notifyListeners();
 
-    final resultados = await Future.wait([
-      _postToAppsScript({'action': 'delete', 'sheet': 'usuarios', 'id': usuario.id}),
-      if (teniaMembresia)
-        _postToAppsScript({'action': 'delete', 'sheet': 'usuario_organizacion', 'id': usuario.email}),
-    ]);
-    return resultados.every((ok) => ok);
+    try {
+      // Primero la membresía: sin ella el usuario ya no puede entrar.
+      if (membresia != null && membresia.id.isNotEmpty) {
+        await _sincronizarConRollback(
+          {'action': 'delete', 'sheet': 'usuario_organizacion', 'id': membresia.id},
+          revertir: () {
+            _usuarios.insert(index.clamp(0, _usuarios.length), eliminado);
+            _usuarioOrganizaciones.insert(indexMembresia.clamp(0, _usuarioOrganizaciones.length), membresia);
+          },
+        );
+      }
+      await _sincronizarConRollback(
+        {'action': 'delete', 'sheet': 'usuarios', 'id': eliminado.id},
+        // La membresía ya se borró en Sheets: localmente queda sin acceso.
+        revertir: () => _usuarios.insert(index.clamp(0, _usuarios.length), eliminado),
+      );
+      return true;
+    } on StateError {
+      return false;
+    }
   }
 
   // ===========================================================================
@@ -2879,9 +3110,19 @@ class SheetsDataService extends ChangeNotifier {
   int usuariosEnOrganizacion(String organizacionId) =>
       _usuarioOrganizaciones.where((r) => r.organizacionId == organizacionId).length;
 
-  Future<bool> addOrganizacion(String nombre) async {
-    final nuevo = Organizacion(id: _generarOrganizacionId(), nombre: nombre);
+  /// Crea la organización (UUID v4 generado acá: única excepción a R1).
+  /// Lanza [ArgumentError] si el nombre está vacío o repetido, y
+  /// [StateError] (sin dejar nada) si Sheets no la confirma.
+  Future<void> addOrganizacion(String nombre) async {
+    final limpio = nombre.trim();
+    if (limpio.isEmpty) throw ArgumentError('El nombre de la organización es obligatorio.');
+    if (_organizaciones.any((o) => o.nombre.trim().toLowerCase() == limpio.toLowerCase())) {
+      throw ArgumentError('Ya existe una organización llamada "$limpio".');
+    }
+    final nuevo = Organizacion(id: _generarOrganizacionId(), nombre: limpio);
     _organizaciones.add(nuevo);
+    notifyListeners();
+    await _crearConRollback('organizaciones', nuevo.toMap(), revertir: () => _organizaciones.remove(nuevo));
     _logAudit(
       hoja: 'organizaciones',
       celda: 'A${_organizaciones.length + 1}',
@@ -2892,62 +3133,107 @@ class SheetsDataService extends ChangeNotifier {
       observaciones: 'Alta de organización vía App Móvil',
     );
     notifyListeners();
-    return _postToAppsScript({
-      'action': 'create',
-      'sheet': 'organizaciones',
-      'data': nuevo.toMap(),
-    });
   }
 
-  Future<bool> updateOrganizacion(Organizacion organizacion) async {
+  Future<void> updateOrganizacion(Organizacion organizacion) async {
     final index = _organizaciones.indexWhere((o) => o.id == organizacion.id);
-    if (index == -1) return false;
-    _organizaciones[index] = organizacion;
+    if (index == -1) throw ArgumentError('No se encontró la organización.');
+    final limpio = organizacion.nombre.trim();
+    if (limpio.isEmpty) throw ArgumentError('El nombre de la organización es obligatorio.');
+    if (_organizaciones.any((o) => o.id != organizacion.id && o.nombre.trim().toLowerCase() == limpio.toLowerCase())) {
+      throw ArgumentError('Ya existe una organización llamada "$limpio".');
+    }
+    final old = _organizaciones[index];
+    final actualizada = Organizacion(id: old.id, nombre: limpio);
+    if (actualizada.nombre == old.nombre) return; // nada que guardar
+    _organizaciones[index] = actualizada;
     _logAudit(
       hoja: 'organizaciones',
       celda: 'A${index + 2}',
-      valorAnterior: organizacion.id,
-      valorNuevo: organizacion.nombre,
+      valorAnterior: old.nombre,
+      valorNuevo: actualizada.nombre,
       accion: 'actualizacion_organizacion',
       norma: 'ISO/IEC 27001 §9.2',
       observaciones: 'Edición de organización vía App Móvil',
     );
     notifyListeners();
-    return _postToAppsScript({
-      'action': 'update',
-      'sheet': 'organizaciones',
-      'id': organizacion.id,
-      'data': organizacion.toMap(),
-    });
+    await _sincronizarConRollback(
+      {'action': 'update', 'sheet': 'organizaciones', 'id': actualizada.id, 'data': actualizada.toMap()},
+      revertir: () {
+        final i = _organizaciones.indexOf(actualizada);
+        if (i != -1) _organizaciones[i] = old;
+      },
+    );
   }
 
-  /// Elimina una organización. Se rechaza si todavía tiene usuarios
-  /// asociados (ver [usuariosEnOrganizacion]), para no dejar membresías
-  /// huérfanas apuntando a una organización inexistente.
-  Future<bool> deleteOrganizacion(String organizacionId) async {
-    if (usuariosEnOrganizacion(organizacionId) > 0) {
-      Logger.warning(
-        'SheetsDataService: Se intentó eliminar la organización $organizacionId con usuarios activos; operación rechazada.',
-      );
-      return false;
+  /// Elimina una organización. Se rechaza si es la organización en uso o si
+  /// todavía tiene usuarios (dejaría membresías huérfanas).
+  /// Motivo por el que [organizacionId] no se puede eliminar, o `null`.
+  /// Una organización con datos propios dejaría esas filas huérfanas (y sus
+  /// tasas manuales pueden estar referenciadas por ventas y abonos).
+  String? motivoNoEliminableOrganizacion(String organizacionId) {
+    if (organizacionId == _currentOrganizacionId) {
+      return 'Es la organización en la que estás trabajando.';
     }
-    final removed = _organizaciones.where((o) => o.id == organizacionId).toList();
+    final usuarios = usuariosEnOrganizacion(organizacionId);
+    if (usuarios > 0) {
+      return 'Tiene $usuarios ${usuarios == 1 ? 'usuario' : 'usuarios'}. Movelos primero.';
+    }
+    final datos = <String>[
+      for (final (n, singular, plural) in [
+        (_clientes.where((c) => c.organizacionId == organizacionId).length, 'cliente', 'clientes'),
+        (_productos.where((p) => p.organizacionId == organizacionId).length, 'producto', 'productos'),
+        (_ventas.where((v) => v.organizacionId == organizacionId).length, 'venta', 'ventas'),
+        (_comprasDivisas.where((c) => c.organizacionId == organizacionId).length, 'compra de divisas', 'compras de divisas'),
+      ])
+        if (n > 0) '$n ${n == 1 ? singular : plural}',
+    ];
+    if (datos.isNotEmpty) return 'Tiene ${datos.join(', ')}.';
+    return null;
+  }
+
+  /// Elimina la organización junto con su moneda base y sus tasas manuales,
+  /// en un solo lote atómico (antes quedaban filas huérfanas en
+  /// `moneda_organizacion` y `tasas`). Lanza [ArgumentError] si no se puede
+  /// eliminar y [StateError] si Sheets no lo confirma; los datos locales se
+  /// tocan solo después de la confirmación.
+  Future<void> deleteOrganizacion(String organizacionId) async {
+    final motivo = motivoNoEliminableOrganizacion(organizacionId);
+    if (motivo != null) throw ArgumentError('No se puede eliminar la organización. $motivo');
+    final index = _organizaciones.indexWhere((o) => o.id == organizacionId);
+    if (index == -1) throw ArgumentError('No se encontró la organización.');
+    final old = _organizaciones[index];
+    final monedas = _monedasOrganizacion.where((m) => m.organizacionId == organizacionId).toList();
+    final tasasManuales =
+        _tasas.where((t) => t.fuente == 'manual' && t.organizacionId == organizacionId).toList();
+
+    final res = await executeBatchTransaction(BatchTransaction(
+      transactionId: 'tx_baja_org_${DateTime.now().millisecondsSinceEpoch}',
+      operations: [
+        for (final m in monedas)
+          if (m.id.isNotEmpty) BatchOperation.delete(sheet: 'moneda_organizacion', id: m.id),
+        for (final t in tasasManuales)
+          if (t.id.isNotEmpty) BatchOperation.delete(sheet: 'tasas', id: t.id),
+        BatchOperation.delete(sheet: 'organizaciones', id: organizacionId),
+      ],
+    ));
+    if (!res.isSuccess) {
+      await _lanzarErrorDeLote(res, 'eliminar la organización', 'revisá si sigue en Organizaciones');
+    }
+
     _organizaciones.removeWhere((o) => o.id == organizacionId);
+    _monedasOrganizacion.removeWhere((m) => m.organizacionId == organizacionId);
+    _tasas.removeWhere((t) => t.fuente == 'manual' && t.organizacionId == organizacionId);
     _logAudit(
       hoja: 'organizaciones',
-      celda: 'A-',
-      valorAnterior: removed.isNotEmpty ? '${removed.first.id} (${removed.first.nombre})' : organizacionId,
+      celda: 'A${index + 2}',
+      valorAnterior: '${old.id} (${old.nombre})',
       valorNuevo: 'ELIMINADO',
       accion: 'eliminacion_organizacion',
       norma: 'GDPR Art. 17 / ISO 27001',
-      observaciones: 'Baja de organización vía App Móvil',
+      observaciones: 'Baja de organización con ${monedas.length} moneda(s) y ${tasasManuales.length} tasa(s) manual(es)',
     );
     notifyListeners();
-    return _postToAppsScript({
-      'action': 'delete',
-      'sheet': 'organizaciones',
-      'id': organizacionId,
-    });
   }
 
   // ===========================================================================
@@ -2962,6 +3248,12 @@ class SheetsDataService extends ChangeNotifier {
     final metodo = _metodosPago.where((m) => m.id == metodoPagoId).firstOrNull;
     return metodo?.nombre ?? metodoPagoId;
   }
+
+  /// IDs de métodos de pago usados en ventas o abonos.
+  Set<String> get metodosPagoEnUso => {
+        for (final v in _ventas) v.metodoPagoId,
+        for (final a in _abonos) a.metodoPagoId,
+      };
 
   /// Comprueba si un método de pago (por su ID) está siendo utilizado en
   /// alguna venta o registro de abono — la relación se verifica por clave
@@ -2978,60 +3270,45 @@ class SheetsDataService extends ChangeNotifier {
     if (trimmed.isEmpty) {
       throw ArgumentError('El nombre del método de pago no puede estar vacío');
     }
-
     if (_metodosPago.any((m) => m.nombre.toLowerCase() == trimmed.toLowerCase())) {
       throw ArgumentError('Ya existe un método de pago con el nombre "$trimmed"');
     }
-
-    int maxIdNum = 0;
-    for (final m in _metodosPago) {
-      final digits = RegExp(r'\d+').firstMatch(m.id)?.group(0);
-      if (digits != null) {
-        final val = int.tryParse(digits) ?? 0;
-        if (val > maxIdNum) maxIdNum = val;
-      }
-    }
-    final nextId = 'mp${(maxIdNum + 1).toString().padLeft(8, '0')}';
-
-    final nuevo = MetodoPago(id: nextId, nombre: trimmed, status: true);
-    _metodosPago.add(nuevo);
-
+    final provisional = MetodoPago(id: '', nombre: trimmed, status: true);
+    _metodosPago.add(provisional);
+    notifyListeners();
+    final id = await _crearConRollback(
+      'metodo pago',
+      Map.of(provisional.toMap())..remove('id'), // el ID lo genera el servidor
+      revertir: () => _metodosPago.remove(provisional),
+    );
+    final i = _metodosPago.indexOf(provisional);
+    if (i != -1) _metodosPago[i] = provisional.copyWith(id: id);
     _logAudit(
       hoja: 'metodo pago',
       celda: 'A${_metodosPago.length + 1}',
       valorAnterior: 'null',
-      valorNuevo: '$nextId: $trimmed',
+      valorNuevo: '$id: $trimmed',
       accion: 'creacion_metodo_pago',
       norma: 'ISO 8000 §4.2',
       observaciones: 'Creación de método de pago "$trimmed"',
     );
-
-    _postToAppsScript({
-      'action': 'create',
-      'sheet': 'metodo pago',
-      'data': nuevo.toMap(),
-    });
-
     notifyListeners();
   }
 
-  /// Alterna el status de un método de pago (activo/inactivo).
-  /// Si se intenta desactivar un método en uso, se bloquea arrojando un error.
+  /// Alterna el status de un método de pago (activo/inactivo). No se puede
+  /// desactivar uno en uso. Lanza [StateError] (y revierte) si Sheets falla.
   Future<bool> toggleMetodoPagoStatus(String id) async {
     final idx = _metodosPago.indexWhere((m) => m.id == id);
     if (idx == -1) return false;
-
     final actual = _metodosPago[idx];
     final nuevoStatus = !actual.status;
-
     if (!nuevoStatus && isMetodoPagoEnUso(actual.id)) {
       throw StateError(
         'No se puede deshabilitar el método de pago "${actual.nombre}" porque ya fue utilizado en transacciones registradas.',
       );
     }
-
-    _metodosPago[idx] = actual.copyWith(status: nuevoStatus);
-
+    final actualizado = actual.copyWith(status: nuevoStatus);
+    _metodosPago[idx] = actualizado;
     _logAudit(
       hoja: 'metodo pago',
       celda: 'C${idx + 2}',
@@ -3041,15 +3318,14 @@ class SheetsDataService extends ChangeNotifier {
       norma: 'ISO 8000 §5.3',
       observaciones: 'Método "${actual.nombre}" ${nuevoStatus ? "activado" : "deshabilitado"}',
     );
-
-    _postToAppsScript({
-      'action': 'update',
-      'sheet': 'metodo pago',
-      'id': id,
-      'data': {'status': nuevoStatus},
-    });
-
     notifyListeners();
+    await _sincronizarConRollback(
+      {'action': 'update', 'sheet': 'metodo pago', 'id': id, 'data': {'status': nuevoStatus}},
+      revertir: () {
+        final i = _metodosPago.indexOf(actualizado);
+        if (i != -1) _metodosPago[i] = actual;
+      },
+    );
     return true;
   }
 
@@ -3057,16 +3333,13 @@ class SheetsDataService extends ChangeNotifier {
   Future<bool> deleteMetodoPago(String id) async {
     final idx = _metodosPago.indexWhere((m) => m.id == id);
     if (idx == -1) return false;
-
     final actual = _metodosPago[idx];
     if (isMetodoPagoEnUso(actual.id)) {
       throw StateError(
         'No se puede eliminar el método de pago "${actual.nombre}" porque ya fue utilizado en transacciones registradas.',
       );
     }
-
     _metodosPago.removeAt(idx);
-
     _logAudit(
       hoja: 'metodo pago',
       celda: 'A${idx + 2}',
@@ -3076,14 +3349,11 @@ class SheetsDataService extends ChangeNotifier {
       norma: 'GDPR Art. 17 / ISO 27001',
       observaciones: 'Eliminación del método de pago "${actual.nombre}"',
     );
-
-    _postToAppsScript({
-      'action': 'delete',
-      'sheet': 'metodo pago',
-      'id': id,
-    });
-
     notifyListeners();
+    await _sincronizarConRollback(
+      {'action': 'delete', 'sheet': 'metodo pago', 'id': id},
+      revertir: () => _metodosPago.insert(idx.clamp(0, _metodosPago.length), actual),
+    );
     return true;
   }
 
@@ -3137,10 +3407,15 @@ class SheetsDataService extends ChangeNotifier {
   /// Fija (o reemplaza) la tasa manual de [organizacionId]: si ya tenía una,
   /// se actualiza esa misma fila (misma FK, no se duplica); si no, se crea
   /// una nueva fila en "tasas" con fuente='manual'.
-  Future<bool> setTasaManualOrganizacion(String organizacionId, String moneda, double valor) async {
+  /// Fija (o reemplaza) la tasa manual de [organizacionId]. Lanza
+  /// [ArgumentError] si el valor no es positivo y [StateError] (revirtiendo)
+  /// si Sheets no lo confirma.
+  Future<void> setTasaManualOrganizacion(String organizacionId, String moneda, double valor) async {
+    if (valor <= 0) throw ArgumentError('La tasa manual debe ser mayor a 0.');
     final existente = tasaManualOrganizacion(organizacionId);
     if (existente != null) {
-      final index = _tasas.indexWhere((t) => t.id == existente.id);
+      if (existente.valor == valor && existente.moneda == moneda) return; // sin cambios
+      final index = _tasas.indexOf(existente);
       final actualizada = TasaRegistro(
         id: existente.id,
         fecha: DateTime.now(),
@@ -3151,16 +3426,17 @@ class SheetsDataService extends ChangeNotifier {
       );
       _tasas[index] = actualizada;
       notifyListeners();
-      return _postToAppsScript({
-        'action': 'update',
-        'sheet': 'tasas',
-        'id': actualizada.id,
-        'data': actualizada.toMap(),
-      });
+      await _sincronizarConRollback(
+        {'action': 'update', 'sheet': 'tasas', 'id': actualizada.id, 'data': actualizada.toMap()},
+        revertir: () {
+          final i = _tasas.indexOf(actualizada);
+          if (i != -1) _tasas[i] = existente;
+        },
+      );
+      return;
     }
-
     final nueva = TasaRegistro(
-      id: nextTasaId,
+      id: '',
       fecha: DateTime.now(),
       moneda: moneda,
       valor: valor,
@@ -3169,104 +3445,165 @@ class SheetsDataService extends ChangeNotifier {
     );
     _tasas.insert(0, nueva);
     notifyListeners();
-    final idReal = await _crearEnServidor('tasas', nueva.toMap());
-    if (idReal != null && idReal != nueva.id) {
-      final idx = _tasas.indexWhere((t) => t.id == nueva.id);
-      if (idx != -1) {
-        _tasas[idx] = TasaRegistro(
-          id: idReal,
-          fecha: nueva.fecha,
-          moneda: nueva.moneda,
-          valor: nueva.valor,
-          fuente: nueva.fuente,
-          organizacionId: nueva.organizacionId,
-        );
-        notifyListeners();
-      }
+    final idReal = await _crearConRollback(
+      'tasas',
+      Map.of(nueva.toMap())..remove('id'),
+      revertir: () => _tasas.remove(nueva),
+    );
+    final idx = _tasas.indexOf(nueva);
+    if (idx != -1) {
+      _tasas[idx] = TasaRegistro(
+        id: idReal,
+        fecha: nueva.fecha,
+        moneda: nueva.moneda,
+        valor: nueva.valor,
+        fuente: nueva.fuente,
+        organizacionId: nueva.organizacionId,
+      );
     }
-    return idReal != null;
+    notifyListeners();
   }
 
   /// Quita la tasa manual de [organizacionId] (si tenía una configurada).
-  Future<bool> quitarTasaManualOrganizacion(String organizacionId) async {
+  Future<void> quitarTasaManualOrganizacion(String organizacionId) async {
     final existente = tasaManualOrganizacion(organizacionId);
-    if (existente == null) return true;
-    _tasas.removeWhere((t) => t.id == existente.id);
+    if (existente == null) return;
+    final index = _tasas.indexOf(existente);
+    _tasas.removeAt(index);
     notifyListeners();
-    return _postToAppsScript({
-      'action': 'delete',
-      'sheet': 'tasas',
-      'id': existente.id,
-    });
+    await _sincronizarConRollback(
+      {'action': 'delete', 'sheet': 'tasas', 'id': existente.id},
+      revertir: () => _tasas.insert(index.clamp(0, _tasas.length), existente),
+    );
   }
 
   // ===========================================================================
   // CRUD 14: MONEDA POR ORGANIZACIÓN (hoja moneda_organizacion)
   // ===========================================================================
 
-  String get _nextMonedaOrganizacionId {
-    final maxId = _monedasOrganizacion.fold<int>(0, (prev, m) {
-      final n = int.tryParse(m.id.replaceAll(RegExp(r'[^0-9]'), '')) ?? 0;
-      return n > prev ? n : prev;
-    });
-    return 'mo${(maxId + 1).toString().padLeft(8, '0')}';
-  }
-
   /// Fija (o reemplaza) la moneda base de [organizacionId]: si ya tenía una
   /// seleccionada, se actualiza esa misma fila (misma FK, no se duplica).
-  Future<bool> setMonedaOrganizacion(String organizacionId, String moneda) async {
+  /// Lanza [StateError] (y revierte) si Sheets no lo confirma.
+  Future<void> setMonedaOrganizacion(String organizacionId, String moneda) async {
     final existenteIdx = _monedasOrganizacion.indexWhere((m) => m.organizacionId == organizacionId);
-
     if (existenteIdx != -1) {
+      final anterior = _monedasOrganizacion[existenteIdx];
+      if (anterior.moneda == moneda) return; // sin cambios
       final actualizada = MonedaOrganizacion(
-        id: _monedasOrganizacion[existenteIdx].id,
+        id: anterior.id,
         organizacionId: organizacionId,
         moneda: moneda,
         actualizadoEn: DateTime.now(),
       );
       _monedasOrganizacion[existenteIdx] = actualizada;
       notifyListeners();
-      return _postToAppsScript({
-        'action': 'update',
-        'sheet': 'moneda_organizacion',
-        'id': actualizada.id,
-        'data': actualizada.toMap(),
-      });
+      await _sincronizarConRollback(
+        {'action': 'update', 'sheet': 'moneda_organizacion', 'id': actualizada.id, 'data': actualizada.toMap()},
+        revertir: () {
+          final i = _monedasOrganizacion.indexOf(actualizada);
+          if (i != -1) _monedasOrganizacion[i] = anterior;
+        },
+      );
+      return;
     }
-
     final nueva = MonedaOrganizacion(
-      id: _nextMonedaOrganizacionId,
+      id: '',
       organizacionId: organizacionId,
       moneda: moneda,
       actualizadoEn: DateTime.now(),
     );
     _monedasOrganizacion.insert(0, nueva);
     notifyListeners();
-    final idReal = await _crearEnServidor('moneda_organizacion', nueva.toMap());
-    if (idReal != null && idReal != nueva.id) {
-      final idx = _monedasOrganizacion.indexWhere((m) => m.id == nueva.id);
-      if (idx != -1) {
-        _monedasOrganizacion[idx] = MonedaOrganizacion(
-          id: idReal,
-          organizacionId: nueva.organizacionId,
-          moneda: nueva.moneda,
-          actualizadoEn: nueva.actualizadoEn,
-        );
-        notifyListeners();
-      }
+    final idReal = await _crearConRollback(
+      'moneda_organizacion',
+      Map.of(nueva.toMap())..remove('id'),
+      revertir: () => _monedasOrganizacion.remove(nueva),
+    );
+    final idx = _monedasOrganizacion.indexOf(nueva);
+    if (idx != -1) {
+      _monedasOrganizacion[idx] = MonedaOrganizacion(
+        id: idReal,
+        organizacionId: nueva.organizacionId,
+        moneda: nueva.moneda,
+        actualizadoEn: nueva.actualizadoEn,
+      );
     }
-    return idReal != null;
+    notifyListeners();
   }
+
 
   // =========================================================================
   // CRUD DE CÓDIGOS DE TELÉFONO ("codigo de telefonos")
   // =========================================================================
 
+  /// Envía un cambio (catálogos, cierres diarios…) y espera la confirmación
+  /// del servidor. Si falla, ejecuta [revertir]
+  /// sobre la copia local y lanza [StateError]: así la UI muestra el error
+  /// en vez de un éxito que nunca llegó a Sheets.
+  Future<void> _sincronizarConRollback(
+    Map<String, dynamic> payload, {
+    required void Function() revertir,
+  }) async {
+    final ok = await _postToAppsScript(payload, exigirConfirmacion: true);
+    if (ok) return;
+    revertir();
+    notifyListeners();
+    throw StateError(
+      'No se pudo guardar en Google Sheets (${payload['sheet']}). Se descartó el cambio; intentá de nuevo.',
+    );
+  }
+
+  void _reemplazarCodigoTelefono(CodigoTelefono original) {
+    final i = _codigosTelefono.indexWhere((c) => c.id == original.id);
+    if (i != -1) _codigosTelefono[i] = original;
+  }
+
+  void _reemplazarTipoDocumento(TipoDocumento original) {
+    final i = _tiposDocumento.indexWhere((t) => t.id == original.id);
+    if (i != -1) _tiposDocumento[i] = original;
+  }
+
+  /// Crea [data] en [sheet] y devuelve el ID que asignó el servidor. Si el
+  /// servidor no lo confirma, ejecuta [revertir] sobre la copia local y
+  /// lanza [StateError]. Junto con [_sincronizarConRollback] y
+  /// [executeBatchTransaction] es la única forma permitida de escribir en
+  /// Sheets (ver docs/estandar-hojas.md).
+  Future<String> _crearConRollback(
+    String sheet,
+    Map<String, dynamic> data, {
+    required void Function() revertir,
+  }) async {
+    final id = await _crearEnServidor(sheet, data);
+    if (id != null && id.isNotEmpty) return id;
+    revertir();
+    notifyListeners();
+    throw StateError(
+      'No se pudo guardar en Google Sheets ($sheet). Se descartó el cambio; intentá de nuevo.',
+    );
+  }
+
+  /// Formato de un código de operadora: 0 + 3 dígitos (0414, 0212…).
+  static final RegExp formatoCodigoTelefono = RegExp(r'^0\d{3}$');
+
+  /// Códigos de teléfono usados por algún cliente, calculado en una sola
+  /// pasada (para listas: evita recorrer los clientes por cada fila).
+  Set<String> get codigosTelefonoEnUso {
+    final usados = <String>{};
+    for (final c in _clientes) {
+      final telefono = TelefonoVe.parse(c.telefono);
+      if (telefono != null) usados.add(telefono.codigo);
+    }
+    return usados;
+  }
+
   /// Verifica si un código de teléfono está siendo utilizado por clientes.
   bool isCodigoTelefonoEnUso(String codigo) {
     final cleanCode = codigo.trim();
     if (cleanCode.isEmpty) return false;
-    return _clientes.any((c) => c.telefono.trim().startsWith(cleanCode));
+    return _clientes.any((c) {
+      final telefono = TelefonoVe.parse(c.telefono);
+      return telefono != null ? telefono.codigo == cleanCode : c.telefono.trim().startsWith(cleanCode);
+    });
   }
 
   /// Agrega un nuevo código de teléfono a la hoja "codigo de telefonos".
@@ -3274,6 +3611,9 @@ class SheetsDataService extends ChangeNotifier {
     final trimmed = codigo.trim();
     if (trimmed.isEmpty) {
       throw ArgumentError('El código de teléfono no puede estar vacío');
+    }
+    if (!formatoCodigoTelefono.hasMatch(trimmed)) {
+      throw ArgumentError('El código debe tener 4 dígitos y empezar con 0 (ej: 0414)');
     }
 
     if (_codigosTelefono.any((c) => c.codigo.trim() == trimmed)) {
@@ -3303,13 +3643,11 @@ class SheetsDataService extends ChangeNotifier {
       observaciones: 'Creación de código de teléfono "$trimmed"',
     );
 
-    _postToAppsScript({
-      'action': 'create',
-      'sheet': 'codigo de telefonos',
-      'data': nuevo.toMap(),
-    });
-
     notifyListeners();
+    await _sincronizarConRollback(
+      {'action': 'create', 'sheet': 'codigo de telefonos', 'data': nuevo.toMap()},
+      revertir: () => _codigosTelefono.removeWhere((c) => c.id == nextId),
+    );
   }
 
   /// Actualiza un código de teléfono existente.
@@ -3321,12 +3659,21 @@ class SheetsDataService extends ChangeNotifier {
     if (trimmed.isEmpty) {
       throw ArgumentError('El código de teléfono no puede estar vacío');
     }
+    if (!formatoCodigoTelefono.hasMatch(trimmed)) {
+      throw ArgumentError('El código debe tener 4 dígitos y empezar con 0 (ej: 0414)');
+    }
 
     if (_codigosTelefono.any((c) => c.id != id && c.codigo.trim() == trimmed)) {
       throw ArgumentError('Ya existe otro registro con el código "$trimmed"');
     }
 
     final anterior = _codigosTelefono[idx];
+    // Los teléfonos de los clientes guardan el código: renombrarlo los
+    // dejaría con un código que ya no está en el catálogo.
+    if (anterior.codigo.trim() != trimmed && isCodigoTelefonoEnUso(anterior.codigo)) {
+      throw ArgumentError(
+          'El código ${anterior.codigo} lo usan teléfonos de clientes: no se puede cambiar. Agregá uno nuevo.');
+    }
     final actualizado = anterior.copyWith(codigo: trimmed);
     _codigosTelefono[idx] = actualizado;
 
@@ -3340,14 +3687,11 @@ class SheetsDataService extends ChangeNotifier {
       observaciones: 'Código modificado de "${anterior.codigo}" a "$trimmed"',
     );
 
-    _postToAppsScript({
-      'action': 'update',
-      'sheet': 'codigo de telefonos',
-      'id': id,
-      'data': {'codigo': trimmed},
-    });
-
     notifyListeners();
+    await _sincronizarConRollback(
+      {'action': 'update', 'sheet': 'codigo de telefonos', 'id': id, 'data': {'codigo': trimmed}},
+      revertir: () => _reemplazarCodigoTelefono(anterior),
+    );
     return true;
   }
 
@@ -3377,14 +3721,11 @@ class SheetsDataService extends ChangeNotifier {
       observaciones: 'Código "${actual.codigo}" ${nuevoStatus ? "activado" : "deshabilitado"}',
     );
 
-    _postToAppsScript({
-      'action': 'update',
-      'sheet': 'codigo de telefonos',
-      'id': id,
-      'data': {'status': nuevoStatus},
-    });
-
     notifyListeners();
+    await _sincronizarConRollback(
+      {'action': 'update', 'sheet': 'codigo de telefonos', 'id': id, 'data': {'status': nuevoStatus}},
+      revertir: () => _reemplazarCodigoTelefono(actual),
+    );
     return true;
   }
 
@@ -3412,19 +3753,23 @@ class SheetsDataService extends ChangeNotifier {
       observaciones: 'Eliminación del código de teléfono "${actual.codigo}"',
     );
 
-    _postToAppsScript({
-      'action': 'delete',
-      'sheet': 'codigo de telefonos',
-      'id': id,
-    });
-
     notifyListeners();
+    await _sincronizarConRollback(
+      {'action': 'delete', 'sheet': 'codigo de telefonos', 'id': id},
+      revertir: () => _codigosTelefono.insert(idx.clamp(0, _codigosTelefono.length), actual),
+    );
     return true;
   }
 
   // =========================================================================
   // CRUD DE TIPOS DE DOCUMENTO ("tipo de documento")
   // =========================================================================
+
+  /// Siglas de tipo de documento usadas por clientes o usuarios (en mayúscula).
+  Set<String> get tiposDocumentoEnUso => {
+        for (final c in _clientes) c.tipoDocumento.trim().toUpperCase(),
+        for (final u in _usuarios) u.tipoDocumento.trim().toUpperCase(),
+      }..remove('');
 
   /// Verifica si un tipo de documento está siendo utilizado por clientes o usuarios.
   bool isTipoDocumentoEnUso(String tipo) {
@@ -3482,13 +3827,11 @@ class SheetsDataService extends ChangeNotifier {
       observaciones: 'Creación de tipo de documento "$cleanTipo" ($cleanDesc)',
     );
 
-    _postToAppsScript({
-      'action': 'create',
-      'sheet': 'tipo de documento',
-      'data': nuevo.toMap(),
-    });
-
     notifyListeners();
+    await _sincronizarConRollback(
+      {'action': 'create', 'sheet': 'tipo de documento', 'data': nuevo.toMap()},
+      revertir: () => _tiposDocumento.removeWhere((t) => t.id == nextId),
+    );
   }
 
   /// Actualiza un tipo de documento existente.
@@ -3515,6 +3858,12 @@ class SheetsDataService extends ChangeNotifier {
     }
 
     final anterior = _tiposDocumento[idx];
+    // Clientes y usuarios guardan la sigla: si está en uso, solo se puede
+    // cambiar la descripción.
+    if (anterior.tipo.trim().toUpperCase() != cleanTipo && isTipoDocumentoEnUso(anterior.tipo)) {
+      throw ArgumentError(
+          'El tipo ${anterior.tipo} está en uso por clientes o usuarios: solo se puede cambiar la descripción.');
+    }
     final actualizado = anterior.copyWith(tipo: cleanTipo, descripcion: cleanDesc);
     _tiposDocumento[idx] = actualizado;
 
@@ -3528,14 +3877,16 @@ class SheetsDataService extends ChangeNotifier {
       observaciones: 'Tipo de documento modificado a "$cleanTipo - $cleanDesc"',
     );
 
-    _postToAppsScript({
-      'action': 'update',
-      'sheet': 'tipo de documento',
-      'id': id,
-      'data': {'tipo': cleanTipo, 'descripcion': cleanDesc},
-    });
-
     notifyListeners();
+    await _sincronizarConRollback(
+      {
+        'action': 'update',
+        'sheet': 'tipo de documento',
+        'id': id,
+        'data': {'tipo': cleanTipo, 'descripcion': cleanDesc},
+      },
+      revertir: () => _reemplazarTipoDocumento(anterior),
+    );
     return true;
   }
 
@@ -3565,14 +3916,11 @@ class SheetsDataService extends ChangeNotifier {
       observaciones: 'Tipo de documento "${actual.tipo}" ${nuevoStatus ? "activado" : "deshabilitado"}',
     );
 
-    _postToAppsScript({
-      'action': 'update',
-      'sheet': 'tipo de documento',
-      'id': id,
-      'data': {'status': nuevoStatus},
-    });
-
     notifyListeners();
+    await _sincronizarConRollback(
+      {'action': 'update', 'sheet': 'tipo de documento', 'id': id, 'data': {'status': nuevoStatus}},
+      revertir: () => _reemplazarTipoDocumento(actual),
+    );
     return true;
   }
 
@@ -3600,13 +3948,11 @@ class SheetsDataService extends ChangeNotifier {
       observaciones: 'Eliminación del tipo de documento "${actual.tipo}"',
     );
 
-    _postToAppsScript({
-      'action': 'delete',
-      'sheet': 'tipo de documento',
-      'id': id,
-    });
-
     notifyListeners();
+    await _sincronizarConRollback(
+      {'action': 'delete', 'sheet': 'tipo de documento', 'id': id},
+      revertir: () => _tiposDocumento.insert(idx.clamp(0, _tiposDocumento.length), actual),
+    );
     return true;
   }
 }
@@ -3663,4 +4009,18 @@ List<List<String>> parseCsv(String input) {
   }
 
   return rows;
+}
+
+
+/// Resultado de [SheetsDataService.registrarAbono].
+enum ResultadoAbono {
+  /// El servidor confirmó el lote.
+  registrado,
+
+  /// El servidor rechazó el lote (y lo revirtió): se puede reintentar.
+  rechazado,
+
+  /// No hubo respuesta: no se sabe si se aplicó. Se releyeron los datos;
+  /// hay que revisar el historial de la factura antes de reintentar.
+  sinConfirmar,
 }

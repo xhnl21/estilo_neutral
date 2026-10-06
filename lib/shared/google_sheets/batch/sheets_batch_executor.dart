@@ -19,6 +19,7 @@ class SheetsBatchExecutor {
           transactionId: transaction.transactionId,
           errorMessage:
               'No se recibió respuesta válida del servidor (posible error de red o timeout)',
+          sinRespuesta: true,
         );
       }
 
@@ -27,6 +28,7 @@ class SheetsBatchExecutor {
       return BatchTransactionResult.failure(
         transactionId: transaction.transactionId,
         errorMessage: 'Excepción durante la ejecución del lote atómico: $e',
+        sinRespuesta: true,
       );
     }
   }
@@ -36,8 +38,8 @@ class SheetsBatchExecutor {
   static BatchTransaction buildVentaBatch({
     required Venta venta,
     required List<VentaItem> items,
-    required Map<String, int> stockUpdates, // productoId -> nuevoStock
-    required double? nuevoSaldoDeudaCliente,
+    required Map<String, int> unidadesVendidas, // productoId -> unidades
+    required double deudaAgregadaCliente,
     required Abono? abonoInicial,
     required AuditLog auditLog,
     String? transactionId,
@@ -61,23 +63,25 @@ class SheetsBatchExecutor {
       }).toList(),
     ));
 
-    // 3. Descontar stock en inventario para cada producto
-    stockUpdates.forEach((productoId, nuevoStock) {
-      operations.add(BatchOperation.updateCell(
+    // 3. Descontar stock: se resta sobre el valor que tenga Sheets, no sobre
+    // el que vio este teléfono (otro dispositivo pudo vender en el ínterin).
+    unidadesVendidas.forEach((productoId, unidades) {
+      operations.add(BatchOperation.increment(
         sheet: 'inventario',
         id: productoId,
         field: 'cantidad',
-        newValue: nuevoStock,
+        delta: -unidades,
+        min: 0,
       ));
     });
 
-    // 4. Si hay saldo pendiente, actualizar la deuda del cliente
-    if (nuevoSaldoDeudaCliente != null) {
-      operations.add(BatchOperation.updateCell(
+    // 4. Si queda saldo pendiente, sumarlo a la deuda del cliente
+    if (deudaAgregadaCliente > 0) {
+      operations.add(BatchOperation.increment(
         sheet: 'clientes',
         id: venta.clienteId,
         field: 'saldo_deuda_usd',
-        newValue: nuevoSaldoDeudaCliente,
+        delta: deudaAgregadaCliente,
       ));
     }
 

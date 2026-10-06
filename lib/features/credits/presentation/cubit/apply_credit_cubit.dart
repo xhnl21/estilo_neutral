@@ -25,6 +25,14 @@ class ApplyCreditCubit extends Cubit<ApplyCreditState> {
     // Escucha cambios en dataService si es necesario
   }
 
+  /// Deuda de [ventaId] según los datos actuales; [respaldo] si la venta ya
+  /// no está cargada.
+  double _deudaActual(String ventaId, double respaldo) {
+    final venta = dataService.ventas.where((v) => v.id == ventaId).firstOrNull;
+    if (venta == null) return respaldo;
+    return (venta.totalPagarUsd - venta.abonoUsd).clamp(0.0, double.infinity).toDouble();
+  }
+
   /// Carga la previsualización de la compensación (Frase 3 de la narrativa)
   Future<void> loadPreview({
     required String clienteId,
@@ -32,12 +40,13 @@ class ApplyCreditCubit extends Cubit<ApplyCreditState> {
     required double deudaVenta,
   }) async {
     if (isClosed) return;
-    emit(state.copyWith(status: ApplyCreditStatus.loading));
+    final deuda = _deudaActual(ventaDestinoId, deudaVenta);
+    emit(state.copyWith(status: ApplyCreditStatus.loading, deudaVenta: deuda));
     try {
       final preview = await _previewUseCase(
         clienteId: clienteId,
         ventaDestinoId: ventaDestinoId,
-        deudaVenta: deudaVenta,
+        deudaVenta: deuda,
       );
       if (isClosed) return;
       emit(state.copyWith(
@@ -48,7 +57,8 @@ class ApplyCreditCubit extends Cubit<ApplyCreditState> {
       if (isClosed) return;
       emit(state.copyWith(
         status: ApplyCreditStatus.failure,
-        errorMessage: 'Error al previsualizar compensación: $e',
+        errorMessage: 'No se pudo calcular la compensación: $e',
+        falloVistaPrevia: true,
       ));
     }
   }
@@ -66,7 +76,7 @@ class ApplyCreditCubit extends Cubit<ApplyCreditState> {
       final result = await _applyUseCase.execute(
         clienteId: clienteId,
         targetVentaId: ventaDestinoId,
-        deudaVenta: deudaVenta,
+        deudaVenta: _deudaActual(ventaDestinoId, deudaVenta),
         userEmail: userEmail,
       );
 
@@ -76,7 +86,10 @@ class ApplyCreditCubit extends Cubit<ApplyCreditState> {
         emit(state.copyWith(
           status: ApplyCreditStatus.success,
           result: result,
-          successMessage: 'Saldo aplicado. Factura #$ventaDestinoId marcada como Pagada.',
+          successMessage: result.deudaRestante <= 0
+              ? 'Saldo aplicado. Factura #$ventaDestinoId pagada por completo.'
+              : 'Saldo aplicado (USD ${result.montoAplicado.toStringAsFixed(2)}). '
+                  'La factura #$ventaDestinoId sigue pendiente por USD ${result.deudaRestante.toStringAsFixed(2)}.',
         ));
         return true;
       } else {

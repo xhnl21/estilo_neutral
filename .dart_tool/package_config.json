@@ -825,8 +825,8 @@
     }
   ],
   "generator": "pub",
-  "generatorVersion": "3.13.1",
+  "generatorVersion": "3.13.4",
   "flutterRoot": "file:///Users/programacion/Documents/Proyectos/tdc-innovo/flutter",
-  "flutterVersion": "3.47.1",
+  "flutterVersion": "3.49.0-1.0.pre-84",
   "pubCache": "file:///Users/programacion/.pub-cache"
 }

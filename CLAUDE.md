@@ -25,3 +25,16 @@ Estado puramente visual y efímero de un widget individual — el valor de un `T
 1. Verificá si ya existe un `Cubit`/`State` para esa pantalla en `lib/presentation/cubits/<feature>/` o `lib/features/<feature>/presentation/cubit/`.
 2. Si no existe, creálo siguiendo el patrón de referencia de arriba — no inventes una variante nueva.
 3. Nunca agregues un `ListenableBuilder(listenable: dataService, ...)` ni un `ListenableBuilder(listenable: authCubit...)` nuevo. Si lo ves en una pantalla que estás tocando y todavía no fue migrada, migrala vos como parte del cambio.
+
+## Hojas y escrituras a Google Sheets: estándar OBLIGATORIO
+
+Toda hoja nueva, y todo código que lea o escriba una hoja, cumple [`docs/estandar-hojas.md`](docs/estandar-hojas.md). En resumen:
+
+1. **Columna `id` en A, generada por el servidor** (prefijo en `ID_PREFIXES` de `google_apps_script.js`). Editar y eliminar se hace por ID, nunca por la posición en una lista ni por otro campo.
+2. **Rama explícita por hoja** en `_handleCreate` / `_handleUpdate` del script (o un manejador propio). Nada de `Object.values(data)`.
+3. **Textos que parecen números o fechas** (códigos, cédulas, teléfonos, fechas, números de orden) se escriben como texto (`_comoTexto` o formato `@`).
+4. **En `SheetsDataService`, solo `_crearConRollback`, `_sincronizarConRollback` y `executeBatchTransaction` hablan con el servidor**: se espera la confirmación y se revierte el cambio local si falla. Nunca `_postToAppsScript` / `_crearEnServidor` directo ni sin `await`.
+5. **Editar con `copyWith`**, conservando ID y organización.
+6. **Sin valores inventados** (usuarios de auditoría ficticios, `?? 474`, `?? 0` para montos mal escritos).
+
+Los tests de `test/standards/` verifican las reglas 1, 2, 4 y 6, y que toda lectura (`safeFetch`) valide un encabezado que empiece por `id`, y fallan ante un incumplimiento nuevo. **No agregues excepciones a sus listas de pendientes**: corregí el código. Cuando corrijas un pendiente, quitalo de la lista.

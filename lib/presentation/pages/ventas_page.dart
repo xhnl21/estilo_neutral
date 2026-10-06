@@ -1,5 +1,6 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 import '../../app/di/injection.dart';
@@ -9,6 +10,10 @@ import '../../core/router/route_paths.dart';
 import '../../features/credits/credits.dart';
 import '../../models/models.dart';
 import '../../shared/shared.dart';
+import '../cubits/abono/abono_cubit.dart';
+import '../cubits/abono/abono_state.dart';
+import '../cubits/nueva_venta/nueva_venta_cubit.dart';
+import '../cubits/nueva_venta/nueva_venta_state.dart';
 import '../cubits/ventas/ventas_cubit.dart';
 import '../cubits/ventas/ventas_state.dart';
 
@@ -39,13 +44,15 @@ class _TasaSelector extends StatelessWidget {
           children: [
             const Icon(CupertinoIcons.info_circle, size: 14, color: AppPalette.blue900),
             const SizedBox(width: AppSpacing.xs),
-            Text(
-              tasaAutomatica != null
-                  ? 'Tasa BCV del día: ${tasaAutomatica!.valor.toStringAsFixed(2)} Bs. / ${tasaAutomatica!.moneda}'
-                  : 'Tasa BCV no disponible todavía',
-              style: AppTypography.labelSmall.copyWith(
-                color: AppPalette.blue900,
-                fontWeight: FontWeight.w600,
+            Expanded(
+              child: Text(
+                tasaAutomatica != null
+                    ? 'Tasa BCV del día: ${tasaAutomatica!.valor.toStringAsFixed(2)} Bs. / ${tasaAutomatica!.moneda}'
+                    : 'Tasa BCV no disponible todavía',
+                style: AppTypography.labelSmall.copyWith(
+                  color: AppPalette.blue900,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
             ),
           ],
@@ -116,24 +123,6 @@ class _TasaOptionTile extends StatelessWidget {
 }
 
 
-/// Un renglón del carrito mientras se arma una factura nueva (estado local
-/// del formulario, no persistido hasta guardar la venta completa).
-class _CartLine {
-  final String productoId;
-  final String nombre;
-  final int cantidad;
-  final double precioUsd;
-
-  const _CartLine({
-    required this.productoId,
-    required this.nombre,
-    required this.cantidad,
-    required this.precioUsd,
-  });
-
-  double get subtotal => cantidad * precioUsd;
-}
-
 /// Pantalla de Ventas (hoja: ventas, header de factura + hoja "venta_items").
 /// Una venta puede tener varios ítems (relación 1:N venta→ítems), como una
 /// factura real con múltiples renglones.
@@ -181,6 +170,35 @@ class _VentasViewState extends State<_VentasView> {
   Widget build(BuildContext context) {
     final ds = widget.dataService;
 
+    // Si cambia la lista de clientes con el menú del filtro abierto, se
+    // cierra: un menú abierto no actualiza sus opciones.
+    return MultiBlocListener(
+      listeners: [
+        BlocListener<VentasCubit, VentasState>(
+          listenWhen: (prev, curr) => prev.clientesVersion != curr.clientesVersion,
+          listener: (context, _) => _cerrarMenusDesactualizados(context),
+        ),
+        // Resultado de anular una venta (éxito o el error real de Sheets).
+        BlocListener<VentasCubit, VentasState>(
+          listenWhen: (prev, curr) =>
+              (curr.actionSuccessMessage != null && prev.actionSuccessMessage != curr.actionSuccessMessage) ||
+              (curr.status == VentasStatus.failure && curr.errorMessage != null && prev.errorMessage != curr.errorMessage),
+          listener: (context, state) {
+            final error = state.status == VentasStatus.failure ? state.errorMessage : null;
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(error ?? state.actionSuccessMessage!),
+                backgroundColor: error != null ? AppPalette.error : AppPalette.success,
+              ),
+            );
+          },
+        ),
+      ],
+      child: _buildContent(context, ds),
+    );
+  }
+
+  Widget _buildContent(BuildContext context, SheetsDataService ds) {
     return BlocBuilder<VentasCubit, VentasState>(
       builder: (context, state) {
         final cubit = context.read<VentasCubit>();
@@ -224,7 +242,9 @@ class _VentasViewState extends State<_VentasView> {
                         padding: const EdgeInsets.fromLTRB(AppSpacing.lg, AppSpacing.sm, AppSpacing.lg, 0),
                         child: DropdownButtonFormField<String?>(
                           key: ValueKey('cliente_filter_${state.filtroClienteId}'),
-                          initialValue: state.filtroClienteId,
+                          initialValue: state.clientes.any((c) => c.id == state.filtroClienteId)
+                              ? state.filtroClienteId
+                              : null,
                           isExpanded: true,
                           decoration: const InputDecoration(
                             labelText: 'Filtrar por cliente',
@@ -523,6 +543,14 @@ class _VentasViewState extends State<_VentasView> {
                                                   ApplyCreditButton(
                                                     applicableAmount: saldoAFavor < v.deudaUsd ? saldoAFavor : v.deudaUsd,
                                                     onPressed: () {
+                                                      // Sin usuario identificado no se firma la operación (no se inventa un autor).
+                                                      if (ds.currentUsuarioEmail == null) {
+                                                        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                                                          content: Text('No hay un usuario identificado: no se puede aplicar el crédito.'),
+                                                          backgroundColor: AppPalette.error,
+                                                        ));
+                                                        return;
+                                                      }
                                                       final cubit = ApplyCreditCubit(
                                                         repository: ServiceLocator().creditRepository,
                                                         dataService: ds,
@@ -536,7 +564,7 @@ class _VentasViewState extends State<_VentasView> {
                                                         deudaVenta: v.deudaUsd,
                                                         totalCreditoDisponible: saldoAFavor,
                                                         origenVentaId: availableCredits.firstOrNull?.origenVentaId,
-                                                        userEmail: ds.currentUsuarioEmail ?? 'Antigravity Senior Agent',
+                                                        userEmail: ds.currentUsuarioEmail!,
                                                       );
                                                     },
                                                   ),
@@ -594,9 +622,9 @@ class _VentasViewState extends State<_VentasView> {
       context: context,
       isScrollControlled: true,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
-      builder: (_) => _NuevaVentaBottomSheet(
-        dataService: ds,
-        initialClienteId: initialClienteId,
+      builder: (_) => BlocProvider(
+        create: (_) => NuevaVentaCubit(dataService: ds, initialClienteId: initialClienteId),
+        child: const _NuevaVentaBottomSheet(),
       ),
     );
   }
@@ -605,18 +633,9 @@ class _VentasViewState extends State<_VentasView> {
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (_) => _AbonoDialog(
-        venta: v,
-        dataService: widget.dataService,
-        onSuccess: (ok) {
-          if (!mounted) return;
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(ok ? 'Pago registrado' : 'No se pudo registrar el pago. Probá de nuevo.'),
-              backgroundColor: ok ? AppPalette.success : AppPalette.error,
-            ),
-          );
-        },
+      builder: (_) => BlocProvider(
+        create: (_) => AbonoCubit(dataService: widget.dataService, ventaId: v.id),
+        child: const _AbonoDialog(),
       ),
     );
   }
@@ -634,7 +653,7 @@ class _VentasViewState extends State<_VentasView> {
             child: const Text('Anular'),
             onPressed: () async {
               Navigator.pop(ctx);
-              await ds.deleteVenta(v.id);
+              await context.read<VentasCubit>().anularVenta(v.id);
             },
           ),
         ],
@@ -644,34 +663,18 @@ class _VentasViewState extends State<_VentasView> {
 }
 
 
+/// Diálogo "Abono a Venta". Solo el `TextEditingController` vive en el widget
+/// (estado visual efímero); deuda, métodos de pago, tasas, selección,
+/// validación y guardado viven en [AbonoCubit].
 class _AbonoDialog extends StatefulWidget {
-  final Venta venta;
-  final SheetsDataService dataService;
-  final void Function(bool ok) onSuccess;
-
-  const _AbonoDialog({
-    required this.venta,
-    required this.dataService,
-    required this.onSuccess,
-  });
+  const _AbonoDialog();
 
   @override
   State<_AbonoDialog> createState() => _AbonoDialogState();
 }
 
 class _AbonoDialogState extends State<_AbonoDialog> {
-  late final TextEditingController _abonoController;
-  late String _selectedMetodoPago;
-  bool _usarTasaManual = false;
-  bool _isProcessing = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _abonoController = TextEditingController();
-    final metodosActivos = widget.dataService.metodosPagoActivos;
-    _selectedMetodoPago = metodosActivos.isNotEmpty ? metodosActivos.first.id : '';
-  }
+  final TextEditingController _abonoController = TextEditingController();
 
   @override
   void dispose() {
@@ -679,98 +682,164 @@ class _AbonoDialogState extends State<_AbonoDialog> {
     super.dispose();
   }
 
-  Future<void> _submitAbono() async {
-    final monto = double.tryParse(_abonoController.text.replaceAll(',', '.')) ?? 0.0;
-    if (monto <= 0) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Ingresá un monto válido para abonar.')),
-      );
-      return;
-    }
-
-    setState(() => _isProcessing = true);
-
-    try {
-      final ok = await widget.dataService.registrarAbono(
-        widget.venta.id,
-        monto,
-        metodoPagoId: _selectedMetodoPago,
-        usarTasaManual: _usarTasaManual,
-      );
-
-      if (!mounted) return;
-      Navigator.of(context).pop();
-      widget.onSuccess(ok);
-    } catch (e) {
-      if (!mounted) return;
-      setState(() => _isProcessing = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Error al procesar el abono: $e'),
-          backgroundColor: AppPalette.error,
+  void _mostrarResultado(BuildContext context, ResultadoAbono resultado) {
+    final (mensaje, color) = switch (resultado) {
+      ResultadoAbono.registrado => ('Pago registrado', AppPalette.success),
+      ResultadoAbono.rechazado => ('No se pudo registrar el pago. Probá de nuevo.', AppPalette.error),
+      ResultadoAbono.sinConfirmar => (
+          'No se pudo confirmar si el pago quedó guardado. Se recargaron los datos: '
+              'revisá el historial de la factura antes de reintentar.',
+          AppPalette.warning,
         ),
-      );
+    };
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(mensaje),
+        backgroundColor: color,
+        duration: Duration(seconds: resultado == ResultadoAbono.sinConfirmar ? 6 : 3),
+      ),
+    );
+  }
+
+  /// El monto supera la deuda: el excedente quedaría como saldo a favor del
+  /// cliente, así que se pide confirmación explícita antes de guardarlo.
+  Future<void> _confirmarExcedente(BuildContext context, double excedente) async {
+    final cubit = context.read<AbonoCubit>();
+    final aceptar = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('El monto supera la deuda'),
+        content: Text(
+          'Sobran USD ${excedente.toStringAsFixed(2)}. Esa diferencia quedará como saldo a favor '
+          'del cliente, para usar en otras facturas. ¿Registrar el pago igual?',
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Corregir monto')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Registrar')),
+        ],
+      ),
+    );
+    if (aceptar == true) {
+      cubit.registrar(_abonoController.text, excedenteConfirmado: true);
+    } else {
+      cubit.excedenteDescartado();
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final ds = widget.dataService;
-    final v = widget.venta;
-    final metodosActivos = ds.metodosPagoActivos;
+    return MultiBlocListener(
+      listeners: [
+        // Un menú de métodos de pago abierto no actualiza sus opciones.
+        BlocListener<AbonoCubit, AbonoState>(
+          listenWhen: (prev, curr) => prev.metodosPagoVersion != curr.metodosPagoVersion,
+          listener: (context, _) => _cerrarMenusDesactualizados(context),
+        ),
+        BlocListener<AbonoCubit, AbonoState>(
+          listenWhen: (prev, curr) =>
+              prev.status != curr.status && curr.status == AbonoStatus.terminado,
+          listener: (context, state) {
+            _mostrarResultado(context, state.resultado!);
+            Navigator.of(context).pop();
+          },
+        ),
+        BlocListener<AbonoCubit, AbonoState>(
+          listenWhen: (prev, curr) =>
+              curr.excedentePorConfirmar != null && prev.excedentePorConfirmar != curr.excedentePorConfirmar,
+          listener: (context, state) => _confirmarExcedente(context, state.excedentePorConfirmar!),
+        ),
+        BlocListener<AbonoCubit, AbonoState>(
+          listenWhen: (prev, curr) => curr.errorMessage != null && prev.errorMessage != curr.errorMessage,
+          listener: (context, state) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text(state.errorMessage!), backgroundColor: AppPalette.error),
+            );
+            context.read<AbonoCubit>().mensajeMostrado();
+          },
+        ),
+      ],
+      child: BlocBuilder<AbonoCubit, AbonoState>(
+        builder: (context, state) => _buildDialogo(context, state),
+      ),
+    );
+  }
+
+  Widget _buildDialogo(BuildContext context, AbonoState state) {
+    final cubit = context.read<AbonoCubit>();
+    final isProcessing = state.isProcessing;
+    final venta = state.venta;
 
     return PopScope(
-      canPop: !_isProcessing,
+      canPop: !isProcessing,
       child: AlertDialog(
-        title: Text('Abono a Venta #${v.id}'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Deuda actual: USD ${v.deudaUsd.toStringAsFixed(2)}',
-              style: AppTypography.titleLarge.copyWith(color: AppPalette.error, fontSize: 14),
-            ),
-            const SizedBox(height: AppSpacing.md),
-            DropdownButtonFormField<String>(
-              initialValue: metodosActivos.any((m) => m.id == _selectedMetodoPago)
-                  ? _selectedMetodoPago
-                  : (metodosActivos.isNotEmpty ? metodosActivos.first.id : null),
-              decoration: const InputDecoration(
-                labelText: 'Método de Pago para Abono',
-                border: OutlineInputBorder(),
+        title: Text('Abono a Venta #${venta?.id ?? cubit.ventaId}'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                venta == null
+                    ? 'Esta factura ya no existe.'
+                    : 'Deuda actual: USD ${venta.deudaUsd.toStringAsFixed(2)}',
+                style: AppTypography.titleLarge.copyWith(color: AppPalette.error, fontSize: 14),
               ),
-              items: metodosActivos
-                  .map((mp) => DropdownMenuItem(value: mp.id, child: Text(mp.nombre)))
-                  .toList(),
-              onChanged: _isProcessing
-                  ? null
-                  : (val) => setState(() => _selectedMetodoPago = val ?? metodosActivos.first.id),
-            ),
-            _TasaSelector(
-              tasaAutomatica: ds.tasaVigenteEnMonedaBase,
-              tasaManual: ds.tasaManualOrganizacion(ds.currentOrganizacionId ?? ''),
-              usarManual: _usarTasaManual,
-              onChanged: _isProcessing ? (_) {} : (val) => setState(() => _usarTasaManual = val),
-            ),
-            const SizedBox(height: AppSpacing.sm),
-            AppTextField(
-              label: 'Monto a Abonar (USD)',
-              controller: _abonoController,
-              hint: 'Ej: 10.00',
-              keyboardType: const TextInputType.numberWithOptions(decimal: true),
-              readOnly: _isProcessing,
-            ),
-          ],
+              const SizedBox(height: AppSpacing.md),
+              if (state.metodosPago.isEmpty)
+                Text(
+                  'No hay métodos de pago activos. Activá uno en Métodos de Pago.',
+                  style: AppTypography.bodyMedium.copyWith(color: AppPalette.error),
+                )
+              else
+                // La key recrea el campo cuando la selección la cambia el
+                // Cubit (DropdownButtonFormField solo lee initialValue al crearse).
+                DropdownButtonFormField<String>(
+                  key: ValueKey('abono_metodo_${state.selectedMetodoPagoId}'),
+                  initialValue: state.selectedMetodoPagoId,
+                  isExpanded: true,
+                  decoration: const InputDecoration(
+                    labelText: 'Método de Pago para Abono',
+                    border: OutlineInputBorder(),
+                  ),
+                  items: state.metodosPago
+                      .map((mp) => DropdownMenuItem(value: mp.id, child: Text(mp.nombre, overflow: TextOverflow.ellipsis)))
+                      .toList(),
+                  onChanged: isProcessing
+                      ? null
+                      : (val) {
+                          if (val != null) cubit.seleccionarMetodo(val);
+                        },
+                ),
+              _TasaSelector(
+                tasaAutomatica: state.tasaAutomatica,
+                tasaManual: state.tasaManual,
+                usarManual: state.usarTasaManual,
+                onChanged: isProcessing ? (_) {} : cubit.setUsarTasaManual,
+              ),
+              const SizedBox(height: AppSpacing.sm),
+              AppTextField(
+                label: 'Monto a Abonar (USD)',
+                controller: _abonoController,
+                hint: 'Ej: 10.00',
+                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9.,]'))],
+                readOnly: isProcessing,
+                errorText: state.errorMonto,
+                onChanged: (_) => cubit.montoCambiado(),
+              ),
+            ],
+          ),
         ),
         actions: [
           TextButton(
-            onPressed: _isProcessing ? null : () => Navigator.pop(context),
+            onPressed: isProcessing ? null : () => Navigator.pop(context),
             child: const Text('Cancelar'),
           ),
           FilledButton(
-            onPressed: _isProcessing ? null : _submitAbono,
-            child: _isProcessing
+            onPressed: isProcessing || venta == null || state.metodosPago.isEmpty
+                ? null
+                : () => cubit.registrar(_abonoController.text),
+            child: isProcessing
                 ? const Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
@@ -791,39 +860,31 @@ class _AbonoDialogState extends State<_AbonoDialog> {
   }
 }
 
-class _NuevaVentaBottomSheet extends StatefulWidget {
-  final SheetsDataService dataService;
-  final String initialClienteId;
+/// Cierra los menús desplegables abiertos (DropdownRoute, PopupMenu) que
+/// estén por encima de [context]. Un menú abierto copia sus opciones al
+/// abrirse y no se actualiza: si el catálogo cambió (p. ej. se editó o
+/// eliminó un cliente desde otra pestaña) mostraría datos viejos. No cierra
+/// bottom sheets ni diálogos.
+void _cerrarMenusDesactualizados(BuildContext context) {
+  Navigator.of(context).popUntil(
+    (route) => route is! PopupRoute || route is ModalBottomSheetRoute || route is RawDialogRoute,
+  );
+}
 
-  const _NuevaVentaBottomSheet({
-    required this.dataService,
-    required this.initialClienteId,
-  });
+/// Formulario "Registrar Venta". Solo los `TextEditingController` viven en el
+/// widget (estado visual efímero); catálogos, selección, carrito y guardado
+/// viven en [NuevaVentaCubit], que se mantiene sincronizado con
+/// [SheetsDataService] mientras el modal está abierto.
+class _NuevaVentaBottomSheet extends StatefulWidget {
+  const _NuevaVentaBottomSheet();
 
   @override
   State<_NuevaVentaBottomSheet> createState() => _NuevaVentaBottomSheetState();
 }
 
 class _NuevaVentaBottomSheetState extends State<_NuevaVentaBottomSheet> {
-  late String _selectedCliente;
-  late String _selectedProducto;
-  late final TextEditingController _cantidadController;
-  late final TextEditingController _abonoController;
-  late String _selectedMetodoPago;
-  bool _usarTasaManual = false;
-  bool _isProcessing = false;
-  final List<_CartLine> _carrito = [];
-
-  @override
-  void initState() {
-    super.initState();
-    _selectedCliente = widget.initialClienteId;
-    _selectedProducto = widget.dataService.productos.isNotEmpty ? widget.dataService.productos.first.id : '';
-    _cantidadController = TextEditingController(text: '1');
-    _abonoController = TextEditingController(text: '0.00');
-    final metodosActivos = widget.dataService.metodosPagoActivos;
-    _selectedMetodoPago = metodosActivos.isNotEmpty ? metodosActivos.first.id : '';
-  }
+  final TextEditingController _cantidadController = TextEditingController(text: '1');
+  final TextEditingController _abonoController = TextEditingController(text: '0.00');
 
   @override
   void dispose() {
@@ -834,273 +895,242 @@ class _NuevaVentaBottomSheetState extends State<_NuevaVentaBottomSheet> {
 
   @override
   Widget build(BuildContext context) {
-    final ds = widget.dataService;
-    final productosUnicos = <String, Producto>{};
-    for (final p in ds.productos) {
-      productosUnicos.putIfAbsent(p.id, () => p);
-    }
-    final productosParaElegir = productosUnicos.values.toList();
-    final producto = productosParaElegir.firstWhere(
-      (p) => p.id == _selectedProducto,
-      orElse: () => productosParaElegir.first,
+    return BlocListener<NuevaVentaCubit, NuevaVentaState>(
+      listenWhen: (prev, curr) =>
+          prev.clientesVersion != curr.clientesVersion ||
+          prev.productosVersion != curr.productosVersion ||
+          prev.metodosPagoVersion != curr.metodosPagoVersion,
+      listener: (context, _) => _cerrarMenusDesactualizados(context),
+      child: _buildForm(context),
     );
-    final totalCarrito = _carrito.fold<double>(0.0, (s, l) => s + l.subtotal);
-    final tasaSeleccionada = _usarTasaManual
-        ? ds.tasaManualOrganizacion(ds.currentOrganizacionId ?? '')
-        : ds.tasaVigenteEnMonedaBase;
-    final totalBs = totalCarrito * (tasaSeleccionada?.valor ?? 0.0);
-    final metodosActivos = ds.metodosPagoActivos;
+  }
 
-    return PopScope(
-      canPop: !_isProcessing,
-      child: Padding(
-        padding: EdgeInsets.only(
-          bottom: MediaQuery.of(context).viewInsets.bottom + AppSpacing.lg,
-          left: AppSpacing.lg,
-          right: AppSpacing.lg,
-          top: AppSpacing.lg,
-        ),
-        child: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+  Widget _buildForm(BuildContext context) {
+    return BlocConsumer<NuevaVentaCubit, NuevaVentaState>(
+      listenWhen: (prev, curr) => curr.message != null && prev.message != curr.message,
+      listener: (context, state) {
+        final color = switch (state.messageType) {
+          NuevaVentaMessageType.success => AppPalette.success,
+          NuevaVentaMessageType.warning => AppPalette.warning,
+          NuevaVentaMessageType.error => AppPalette.error,
+        };
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(backgroundColor: color, content: Text(state.message!)),
+        );
+        if (state.status == NuevaVentaStatus.success) {
+          Navigator.of(context).pop();
+        } else {
+          context.read<NuevaVentaCubit>().messageShown();
+        }
+      },
+      builder: (context, state) {
+        final cubit = context.read<NuevaVentaCubit>();
+        final isProcessing = state.isSubmitting;
+        final totalCarrito = state.totalCarrito;
+
+        return PopScope(
+          canPop: !isProcessing,
+          child: Padding(
+            padding: EdgeInsets.only(
+              bottom: MediaQuery.of(context).viewInsets.bottom + AppSpacing.lg,
+              left: AppSpacing.lg,
+              right: AppSpacing.lg,
+              top: AppSpacing.lg,
+            ),
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Expanded(
-                    child: Text(
-                      'Registrar Venta (${ds.nextVentaId})',
-                      style: AppTypography.titleLarge.copyWith(fontSize: 17),
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                  IconButton(
-                    icon: const Icon(CupertinoIcons.xmark_circle_fill, color: AppPalette.textSecondary),
-                    onPressed: _isProcessing ? null : () => Navigator.pop(context),
-                  ),
-                ],
-              ),
-            const SizedBox(height: AppSpacing.md),
-            DropdownButtonFormField<String>(
-              initialValue: ds.clientes.any((c) => c.id == _selectedCliente)
-                  ? _selectedCliente
-                  : (ds.clientes.isNotEmpty ? ds.clientes.first.id : null),
-              decoration: const InputDecoration(labelText: 'Cliente', border: OutlineInputBorder()),
-              items: ds.clientes.map((c) => DropdownMenuItem(value: c.id, child: Text('${c.nombre} (${c.id})'))).toList(),
-              onChanged: (val) => setState(() => _selectedCliente = val!),
-            ),
-            Builder(
-              builder: (context) {
-                final cId = _selectedCliente;
-                final ventasC = ds.ventas.where((v) => v.clienteId == cId);
-                final deudaC = ventasC.fold<double>(0.0, (s, v) => s + (v.deudaUsd > 0 ? v.deudaUsd : 0.0));
-                final creditsC = ServiceLocator().creditsDataSource.credits.where((c) => c.clienteId == cId && c.isAvailable);
-                final saldoC = creditsC.fold<double>(0.0, (s, c) => s + c.saldoUsd);
-                if (deudaC <= 0 && saldoC <= 0) return const SizedBox.shrink();
-                return Padding(
-                  padding: const EdgeInsets.only(top: AppSpacing.xs),
-                  child: Wrap(
-                    spacing: AppSpacing.sm,
-                    runSpacing: 4,
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      if (deudaC > 0)
-                        CreditChip(amount: deudaC, isCredit: false),
-                      if (saldoC > 0)
-                        CreditChip(amount: saldoC, isCredit: true),
-                    ],
-                  ),
-                );
-              },
-            ),
-            const SizedBox(height: AppSpacing.md),
-            Text('Agregar productos', style: AppTypography.bodyMedium.copyWith(fontWeight: FontWeight.w600)),
-            const SizedBox(height: AppSpacing.sm),
-            DropdownButtonFormField<String>(
-              initialValue: productosParaElegir.any((p) => p.id == _selectedProducto)
-                  ? _selectedProducto
-                  : (productosParaElegir.isNotEmpty ? productosParaElegir.first.id : null),
-              isExpanded: true,
-              decoration: const InputDecoration(labelText: 'Producto / Prenda', border: OutlineInputBorder()),
-              items: productosParaElegir
-                  .map((p) => DropdownMenuItem(
-                        value: p.id,
+                      Expanded(
                         child: Text(
-                          '${p.nombre} - USD ${p.precioUsd.toStringAsFixed(2)} (Stock: ${p.cantidad})',
+                          'Registrar Venta (${state.nextVentaId})',
+                          style: AppTypography.titleLarge.copyWith(fontSize: 17),
                           overflow: TextOverflow.ellipsis,
                         ),
-                      ))
-                  .toList(),
-              onChanged: (val) => setState(() => _selectedProducto = val ?? ''),
-            ),
-            const SizedBox(height: AppSpacing.sm),
-            Row(
-              children: [
-                Expanded(
-                  child: AppTextField(
-                    label: 'Cantidad',
-                    controller: _cantidadController,
-                    keyboardType: TextInputType.number,
+                      ),
+                      IconButton(
+                        icon: const Icon(CupertinoIcons.xmark_circle_fill, color: AppPalette.textSecondary),
+                        onPressed: isProcessing ? null : () => Navigator.pop(context),
+                      ),
+                    ],
                   ),
-                ),
-                const SizedBox(width: AppSpacing.md),
-                AppOutlinedButton(
-                  label: 'Agregar',
-                  onPressed: () {
-                    final cant = int.tryParse(_cantidadController.text) ?? 0;
-                    if (cant < 1) return;
-                    if (cant > producto.cantidad) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text('Solo hay ${producto.cantidad} en stock de ${producto.nombre}.')),
-                      );
-                      return;
-                    }
-                    setState(() {
-                      _carrito.add(_CartLine(
-                        productoId: producto.id,
-                        nombre: producto.nombre,
-                        cantidad: cant,
-                        precioUsd: producto.precioUsd,
-                      ));
-                      _cantidadController.text = '1';
-                    });
-                  },
-                ),
-              ],
-            ),
-            const SizedBox(height: AppSpacing.md),
-            if (_carrito.isEmpty)
-              Text(
-                'Todavía no agregaste ningún producto.',
-                style: AppTypography.labelSmall.copyWith(color: AppPalette.textSecondary),
-              )
-            else
-              ..._carrito.asMap().entries.map((entry) {
-                final line = entry.value;
-                return Padding(
-                  padding: const EdgeInsets.only(bottom: AppSpacing.xs),
-                  child: AppCard(
-                    padding: AppSpacing.pSm,
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            '${line.nombre} × ${line.cantidad} — USD ${line.subtotal.toStringAsFixed(2)}',
-                            style: AppTypography.bodyMedium,
-                            overflow: TextOverflow.ellipsis,
+                  const SizedBox(height: AppSpacing.md),
+                  // La key recrea el campo cuando la selección cambia desde
+                  // el Cubit (DropdownButtonFormField solo lee `initialValue`
+                  // al crearse). Las opciones se actualizan en cada rebuild;
+                  // un menú ya abierto lo cierra el BlocListener de arriba.
+                  DropdownButtonFormField<String>(
+                    key: ValueKey('venta_cliente_${state.selectedClienteId}'),
+                    initialValue: state.selectedClienteId,
+                    isExpanded: true,
+                    hint: const Text('Seleccioná un cliente'),
+                    decoration: const InputDecoration(labelText: 'Cliente', border: OutlineInputBorder()),
+                    items: state.clientes
+                        .map((c) => DropdownMenuItem(
+                              value: c.id,
+                              child: Text('${c.nombre} (${c.id})', overflow: TextOverflow.ellipsis),
+                            ))
+                        .toList(),
+                    onChanged: isProcessing
+                        ? null
+                        : (val) {
+                            if (val != null) cubit.selectCliente(val);
+                          },
+                  ),
+                  if (state.deudaCliente > 0 || state.saldoCliente > 0)
+                    Padding(
+                      padding: const EdgeInsets.only(top: AppSpacing.xs),
+                      child: Wrap(
+                        spacing: AppSpacing.sm,
+                        runSpacing: 4,
+                        children: [
+                          if (state.deudaCliente > 0)
+                            CreditChip(amount: state.deudaCliente, isCredit: false),
+                          if (state.saldoCliente > 0)
+                            CreditChip(amount: state.saldoCliente, isCredit: true),
+                        ],
+                      ),
+                    ),
+                  const SizedBox(height: AppSpacing.md),
+                  Text('Agregar productos', style: AppTypography.bodyMedium.copyWith(fontWeight: FontWeight.w600)),
+                  const SizedBox(height: AppSpacing.sm),
+                  DropdownButtonFormField<String>(
+                    key: ValueKey('venta_producto_${state.selectedProductoId}'),
+                    initialValue: state.selectedProductoId,
+                    isExpanded: true,
+                    decoration: const InputDecoration(labelText: 'Producto / Prenda', border: OutlineInputBorder()),
+                    items: state.productos
+                        .map((p) => DropdownMenuItem(
+                              value: p.id,
+                              child: Text(
+                                '${p.nombre} - USD ${p.precioUsd.toStringAsFixed(2)} (Stock: ${p.cantidad})',
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ))
+                        .toList(),
+                    onChanged: (val) {
+                      if (val != null) cubit.selectProducto(val);
+                    },
+                  ),
+                  const SizedBox(height: AppSpacing.sm),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: AppTextField(
+                          label: 'Cantidad',
+                          controller: _cantidadController,
+                          keyboardType: TextInputType.number,
+                        ),
+                      ),
+                      const SizedBox(width: AppSpacing.md),
+                      AppOutlinedButton(
+                        label: 'Agregar',
+                        onPressed: () {
+                          if (cubit.addToCart(_cantidadController.text)) {
+                            _cantidadController.text = '1';
+                          }
+                        },
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: AppSpacing.md),
+                  if (state.carrito.isEmpty)
+                    Text(
+                      'Todavía no agregaste ningún producto.',
+                      style: AppTypography.labelSmall.copyWith(color: AppPalette.textSecondary),
+                    )
+                  else
+                    ...state.carrito.asMap().entries.map((entry) {
+                      final line = entry.value;
+                      return Padding(
+                        padding: const EdgeInsets.only(bottom: AppSpacing.xs),
+                        child: AppCard(
+                          padding: AppSpacing.pSm,
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  '${line.nombre} × ${line.cantidad} — USD ${line.subtotal.toStringAsFixed(2)}',
+                                  style: AppTypography.bodyMedium,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                              IconButton(
+                                visualDensity: VisualDensity.compact,
+                                icon: const Icon(CupertinoIcons.trash, size: 16, color: AppPalette.error),
+                                onPressed: () => cubit.removeFromCart(entry.key),
+                              ),
+                            ],
                           ),
                         ),
-                        IconButton(
-                          visualDensity: VisualDensity.compact,
-                          icon: const Icon(CupertinoIcons.trash, size: 16, color: AppPalette.error),
-                          onPressed: () => setState(() => _carrito.removeAt(entry.key)),
-                        ),
+                      );
+                    }),
+                  const SizedBox(height: AppSpacing.md),
+                  DropdownButtonFormField<String>(
+                    key: ValueKey('venta_metodo_${state.selectedMetodoPagoId}'),
+                    initialValue: state.selectedMetodoPagoId,
+                    isExpanded: true,
+                    decoration: const InputDecoration(labelText: 'Método de Pago', border: OutlineInputBorder()),
+                    items: state.metodosPago
+                        .map((mp) => DropdownMenuItem(value: mp.id, child: Text(mp.nombre, overflow: TextOverflow.ellipsis)))
+                        .toList(),
+                    onChanged: (val) {
+                      if (val != null) cubit.selectMetodoPago(val);
+                    },
+                  ),
+                  _TasaSelector(
+                    tasaAutomatica: state.tasaAutomatica,
+                    tasaManual: state.tasaManual,
+                    usarManual: state.usarTasaManual,
+                    onChanged: cubit.setUsarTasaManual,
+                  ),
+                  const SizedBox(height: AppSpacing.sm),
+                  AppTextField(
+                    label: 'Abono Inicial en USD (Total: USD ${totalCarrito.toStringAsFixed(2)})',
+                    controller: _abonoController,
+                    hint: '0.00 para crédito total',
+                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  ),
+                  const SizedBox(height: AppSpacing.md),
+                  AppCard(
+                    padding: AppSpacing.pSm,
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text('Total: USD ${totalCarrito.toStringAsFixed(2)}', style: AppTypography.titleLarge.copyWith(fontSize: 14)),
+                        Text('Equivalente: ${state.totalBs.toStringAsFixed(2)} Bs.', style: AppTypography.bodyMedium),
                       ],
                     ),
                   ),
-                );
-              }),
-            const SizedBox(height: AppSpacing.md),
-            DropdownButtonFormField<String>(
-              initialValue: metodosActivos.any((m) => m.id == _selectedMetodoPago)
-                  ? _selectedMetodoPago
-                  : (metodosActivos.isNotEmpty ? metodosActivos.first.id : null),
-              decoration: const InputDecoration(labelText: 'Método de Pago', border: OutlineInputBorder()),
-              items: metodosActivos
-                  .map((mp) => DropdownMenuItem(value: mp.id, child: Text(mp.nombre)))
-                  .toList(),
-              onChanged: (val) => setState(() => _selectedMetodoPago = val ?? metodosActivos.first.id),
-            ),
-            _TasaSelector(
-              tasaAutomatica: ds.tasaVigenteEnMonedaBase,
-              tasaManual: ds.tasaManualOrganizacion(ds.currentOrganizacionId ?? ''),
-              usarManual: _usarTasaManual,
-              onChanged: (val) => setState(() => _usarTasaManual = val),
-            ),
-            const SizedBox(height: AppSpacing.sm),
-            AppTextField(
-              label: 'Abono Inicial en USD (Total: USD ${totalCarrito.toStringAsFixed(2)})',
-              controller: _abonoController,
-              hint: '0.00 para crédito total',
-              keyboardType: const TextInputType.numberWithOptions(decimal: true),
-            ),
-            const SizedBox(height: AppSpacing.md),
-            AppCard(
-              padding: AppSpacing.pSm,
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text('Total: USD ${totalCarrito.toStringAsFixed(2)}', style: AppTypography.titleLarge.copyWith(fontSize: 14)),
-                  Text('Equivalente: ${totalBs.toStringAsFixed(2)} Bs.', style: AppTypography.bodyMedium),
+                  const SizedBox(height: AppSpacing.lg),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: AppOutlinedButton(
+                          label: 'Cancelar',
+                          onPressed: isProcessing ? null : () => Navigator.pop(context),
+                        ),
+                      ),
+                      const SizedBox(width: AppSpacing.md),
+                      Expanded(
+                        child: AppButton(
+                          label: isProcessing ? 'Guardando...' : 'Guardar Venta',
+                          icon: isProcessing ? null : CupertinoIcons.cart_fill,
+                          onPressed: isProcessing ? null : () => cubit.submit(_abonoController.text),
+                        ),
+                      ),
+                    ],
+                  ),
                 ],
               ),
             ),
-            const SizedBox(height: AppSpacing.lg),
-            Row(
-              children: [
-                Expanded(
-                  child: AppOutlinedButton(
-                    label: 'Cancelar',
-                    onPressed: _isProcessing ? null : () => Navigator.pop(context),
-                  ),
-                ),
-                const SizedBox(width: AppSpacing.md),
-                Expanded(
-                  child: AppButton(
-                    label: _isProcessing ? 'Guardando...' : 'Guardar Venta',
-                    icon: _isProcessing ? null : CupertinoIcons.cart_fill,
-                    onPressed: _isProcessing
-                        ? null
-                        : () async {
-                            if (_carrito.isEmpty) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(content: Text('Agregá al menos un producto al carrito.')),
-                              );
-                              return;
-                            }
-                            final abono = double.tryParse(_abonoController.text.replaceAll(',', '.')) ?? totalCarrito;
-                            final navigator = Navigator.of(context);
-                            final messenger = ScaffoldMessenger.of(context);
-                            setState(() => _isProcessing = true);
-                            try {
-                              final ok = await ds.addVenta(
-                                clienteId: _selectedCliente,
-                                items: _carrito
-                                    .map((l) => (productoId: l.productoId, cantidad: l.cantidad, precioUsd: l.precioUsd))
-                                    .toList(),
-                                metodoPagoId: _selectedMetodoPago,
-                                abonoUsd: abono,
-                                usarTasaManual: _usarTasaManual,
-                              );
-                              if (!mounted) return;
-                              navigator.pop();
-                              if (ok) {
-                                messenger.showSnackBar(
-                                  const SnackBar(
-                                    backgroundColor: AppPalette.success,
-                                    content: Text('Venta registrada con éxito.'),
-                                  ),
-                                );
-                              }
-                            } catch (e) {
-                              if (!mounted) return;
-                              setState(() => _isProcessing = false);
-                              messenger.showSnackBar(
-                                SnackBar(
-                                  backgroundColor: AppPalette.error,
-                                  content: Text('Error al registrar venta: $e'),
-                                ),
-                              );
-                            }
-                          },
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    ),
-  );
+          ),
+        );
+      },
+    );
   }
 }

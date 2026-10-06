@@ -52,12 +52,28 @@ class AuditLogCubit extends Cubit<AuditLogState> {
     _syncFromService();
   }
 
-  void addAuditLogManual(AuditLog log) {
-    dataService.addAuditLogManual(log);
-    emit(state.copyWith(
-      status: AuditLogStatus.success,
-      actionSuccessMessage: 'Checkpoint de auditoría registrado.',
-    ));
+  /// La bitácora solo admite altas: no se edita ni se borra.
+  Future<void> addAuditLogManual(AuditLog log) => _ejecutar(
+        () => dataService.addAuditLogManual(log),
+        exito: 'Checkpoint de auditoría registrado.',
+      );
+
+  /// Espera la operación del servicio (que revierte si Sheets falla) y emite
+  /// el mensaje de éxito o el error real.
+  Future<void> _ejecutar(Future<void> Function() operacion, {required String exito}) async {
+    try {
+      await operacion();
+      if (isClosed) return;
+      emit(state.copyWith(status: AuditLogStatus.success, actionSuccessMessage: exito));
+    } catch (e) {
+      if (isClosed) return;
+      final mensaje = switch (e) {
+        StateError(:final message) => message,
+        ArgumentError(:final message) => message.toString(),
+        _ => e.toString(),
+      };
+      emit(state.copyWith(errorMessage: mensaje));
+    }
   }
 
   @override

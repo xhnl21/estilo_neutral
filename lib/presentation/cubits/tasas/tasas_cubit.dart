@@ -1,6 +1,5 @@
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../../core/utils/logger.dart';
-import '../../../models/tasa_registro.dart';
 import '../../../shared/google_sheets/sheets_data_service.dart';
 import 'tasas_state.dart';
 
@@ -22,35 +21,57 @@ class TasasCubit extends Cubit<TasasState> {
   }
 
   void _syncFromService() {
-    final list = List<TasaRegistro>.from(dataService.tasas)
-      ..sort((a, b) => b.fecha.compareTo(a.fecha));
-    final usdVigente = dataService.tasaBcvVigente('USD');
-    final eurVigente = dataService.tasaBcvVigente('EUR');
+    if (isClosed) return;
     final orgId = dataService.currentOrganizacionId ?? '';
-    final monedaActual = dataService.monedaOrganizacion(orgId);
+    // Las tasas BCV son de todos; las manuales, solo de la organización actual.
+    final list = dataService.tasas
+        .where((t) => t.fuente != 'manual' || t.organizacionId == orgId)
+        .toList()
+      ..sort((a, b) => b.fecha.compareTo(a.fecha));
 
-    emit(state.copyWith(
+    // Estado armado completo (no copyWith): las tasas vigentes y la moneda
+    // pueden volver a null si dejaron de existir.
+    emit(TasasState(
       status: dataService.isLoading ? TasasStatus.loading : TasasStatus.success,
       tasas: list,
-      usdVigente: usdVigente,
-      eurVigente: eurVigente,
-      monedaActual: monedaActual,
+      usdVigente: dataService.tasaBcvVigente('USD'),
+      eurVigente: dataService.tasaBcvVigente('EUR'),
+      monedaActual: orgId.isEmpty ? null : dataService.monedaOrganizacion(orgId),
+      isActualizandoTasaHoy: state.isActualizandoTasaHoy,
+      actionSuccess: state.actionSuccess,
       errorMessage: dataService.errorMessage,
     ));
   }
 
   Future<void> refresh() async {
     Logger.info('TasasCubit: Refrescando tasas desde Google Sheets...');
-    emit(state.copyWith(status: TasasStatus.loading));
+    emit(state.copyWith(status: TasasStatus.loading, errorMessage: state.errorMessage));
     await dataService.fetchAllSheets();
     _syncFromService();
   }
 
+  /// Cambia la moneda base de la organización. Si Sheets no lo confirma se
+  /// revierte (la pantalla vuelve a la moneda anterior) y se avisa.
+  Future<void> cambiarMoneda(String organizacionId, String moneda) async {
+    try {
+      await dataService.setMonedaOrganizacion(organizacionId, moneda);
+      if (isClosed) return;
+      emit(state.copyWith(
+          actionMessage: 'Moneda base cambiada a $moneda.', actionSuccess: true, errorMessage: state.errorMessage));
+    } on StateError catch (e) {
+      if (isClosed) return;
+      emit(state.copyWith(actionMessage: e.message, actionSuccess: false, errorMessage: state.errorMessage));
+    }
+  }
+
   Future<void> obtenerTasaDeHoy() async {
     Logger.info('TasasCubit: Solicitando refresco de tasa de hoy...');
-    emit(state.copyWith(isActualizandoTasaHoy: true));
+    emit(state.copyWith(isActualizandoTasaHoy: true, errorMessage: state.errorMessage));
     final ok = await dataService.refrescarTasaHoy();
+    // El usuario pudo salir de la pantalla mientras se esperaba.
+    if (isClosed) return;
     emit(state.copyWith(
+      errorMessage: state.errorMessage,
       isActualizandoTasaHoy: false,
       actionMessage: ok
           ? 'Tasa de hoy obtenida correctamente.'

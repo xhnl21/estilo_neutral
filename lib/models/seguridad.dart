@@ -1,3 +1,5 @@
+import 'fila_hoja.dart';
+
 /// Modelo de entidad Seguridad mapeado desde la hoja "seguridad".
 /// Configuración de mecanismos de autenticación disponibles, con **una fila
 /// por usuario** (no por organización): así, si el equipo de un usuario no
@@ -9,6 +11,9 @@
 /// `SheetsDataService.setMetodoSeguridad` para cambiarlo.
 class Seguridad {
   /// Columna A: Autenticación biométrica (huella dactilar) habilitada
+  /// ID generado por el servidor (sg00000001). Vacío si aún no se confirmó.
+  final String id;
+
   final bool biometrico;
 
   /// Columna B: Desbloqueo facial habilitado
@@ -21,6 +26,7 @@ class Seguridad {
   final String usuarioEmail;
 
   const Seguridad({
+    this.id = '',
     this.biometrico = false,
     this.desbloqueoFacial = false,
     this.dosFactores = false,
@@ -28,11 +34,13 @@ class Seguridad {
   });
 
   factory Seguridad.fromRow(List<dynamic> row) {
+    final f = FilaHoja.leer(row, 'sg');
     return Seguridad(
-      biometrico: _parseBool(row.isNotEmpty ? row[0] : null),
-      desbloqueoFacial: _parseBool(row.length > 1 ? row[1] : null),
-      dosFactores: _parseBool(row.length > 2 ? row[2] : null),
-      usuarioEmail: row.length > 3 ? row[3].toString().trim().toLowerCase() : '',
+      id: f.id,
+      biometrico: _parseBool(f.texto(0)),
+      desbloqueoFacial: _parseBool(f.texto(1)),
+      dosFactores: _parseBool(f.texto(2)),
+      usuarioEmail: f.texto(3).toLowerCase(),
     );
   }
 
@@ -58,6 +66,7 @@ class Seguridad {
 
   Map<String, dynamic> toMap() {
     return {
+      if (id.isNotEmpty) 'id': id,
       'biometrico': biometrico,
       'desbloqueo_facial': desbloqueoFacial,
       'dos_factores': dosFactores,

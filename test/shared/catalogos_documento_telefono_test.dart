@@ -1,9 +1,27 @@
+import 'dart:convert';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:estilo_neutral/models/models.dart';
 import 'package:estilo_neutral/presentation/cubits/codigos_telefono/codigos_telefono_cubit.dart';
 import 'package:estilo_neutral/presentation/cubits/tipos_documento/tipos_documento_cubit.dart';
 import 'package:estilo_neutral/shared/google_sheets/sheets_data_service.dart';
+import 'package:dio/dio.dart';
+import '../test_fake_dio.dart';
 import '../test_sheets_config.dart';
+
+/// Servicio cuyo Apps Script responde siempre [respuesta] (sin red).
+SheetsDataService servicioConServidor(String respuesta, {List<Map<String, dynamic>>? enviados}) {
+  final dio = Dio()
+    ..httpClientAdapter = FakeHttpClientAdapter(
+      statusCode: 200,
+      responseBody: respuesta,
+      onRequest: (o) {
+        if (o.data is String && enviados != null) enviados.add(jsonDecode(o.data as String) as Map<String, dynamic>);
+        if (o.data is Map && enviados != null) enviados.add(Map<String, dynamic>.from(o.data as Map));
+      },
+    );
+  return SheetsDataService(spreadsheetId: testSpreadsheetId, appsScriptUrl: testAppsScriptUrl, dio: dio);
+}
 
 void main() {
   group('CodigoTelefono Model Tests', () {
@@ -36,6 +54,105 @@ void main() {
     });
   });
 
+  group('CodigoTelefono: códigos que Google Sheets guardó como número', () {
+    test('restaura el 0 inicial al leer', () {
+      expect(CodigoTelefono.fromRow(['ct1', '414', 'TRUE']).codigo, '0414');
+      expect(CodigoTelefono.fromRow(['ct1', '414.0', 'TRUE']).codigo, '0414');
+      expect(CodigoTelefono.fromRow(['ct1', '212', 'TRUE']).codigo, '0212');
+      expect(CodigoTelefono.fromRow(['ct1', '0414', 'TRUE']).codigo, '0414');
+    });
+
+    test('un código normalizado sirve para armar el E.164 del cliente', () {
+      final codigo = CodigoTelefono.fromRow(['ct1', '414', 'TRUE']).codigo;
+      expect(TelefonoVe(codigo: codigo, numero: '1234567').e164, '+584141234567');
+    });
+  });
+
+  group('Catálogos sin conexión: el cambio se revierte y se informa el error', () {
+    late SheetsDataService ds;
+
+    setUp(() {
+      // Sin URL de Apps Script la sincronización falla siempre.
+      ds = SheetsDataService(spreadsheetId: testSpreadsheetId, appsScriptUrl: '');
+    });
+
+    test('crear código', () async {
+      await expectLater(ds.addCodigoTelefono(codigo: '0212'), throwsA(isA<StateError>()));
+      expect(ds.codigosTelefono.any((c) => c.codigo == '0212'), isFalse);
+    });
+
+    test('editar código', () async {
+      final item = ds.codigosTelefono.firstWhere((c) => c.codigo == '0414');
+      await expectLater(
+        ds.updateCodigoTelefono(id: item.id, nuevoCodigo: '0415'),
+        throwsA(isA<StateError>()),
+      );
+      expect(ds.codigosTelefono.firstWhere((c) => c.id == item.id).codigo, '0414');
+    });
+
+    test('activar/desactivar código', () async {
+      final item = ds.codigosTelefono.firstWhere((c) => c.codigo == '0422');
+      await expectLater(ds.toggleCodigoTelefonoStatus(item.id), throwsA(isA<StateError>()));
+      expect(ds.codigosTelefono.firstWhere((c) => c.id == item.id).status, isTrue);
+    });
+
+    test('eliminar código', () async {
+      final item = ds.codigosTelefono.firstWhere((c) => c.codigo == '0422');
+      final antes = ds.codigosTelefono.map((c) => c.id).toList();
+      await expectLater(ds.deleteCodigoTelefono(item.id), throwsA(isA<StateError>()));
+      expect(ds.codigosTelefono.map((c) => c.id).toList(), antes);
+    });
+
+    test('editar y desactivar tipo de documento', () async {
+      final item = ds.tiposDocumento.firstWhere((t) => t.tipo == 'G');
+      await expectLater(
+        ds.updateTipoDocumento(id: item.id, nuevoTipo: 'G', nuevaDescripcion: 'Otro'),
+        throwsA(isA<StateError>()),
+      );
+      await expectLater(ds.toggleTipoDocumentoStatus(item.id), throwsA(isA<StateError>()));
+      final despues = ds.tiposDocumento.firstWhere((t) => t.id == item.id);
+      expect(despues.descripcion, item.descripcion);
+      expect(despues.status, isTrue);
+    });
+
+    test('el formato del código se valida antes de enviar', () async {
+      await expectLater(ds.addCodigoTelefono(codigo: '414'), throwsA(isA<ArgumentError>()));
+      await expectLater(ds.addCodigoTelefono(codigo: '04141'), throwsA(isA<ArgumentError>()));
+    });
+
+    test('el Cubit muestra el error sin prefijos técnicos', () async {
+      final cubit = CodigosTelefonoCubit(dataService: ds);
+      final errores = <String>[];
+      final sub = cubit.stream.listen((st) {
+        if (st.errorMessage != null) errores.add(st.errorMessage!);
+      });
+      await expectLater(cubit.addCodigoTelefono('0212'), throwsA(isA<StateError>()));
+      await Future<void>.delayed(Duration.zero);
+      expect(errores, contains(startsWith('No se pudo guardar en Google Sheets')));
+      await sub.cancel();
+      await cubit.close();
+    });
+
+    test('una respuesta {status: "error"} del script también revierte', () async {
+      final conError = servicioConServidor('{"status":"error","message":"Registro no encontrado"}');
+      final item = conError.codigosTelefono.firstWhere((c) => c.codigo == '0422');
+      await expectLater(conError.toggleCodigoTelefonoStatus(item.id), throwsA(isA<StateError>()));
+      expect(conError.codigosTelefono.firstWhere((c) => c.id == item.id).status, isTrue);
+    });
+
+    test('lo que se envía al script incluye el código y el status', () async {
+      final enviados = <Map<String, dynamic>>[];
+      final ok = servicioConServidor('{"status":"success"}', enviados: enviados);
+      final item = ok.codigosTelefono.firstWhere((c) => c.codigo == '0422');
+      await ok.updateCodigoTelefono(id: item.id, nuevoCodigo: '0418');
+      await ok.toggleCodigoTelefonoStatus(item.id);
+      expect(enviados.map((e) => e['data']), containsAllInOrder([
+        {'codigo': '0418'},
+        {'status': false},
+      ]));
+    });
+  });
+
   group('TipoDocumento Model Tests', () {
     test('Parsea correctamente desde una fila de Google Sheets', () {
       final row = ['td00000001', 'V', 'Venezolano', 'TRUE'];
@@ -61,7 +178,7 @@ void main() {
     late SheetsDataService ds;
 
     setUp(() {
-      ds = SheetsDataService(spreadsheetId: testSpreadsheetId, appsScriptUrl: testAppsScriptUrl);
+      ds = servicioConServidor('{"status":"success"}');
     });
 
     test('Inicializa con catálogo por defecto', () {
@@ -104,7 +221,7 @@ void main() {
     late SheetsDataService ds;
 
     setUp(() {
-      ds = SheetsDataService(spreadsheetId: testSpreadsheetId, appsScriptUrl: testAppsScriptUrl);
+      ds = servicioConServidor('{"status":"success"}');
     });
 
     test('Inicializa con catálogo por defecto', () {

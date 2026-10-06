@@ -37,28 +37,37 @@ class CuarentenaCubit extends Cubit<CuarentenaState> {
     _syncFromService();
   }
 
-  void addCuarentena(RegistroCuarentena item) {
-    dataService.addCuarentena(item);
-    emit(state.copyWith(
-      status: CuarentenaStatus.success,
-      actionSuccessMessage: 'Anomalía reportada a cuarentena.',
-    ));
-  }
+  Future<void> addCuarentena(RegistroCuarentena item) => _ejecutar(
+        () => dataService.addCuarentena(item),
+        exito: 'Anomalía reportada a cuarentena.',
+      );
 
-  void updateCuarentena(RegistroCuarentena item) {
-    dataService.updateCuarentena(item);
-    emit(state.copyWith(
-      status: CuarentenaStatus.success,
-      actionSuccessMessage: 'Registro de cuarentena actualizado.',
-    ));
-  }
+  Future<void> updateCuarentena(RegistroCuarentena item) => _ejecutar(
+        () => dataService.updateCuarentena(item),
+        exito: 'Registro de cuarentena actualizado.',
+      );
 
-  void deleteCuarentena(String idOriginal) {
-    dataService.deleteCuarentena(idOriginal);
-    emit(state.copyWith(
-      status: CuarentenaStatus.success,
-      actionSuccessMessage: 'Registro removido de cuarentena.',
-    ));
+  Future<void> deleteCuarentena(String id) => _ejecutar(
+        () => dataService.deleteCuarentena(id),
+        exito: 'Registro removido de cuarentena.',
+      );
+
+  /// Espera la operación del servicio (que revierte si Sheets falla) y emite
+  /// el mensaje de éxito o el error real.
+  Future<void> _ejecutar(Future<void> Function() operacion, {required String exito}) async {
+    try {
+      await operacion();
+      if (isClosed) return;
+      emit(state.copyWith(status: CuarentenaStatus.success, actionSuccessMessage: exito));
+    } catch (e) {
+      if (isClosed) return;
+      final mensaje = switch (e) {
+        StateError(:final message) => message,
+        ArgumentError(:final message) => message.toString(),
+        _ => e.toString(),
+      };
+      emit(state.copyWith(errorMessage: mensaje));
+    }
   }
 
   @override

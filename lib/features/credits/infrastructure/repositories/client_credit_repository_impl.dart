@@ -1,6 +1,7 @@
 import '../../../../models/models.dart';
 import '../../domain/entities/client_credit.dart';
 import '../../domain/entities/credit_status.dart';
+import '../../domain/value_objects/credit_id.dart';
 import '../../domain/repositories/client_credit_repository.dart';
 import '../../domain/services/credit_applier.dart';
 import '../datasources/sheets_credits_datasource.dart';
@@ -48,7 +49,7 @@ class ClientCreditRepositoryImpl implements ClientCreditRepository {
 
     final auditData = <String, dynamic>{
       'timestamp': DateTime.now().toIso8601String(),
-      'usuario': credit.usuarioEmail ?? 'Antigravity Senior Agent',
+      'usuario': credit.usuarioEmail ?? dataSource.dataService.currentUsuarioEmail ?? '',
       'hoja': 'creditos_clientes',
       'celda': credit.id.value,
       'valor_anterior': 'null',
@@ -94,7 +95,7 @@ class ClientCreditRepositoryImpl implements ClientCreditRepository {
 
     final auditData = <String, dynamic>{
       'timestamp': now.toIso8601String(),
-      'usuario': 'Antigravity Senior Agent',
+      'usuario': dataSource.dataService.currentUsuarioEmail ?? '',
       'hoja': 'creditos_clientes',
       'celda': creditId,
       'valor_anterior': 'DISPONIBLE',
@@ -131,9 +132,18 @@ class ClientCreditRepositoryImpl implements ClientCreditRepository {
     required String userEmail,
   }) async {
     final available = await getAvailableCredits(clienteId);
+    final ds = dataSource.dataService;
+
+    // La deuda se toma de la venta tal como está AHORA (no la que se vio al
+    // abrir la pantalla): si bajó en el ínterin no se consume crédito de más.
+    final targetVenta = ds.ventas.where((v) => v.id == targetVentaId).firstOrNull;
+    if (targetVenta == null) return false;
+    final deudaActual = (targetVenta.totalPagarUsd - targetVenta.abonoUsd).clamp(0.0, double.infinity);
+    if (amountToApply > deudaActual) amountToApply = deudaActual.toDouble();
     if (available.isEmpty || amountToApply <= 0.0) return false;
 
     final now = DateTime.now();
+    // ID provisorio del crédito remanente: el real lo genera el servidor.
     final nextId = dataSource.nextCreditId;
 
     final plan = creditApplier.planFifoApplication(
@@ -148,35 +158,41 @@ class ClientCreditRepositoryImpl implements ClientCreditRepository {
 
     final operations = <BatchOperation>[];
 
-    // Paso 1: Crear Abono con método "Saldo a Favor" (mp00000009)
-    final abonoId = dataSource.dataService.nextAbonoId;
+    // Paso 1: Crear Abono con método "Saldo a Favor" (mp00000009). El ID lo
+    // genera el servidor; la tasa es la misma que usa un abono normal (la de
+    // la moneda base de la organización), no siempre la de USD.
     operations.add(BatchOperation.create(
       sheet: 'abonos',
       data: {
-        'id': abonoId,
         'venta_id': targetVentaId,
-        'fecha': now.toIso8601String().split('T').first,
+        'fecha': now.toIso8601String(),
         'monto': plan.totalApplied,
         'metodo_pago': 'mp00000009',
-        'tasa_id': dataSource.dataService.tasaBcvVigente('USD')?.id ?? '',
+        'tasa_id': ds.tasaVigenteEnMonedaBase?.id ?? '',
       },
     ));
 
     // Paso 2: Actualizar la cabecera de la factura en 'ventas'
-    final targetVenta = dataSource.dataService.ventas.where((v) => v.id == targetVentaId).firstOrNull;
-    if (targetVenta != null) {
-      final nuevoAbono = targetVenta.abonoUsd + plan.totalApplied;
-      final nuevaDeuda = (targetVenta.totalPagarUsd - nuevoAbono).clamp(0.0, double.infinity);
-      final nuevoEstado = nuevaDeuda <= 0 ? 'Pagada' : 'Pendiente';
-      operations.add(BatchOperation.update(
-        sheet: 'ventas',
-        id: targetVentaId,
-        data: {
-          'abono_usd': nuevoAbono,
-          'estado': nuevoEstado,
-        },
-      ));
-    }
+    final nuevoAbono = targetVenta.abonoUsd + plan.totalApplied;
+    final nuevaDeuda = (targetVenta.totalPagarUsd - nuevoAbono).clamp(0.0, double.infinity);
+    final nuevoEstado = nuevaDeuda <= 0 ? 'Pagada' : 'Pendiente';
+    operations.add(BatchOperation.update(
+      sheet: 'ventas',
+      id: targetVentaId,
+      data: {
+        'abono_usd': nuevoAbono,
+        'estado': nuevoEstado,
+      },
+    ));
+
+    // Paso 2b: La deuda del cliente baja en lo aplicado.
+    operations.add(BatchOperation.increment(
+      sheet: 'clientes',
+      id: clienteId,
+      field: 'saldo_deuda_usd',
+      delta: -plan.totalApplied,
+      min: 0,
+    ));
 
     // Paso 3: Consumir créditos (marcar como APLICADO) y registrar remanente si hubo corte
     for (final credit in plan.consumedCredits) {
@@ -203,7 +219,7 @@ class ClientCreditRepositoryImpl implements ClientCreditRepository {
     if (plan.partialSplitCredit != null) {
       operations.add(BatchOperation.create(
         sheet: 'creditos_clientes',
-        data: ClientCreditModel.toMap(plan.partialSplitCredit!),
+        data: Map.of(ClientCreditModel.toMap(plan.partialSplitCredit!))..remove('id'),
       ));
     }
 
@@ -218,9 +234,8 @@ class ClientCreditRepositoryImpl implements ClientCreditRepository {
       'accion': 'aplicacion_credito_cliente',
       'norma': 'ISO 8000 §5.3 / COBIT 2019 DSS05',
       'observaciones':
-          'Saldo a favor aplicado a $targetVentaId por \$${plan.totalApplied.toStringAsFixed(2)}. Antigravity Senior Agent.',
-      'organizacion_id': dataSource.dataService.currentOrganizacionId ??
-          '67774411-6aa1-4aa3-a4b2-d3fc6913b768',
+          'Saldo a favor aplicado a $targetVentaId por \$${plan.totalApplied.toStringAsFixed(2)}.',
+      'organizacion_id': ds.currentOrganizacionId ?? '67774411-6aa1-4aa3-a4b2-d3fc6913b768',
     };
     auditData['hash_evidencia'] = ClientCreditModel.generateEvidenceHash(auditData);
 
@@ -242,8 +257,10 @@ class ClientCreditRepositoryImpl implements ClientCreditRepository {
     for (final c in plan.consumedCredits) {
       dataSource.updateCreditLocal(c);
     }
-    if (plan.partialSplitCredit != null) {
-      dataSource.addCreditLocal(plan.partialSplitCredit!);
+    final split = plan.partialSplitCredit;
+    if (split != null) {
+      final idReal = res.generatedIds['creditos_clientes'] as String?;
+      dataSource.addCreditLocal(idReal != null ? split.copyWith(id: CreditId(idReal)) : split);
     }
 
     // Paso 4: Refrescar la venta y abonos localmente

@@ -1,3 +1,4 @@
+import 'fecha_hoja.dart';
 import 'number_parser.dart';
 
 /// Modelo de entidad CompraDivisa mapeado desde la hoja "compras_divisas"
@@ -54,11 +55,42 @@ class CompraDivisa {
     this.organizacionId = '67774411-6aa1-4aa3-a4b2-d3fc6913b768',
   });
 
+  CompraDivisa copyWith({
+    String? id,
+    DateTime? fechaCompra,
+    DateTime? fechaEntrega,
+    double? capitalUsd,
+    double? comisionBinanceUsd,
+    String? numeroOrden,
+    String? plataforma,
+    String? vendedor,
+    double? tasaBcv,
+    double? tasaUsd,
+    String? validacion,
+    String? organizacionId,
+  }) {
+    return CompraDivisa(
+      id: id ?? this.id,
+      fechaCompra: fechaCompra ?? this.fechaCompra,
+      fechaEntrega: fechaEntrega ?? this.fechaEntrega,
+      capitalUsd: capitalUsd ?? this.capitalUsd,
+      comisionBinanceUsd: comisionBinanceUsd ?? this.comisionBinanceUsd,
+      numeroOrden: numeroOrden ?? this.numeroOrden,
+      plataforma: plataforma ?? this.plataforma,
+      vendedor: vendedor ?? this.vendedor,
+      tasaBcv: tasaBcv ?? this.tasaBcv,
+      tasaUsd: tasaUsd ?? this.tasaUsd,
+      validacion: validacion ?? this.validacion,
+      organizacionId: organizacionId ?? this.organizacionId,
+    );
+  }
+
+  /// Lanza [FormatException] si una fecha es ilegible (no se inventa "hoy").
   factory CompraDivisa.fromRow(List<dynamic> row) {
     return CompraDivisa(
       id: row.isNotEmpty ? row[0].toString() : '',
-      fechaCompra: row.length > 1 ? DateTime.tryParse(row[1].toString()) ?? DateTime.now() : DateTime.now(),
-      fechaEntrega: row.length > 2 ? DateTime.tryParse(row[2].toString()) ?? DateTime.now() : DateTime.now(),
+      fechaCompra: fechaHojaObligatoria(row.length > 1 ? row[1].toString() : null, 'compras_divisas.fecha_compra'),
+      fechaEntrega: fechaHojaObligatoria(row.length > 2 ? row[2].toString() : null, 'compras_divisas.fecha_entrega'),
       capitalUsd: row.length > 3 ? parseSheetDouble(row[3]) : 0.0,
       comisionBinanceUsd: row.length > 4 ? parseSheetDouble(row[4]) : 0.0,
       numeroOrden: row.length > 5 ? row[5].toString() : '',

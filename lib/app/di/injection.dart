@@ -40,6 +40,7 @@ class ServiceLocator {
   }
 
   late final AuthCubit authCubit;
+  late final ControlAccesoSesion controlAccesoSesion;
   late final AppRouter appRouter;
 
   bool _initialized = false;
@@ -69,6 +70,11 @@ class ServiceLocator {
 
     authCubit = AuthCubit(
       initialState: const AuthState(isAuthenticated: false),
+    );
+    controlAccesoSesion = ControlAccesoSesion(
+      dataService: sheetsDataService,
+      authCubit: authCubit,
+      sheetsAuth: sheetsAuth,
     );
     appRouter = AppRouter(
       authCubit: authCubit,

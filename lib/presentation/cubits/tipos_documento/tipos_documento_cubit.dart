@@ -29,7 +29,11 @@ class TiposDocumentoCubit extends Cubit<TiposDocumentoState> {
       tipos: currentList,
       filteredTipos: filtered,
       totalActivos: dataService.tiposDocumentoActivos.length,
-      errorMessage: dataService.errorMessage,
+      // El error de carga va aparte: reemitirlo como errorMessage mostraba
+      // un aviso de error justo después del de éxito de una acción.
+      errorCarga: dataService.errorMessage,
+      limpiarErrorCarga: dataService.errorMessage == null,
+      enUso: dataService.tiposDocumentoEnUso,
     ));
   }
 
@@ -72,7 +76,7 @@ class TiposDocumentoCubit extends Cubit<TiposDocumentoState> {
     } catch (e) {
       emit(state.copyWith(
         status: TiposDocumentoStatus.failure,
-        errorMessage: e.toString(),
+        errorMessage: _mensajeError(e),
       ));
       rethrow;
     } finally {
@@ -99,7 +103,7 @@ class TiposDocumentoCubit extends Cubit<TiposDocumentoState> {
     } catch (e) {
       emit(state.copyWith(
         status: TiposDocumentoStatus.failure,
-        errorMessage: e.toString(),
+        errorMessage: _mensajeError(e),
       ));
       rethrow;
     } finally {
@@ -115,7 +119,7 @@ class TiposDocumentoCubit extends Cubit<TiposDocumentoState> {
     } catch (e) {
       emit(state.copyWith(
         status: TiposDocumentoStatus.failure,
-        errorMessage: e.toString(),
+        errorMessage: _mensajeError(e),
       ));
       rethrow;
     }
@@ -133,13 +137,21 @@ class TiposDocumentoCubit extends Cubit<TiposDocumentoState> {
     } catch (e) {
       emit(state.copyWith(
         status: TiposDocumentoStatus.failure,
-        errorMessage: e.toString(),
+        errorMessage: _mensajeError(e),
       ));
       rethrow;
     }
   }
 
   bool isTipoDocumentoEnUso(String tipo) => dataService.isTipoDocumentoEnUso(tipo);
+
+  /// Mensaje legible de los errores del servicio (sin "Bad state:" ni
+  /// "Invalid argument(s):").
+  static String _mensajeError(Object e) {
+    if (e is StateError) return e.message;
+    if (e is ArgumentError) return e.message.toString();
+    return e.toString();
+  }
 
   @override
   Future<void> close() {

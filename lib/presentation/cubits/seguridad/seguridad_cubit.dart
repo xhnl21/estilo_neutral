@@ -54,16 +54,23 @@ class SeguridadCubit extends Cubit<SeguridadState> {
         (metodoActivo == 'desbloqueo_facial' && !state.faceIdDisponible);
     if (!esIncompatible) return;
 
+    // No se cambia ni se guarda nada: el método es del usuario (vale para
+    // todos sus dispositivos) y bajarlo a "Ninguno" desde un teléfono sin el
+    // sensor lo desactivaba también en los demás. El login ya resuelve qué
+    // verificación usar en cada equipo.
     Logger.warning(
-      'Método de seguridad "$metodoActivo" no es compatible con este dispositivo; '
-      'se restablece a "Ninguno".',
+      'Método de seguridad "$metodoActivo" no está disponible en este dispositivo; '
+      'se mantiene sin cambios.',
     );
-    dataService.setMetodoSeguridad(null);
   }
 
-  void setMetodoSeguridad(String? metodo) {
+  Future<void> setMetodoSeguridad(String? metodo) async {
     Logger.info('SeguridadCubit: Cambiando método de seguridad a: $metodo');
-    dataService.setMetodoSeguridad(metodo);
+    try {
+      await dataService.setMetodoSeguridad(metodo);
+    } on StateError catch (e) {
+      if (!isClosed) emit(state.copyWith(errorMessage: e.message));
+    }
   }
 
   @override

@@ -57,6 +57,11 @@ class VentasState extends Equatable {
     );
   }
 
+  /// Firma de la lista de clientes: cuando cambia, la vista cierra el menú
+  /// del filtro si está abierto (un menú abierto no actualiza sus opciones).
+  int get clientesVersion =>
+      Object.hashAll(clientes.map((c) => Object.hash(c.id, c.nombre)));
+
   bool get isInitialLoading =>
       (status == VentasStatus.loading || status == VentasStatus.initial) &&
       ventas.isEmpty;

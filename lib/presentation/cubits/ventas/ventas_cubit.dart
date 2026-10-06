@@ -29,12 +29,20 @@ class VentasCubit extends Cubit<VentasState> {
   void _syncFromService() {
     final allVentas = List<Venta>.from(dataService.ventas);
     final allClientes = List<Cliente>.from(dataService.clientes);
-    final filtered = _applyFilters(allVentas, state.filtroClienteId, state.filterStatus);
+    // Si el cliente filtrado fue eliminado, se quita el filtro: el select ya
+    // no tiene esa opción. Mientras carga no se toca (la lista puede estar
+    // vacía todavía y el filtro venir de la URL).
+    final filtroHuerfano = !dataService.isLoading &&
+        state.filtroClienteId != null &&
+        !allClientes.any((c) => c.id == state.filtroClienteId);
+    final filtroClienteId = filtroHuerfano ? null : state.filtroClienteId;
+    final filtered = _applyFilters(allVentas, filtroClienteId, state.filterStatus);
     emit(state.copyWith(
       status: dataService.isLoading ? VentasStatus.loading : VentasStatus.success,
       ventas: allVentas,
       filteredVentas: filtered,
       clientes: allClientes,
+      clearFiltroCliente: filtroHuerfano,
       errorMessage: dataService.errorMessage,
     ));
   }
@@ -87,36 +95,41 @@ class VentasCubit extends Cubit<VentasState> {
     double comisionPagoMovilBs = 0.0,
     required double abonoUsd,
     bool usarTasaManual = false,
-  }) async {
-    emit(state.copyWith(status: VentasStatus.loading));
-    try {
-      final success = await dataService.addVentaAtomica(
-        clienteId: clienteId,
-        items: items,
-        metodoPagoId: metodoPagoId,
-        comisionPagoMovilBs: comisionPagoMovilBs,
-        abonoUsd: abonoUsd,
-        usarTasaManual: usarTasaManual,
+  }) =>
+      _ejecutar(
+        () => dataService.addVenta(
+          clienteId: clienteId,
+          items: items,
+          metodoPagoId: metodoPagoId,
+          comisionPagoMovilBs: comisionPagoMovilBs,
+          abonoUsd: abonoUsd,
+          usarTasaManual: usarTasaManual,
+        ),
+        exito: 'Venta registrada con éxito en lote atómico',
       );
 
-      if (success) {
-        emit(state.copyWith(
-          status: VentasStatus.success,
-          actionSuccessMessage: 'Venta registrada con éxito en lote atómico',
-        ));
-        _syncFromService();
-        return true;
-      } else {
-        emit(state.copyWith(
-          status: VentasStatus.failure,
-          errorMessage: 'Error al registrar venta: la transacción fue abortada en el servidor',
-        ));
-        return false;
-      }
+  /// Anula la venta (lote atómico: borra cabecera, ítems y abonos y repone
+  /// el stock, o no toca nada).
+  Future<bool> anularVenta(String id) => _ejecutar(
+        () => dataService.deleteVenta(id),
+        exito: 'Venta anulada y stock repuesto.',
+      );
+
+  Future<bool> _ejecutar(Future<void> Function() operacion, {required String exito}) async {
+    try {
+      await operacion();
+      if (isClosed) return true;
+      emit(state.copyWith(status: VentasStatus.success, actionSuccessMessage: exito));
+      return true;
     } catch (e) {
+      if (isClosed) return false;
       emit(state.copyWith(
         status: VentasStatus.failure,
-        errorMessage: 'Excepción en transacción de venta: $e',
+        errorMessage: switch (e) {
+          StateError(:final message) => message,
+          ArgumentError(:final message) => message.toString(),
+          _ => e.toString(),
+        },
       ));
       return false;
     }

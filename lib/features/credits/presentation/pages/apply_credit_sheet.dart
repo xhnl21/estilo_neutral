@@ -75,7 +75,7 @@ class ApplyCreditSheet extends StatelessWidget {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text(
-                state.successMessage ?? 'Saldo aplicado. Factura #$ventaId marcada como Pagada.',
+                state.successMessage ?? 'Saldo aplicado a la factura #$ventaId.',
               ),
               backgroundColor: AppPalette.success,
             ),
@@ -85,31 +85,35 @@ class ApplyCreditSheet extends StatelessWidget {
             SnackBar(
               content: Text(state.errorMessage!),
               backgroundColor: AppPalette.error,
-              action: SnackBarAction(
-                label: 'Reintentar',
-                textColor: Colors.white,
-                onPressed: () => context.read<ApplyCreditCubit>().applyCredit(
-                      clienteId: clienteId,
-                      ventaDestinoId: ventaId,
-                      deudaVenta: deudaVenta,
-                      userEmail: userEmail,
-                    ),
-              ),
+              // Reintentar solo vuelve a calcular la vista previa: aplicar
+              // el crédito exige tocar "Confirmar aplicación".
+              action: state.falloVistaPrevia
+                  ? SnackBarAction(
+                      label: 'Reintentar',
+                      textColor: Colors.white,
+                      onPressed: () => context.read<ApplyCreditCubit>().loadPreview(
+                            clienteId: clienteId,
+                            ventaDestinoId: ventaId,
+                            deudaVenta: deudaVenta,
+                          ),
+                    )
+                  : null,
             ),
           );
         }
       },
       builder: (context, state) {
         final preview = state.preview;
+        final deuda = state.deudaVenta ?? deudaVenta;
         final montoAplicar = preview?.montoAplicable ??
-            (totalCreditoDisponible < deudaVenta ? totalCreditoDisponible : deudaVenta);
+            (totalCreditoDisponible < deuda ? totalCreditoDisponible : deuda);
         final saldoRestante = preview?.saldoRestante ?? (totalCreditoDisponible - montoAplicar);
-        final deudaRestante = preview?.deudaRestante ?? (deudaVenta - montoAplicar);
+        final deudaRestante = preview?.deudaRestante ?? (deuda - montoAplicar);
 
         return PopScope(
           canPop: !state.isLoading,
           child: SafeArea(
-            child: Padding(
+            child: SingleChildScrollView(
               padding: const EdgeInsets.fromLTRB(AppSpacing.lg, AppSpacing.md, AppSpacing.lg, AppSpacing.lg),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
@@ -119,9 +123,11 @@ class ApplyCreditSheet extends StatelessWidget {
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Text(
-                        'Aplicar saldo a favor',
-                        style: AppTypography.titleLarge.copyWith(color: AppPalette.blue700),
+                      Expanded(
+                        child: Text(
+                          'Aplicar saldo a favor',
+                          style: AppTypography.titleLarge.copyWith(color: AppPalette.blue700),
+                        ),
                       ),
                       IconButton(
                         icon: const Icon(CupertinoIcons.xmark, size: 20),
@@ -155,7 +161,7 @@ class ApplyCreditSheet extends StatelessWidget {
                 ),
                 CreditSummaryRow(
                   label: 'Deuda de la factura #$ventaId',
-                  amount: deudaVenta,
+                  amount: deuda,
                   color: AppPalette.error,
                 ),
                 const Divider(height: 18),

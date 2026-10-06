@@ -45,6 +45,7 @@ class ClientCredit extends Equatable {
   bool get isAvailable => estado == CreditStatus.disponible && saldoUsd > 0.0;
 
   ClientCredit copyWith({
+    CreditId? id,
     CreditStatus? estado,
     String? aplicadoAVentaId,
     DateTime? fechaAplicacion,
@@ -53,7 +54,7 @@ class ClientCredit extends Equatable {
     String? hashEvidencia,
   }) {
     return ClientCredit(
-      id: id,
+      id: id ?? this.id,
       clienteId: clienteId,
       fecha: fecha,
       montoUsd: montoUsd,

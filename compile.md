@@ -28,8 +28,7 @@ Estos archivos **no están en git** (`.gitignore` los excluye, salvo
 (`String.fromEnvironment`), no se leen en runtime: si no los pasás con
 `--dart-define-from-file`, la app cae a los valores por defecto
 hardcodeados en el código (que en este proyecto ya apuntan a esta misma
-hoja de prueba, así que probablemente "funciona igual" salvo por
-`ALLOWED_EMAILS`).
+hoja de prueba, así que probablemente "funciona igual").
 
 Creá estos 3 archivos en la raíz del proyecto (mismo contenido que usamos
 en este equipo, apuntando a la hoja de Google Sheets de prueba):
@@ -45,7 +44,6 @@ DEBUG_MODE=true
 ENABLE_LOGS=true
 SHOW_TECHNICAL_INFO=true
 APP_PACKAGE_NAME=com.estiloneutral.es
-ALLOWED_EMAILS=neidapulgar1989@gmail.com,xhnl21@gmail.com
 ```
 
 ### `.env.test` (flavor QA)
@@ -59,7 +57,6 @@ DEBUG_MODE=true
 ENABLE_LOGS=true
 SHOW_TECHNICAL_INFO=true
 APP_PACKAGE_NAME=com.estiloneutral.es
-ALLOWED_EMAILS=neidapulgar1989@gmail.com,xhnl21@gmail.com
 ```
 
 ### `.env` (flavor prod)
@@ -73,14 +70,15 @@ DEBUG_MODE=false
 ENABLE_LOGS=false
 SHOW_TECHNICAL_INFO=false
 APP_PACKAGE_NAME=com.estiloneutral.es
-ALLOWED_EMAILS=neidapulgar1989@gmail.com,xhnl21@gmail.com
 ```
 
-**Importante — `ALLOWED_EMAILS`:** es la lista blanca real de acceso
-post-login (`AccessControlConfig`). Si tu cuenta de Google no está en esa
-lista, el login con Google va a funcionar pero la app te va a rechazar
-después con "cuenta no autorizada". Agregá tu email separado por coma si
-hace falta.
+**Importante — acceso a la app:** después del login con Google, la app
+solo deja entrar a cuentas que estén en la hoja `usuarios` **y** tengan
+membresía en `usuario_organizacion` apuntando a una organización existente
+(`SheetsDataService.resolverAcceso`). Si tu cuenta no está, el login con
+Google funciona pero la app te rechaza con el motivo. Pedile a alguien con
+acceso que te dé de alta en Usuarios, o agregá las filas a mano en la hoja.
+(`ALLOWED_EMAILS` ya no se usa; si está en tu `.env` se ignora.)
 
 Los tres `.env*` apuntan a la **misma hoja de Google Sheets real de
 prueba** (`SPREADSHEET_ID`) y al mismo Apps Script Web App
@@ -235,7 +233,7 @@ deployment creado por API).
 
 - [ ] `flutter --version` da `3.47.1` / Dart `3.13.1`
 - [ ] Existen `.env`, `.env.dev`, `.env.test` en la raíz (no solo `.env.example`)
-- [ ] Tu email de Google está en `ALLOWED_EMAILS`
+- [ ] Tu email de Google está en la hoja `usuarios` con membresía en `usuario_organizacion`
 - [ ] Corriste con `--dart-define-from-file` (o el launch config correcto de VS Code), no un `flutter run` a secas
 - [ ] El SHA-1 de tu `debug.keystore` está autorizado en Google Cloud Console (o copiaste el `debug.keystore` de otra máquina que ya funciona)
 - [ ] Si es release: existen `android/app/upload-keystore.jks` y `android/key.properties`

@@ -80,6 +80,17 @@ class _MetodosPagoViewState extends State<_MetodosPagoView> {
           ),
           body: Column(
             children: [
+              if (state.errorCarga != null)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(AppSpacing.lg, AppSpacing.sm, AppSpacing.lg, 0),
+                  child: Semantics(
+                    liveRegion: true,
+                    child: Text(
+                      'No se pudieron cargar los datos: ${state.errorCarga}',
+                      style: AppTypography.bodyMedium.copyWith(color: AppPalette.error),
+                    ),
+                  ),
+                ),
               Padding(
                 padding: const EdgeInsets.fromLTRB(
                     AppSpacing.lg, AppSpacing.sm, AppSpacing.lg, AppSpacing.md),
@@ -105,7 +116,7 @@ class _MetodosPagoViewState extends State<_MetodosPagoView> {
                         itemBuilder: (context, index) {
                           final metodo = metodos[index];
                           final enUso =
-                              widget.dataService.isMetodoPagoEnUso(metodo.id);
+                              state.enUso.contains(metodo.id);
 
                           return Padding(
                             padding:
@@ -236,7 +247,7 @@ class _MetodosPagoViewState extends State<_MetodosPagoView> {
     }
 
     try {
-      await widget.dataService.toggleMetodoPagoStatus(metodo.id);
+      await context.read<MetodosPagoCubit>().toggleMetodoPagoStatus(metodo.id);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -260,6 +271,8 @@ class _MetodosPagoViewState extends State<_MetodosPagoView> {
   }
 
   Future<void> _showCrearMetodoDialog() async {
+    // El diálogo no queda debajo del BlocProvider: se toma el Cubit acá.
+    final cubit = context.read<MetodosPagoCubit>();
     final controller = TextEditingController();
     String? errorText;
 
@@ -313,13 +326,9 @@ class _MetodosPagoViewState extends State<_MetodosPagoView> {
 
                 Navigator.pop(dialogCtx);
                 try {
-                  await widget.dataService.addMetodoPago(nombre: nombre);
-                  if (!mounted) return;
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                        content:
-                            Text('Método "$nombre" creado exitosamente')),
-                  );
+                  // El Cubit informa el éxito (y relanza el error, que se
+                  // muestra abajo).
+                  await cubit.addMetodoPago(nombre);
                 } catch (e) {
                   if (!mounted) return;
                   ScaffoldMessenger.of(context).showSnackBar(

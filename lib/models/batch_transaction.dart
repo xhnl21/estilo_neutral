@@ -10,6 +10,11 @@ class BatchOperation extends Equatable {
   final String? field;
   final dynamic newValue;
 
+  /// Solo para `increment`: lo que se suma al valor actual de la celda, y el
+  /// mínimo en que se corta el resultado.
+  final num? delta;
+  final num? min;
+
   const BatchOperation({
     required this.sheet,
     required this.action,
@@ -18,6 +23,8 @@ class BatchOperation extends Equatable {
     this.id,
     this.field,
     this.newValue,
+    this.delta,
+    this.min,
   });
 
   factory BatchOperation.create({
@@ -70,6 +77,27 @@ class BatchOperation extends Equatable {
     );
   }
 
+  /// Suma [delta] al valor que la celda tenga EN EL SERVIDOR al aplicar el
+  /// lote (no a un valor calculado en el teléfono), así dos dispositivos que
+  /// descuentan stock o deuda a la vez no se pisan. El valor resultante
+  /// vuelve en `BatchTransactionResult.results` (`value`).
+  factory BatchOperation.increment({
+    required String sheet,
+    required String id,
+    required String field,
+    required num delta,
+    num? min,
+  }) {
+    return BatchOperation(
+      sheet: sheet,
+      action: 'increment',
+      id: id,
+      field: field,
+      delta: delta,
+      min: min,
+    );
+  }
+
   factory BatchOperation.delete({
     required String sheet,
     required String id,
@@ -90,6 +118,8 @@ class BatchOperation extends Equatable {
       if (id != null) 'id': id,
       if (field != null) 'field': field,
       if (newValue != null) 'newValue': newValue,
+      if (delta != null) 'delta': delta,
+      if (min != null) 'min': min,
     };
   }
 
@@ -106,11 +136,13 @@ class BatchOperation extends Equatable {
       id: map['id'] as String?,
       field: map['field'] as String?,
       newValue: map['newValue'],
+      delta: map['delta'] as num?,
+      min: map['min'] as num?,
     );
   }
 
   @override
-  List<Object?> get props => [sheet, action, data, dataList, id, field, newValue];
+  List<Object?> get props => [sheet, action, data, dataList, id, field, newValue, delta, min];
 }
 
 /// Transacción compuesta por una lista de operaciones atómicas (All-or-Nothing).
@@ -149,6 +181,10 @@ class BatchTransactionResult extends Equatable {
   final Map<String, dynamic> generatedIds;
   final List<Map<String, dynamic>> results;
 
+  /// `true` si no se obtuvo respuesta legible del servidor (timeout, error de
+  /// red, eco ilegible): no se sabe si el lote se aplicó o no.
+  final bool sinRespuesta;
+
   const BatchTransactionResult({
     required this.status,
     required this.transactionId,
@@ -156,9 +192,23 @@ class BatchTransactionResult extends Equatable {
     this.operationsCount = 0,
     this.generatedIds = const {},
     this.results = const [],
+    this.sinRespuesta = false,
   });
 
   bool get isSuccess => status == 'success';
+
+  /// Valor que dejó en la celda la operación `increment` sobre [sheet]/[id],
+  /// o `null` si el servidor no lo informó.
+  num? valorIncrementado(String sheet, String id) {
+    for (final r in results) {
+      if (r['action'] == 'increment' && r['sheet'] == sheet && r['id'] == id) {
+        final v = r['value'];
+        if (v is num) return v;
+        return num.tryParse('$v');
+      }
+    }
+    return null;
+  }
 
   factory BatchTransactionResult.fromMap(Map<String, dynamic> map) {
     return BatchTransactionResult(
@@ -180,11 +230,13 @@ class BatchTransactionResult extends Equatable {
   factory BatchTransactionResult.failure({
     required String transactionId,
     required String errorMessage,
+    bool sinRespuesta = false,
   }) {
     return BatchTransactionResult(
       status: 'error',
       transactionId: transactionId,
       message: errorMessage,
+      sinRespuesta: sinRespuesta,
     );
   }
 
@@ -193,6 +245,7 @@ class BatchTransactionResult extends Equatable {
         status,
         transactionId,
         message,
+        sinRespuesta,
         operationsCount,
         generatedIds,
         results,

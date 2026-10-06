@@ -1,5 +1,6 @@
 import 'package:equatable/equatable.dart';
 import '../../../models/organizacion.dart';
+import '../../../models/tasa_registro.dart';
 import '../../../models/usuario.dart';
 
 enum OrganizacionesStatus { initial, loading, success, failure }
@@ -16,6 +17,13 @@ class OrganizacionesState extends Equatable {
 
   final String? expandedOrganizacionId;
 
+  /// Datos por organización calculados en el Cubit (no en `build`): así un
+  /// cambio de membresía, moneda o tasa redibuja la vista aunque la lista de
+  /// organizaciones no cambie.
+  final Map<String, int> usuariosPorOrganizacion;
+  final Map<String, String> monedaPorOrganizacion;
+  final Map<String, TasaRegistro> tasaManualPorOrganizacion;
+
   const OrganizacionesState({
     this.status = OrganizacionesStatus.initial,
     this.organizaciones = const [],
@@ -25,6 +33,9 @@ class OrganizacionesState extends Equatable {
     this.expandedOrganizacionId,
     this.errorMessage,
     this.actionSuccessMessage,
+    this.usuariosPorOrganizacion = const {},
+    this.monedaPorOrganizacion = const {},
+    this.tasaManualPorOrganizacion = const {},
   });
 
   OrganizacionesState copyWith({
@@ -37,6 +48,9 @@ class OrganizacionesState extends Equatable {
     bool clearExpandedId = false,
     String? errorMessage,
     String? actionSuccessMessage,
+    Map<String, int>? usuariosPorOrganizacion,
+    Map<String, String>? monedaPorOrganizacion,
+    Map<String, TasaRegistro>? tasaManualPorOrganizacion,
   }) {
     return OrganizacionesState(
       status: status ?? this.status,
@@ -48,6 +62,9 @@ class OrganizacionesState extends Equatable {
           clearExpandedId ? null : (expandedOrganizacionId ?? this.expandedOrganizacionId),
       errorMessage: errorMessage,
       actionSuccessMessage: actionSuccessMessage,
+      usuariosPorOrganizacion: usuariosPorOrganizacion ?? this.usuariosPorOrganizacion,
+      monedaPorOrganizacion: monedaPorOrganizacion ?? this.monedaPorOrganizacion,
+      tasaManualPorOrganizacion: tasaManualPorOrganizacion ?? this.tasaManualPorOrganizacion,
     );
   }
 
@@ -65,5 +82,8 @@ class OrganizacionesState extends Equatable {
         expandedOrganizacionId,
         errorMessage,
         actionSuccessMessage,
+        usuariosPorOrganizacion,
+        monedaPorOrganizacion,
+        tasaManualPorOrganizacion.map((k, t) => MapEntry(k, '${t.id}|${t.valor}')),
       ];
 }

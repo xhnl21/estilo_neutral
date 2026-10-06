@@ -2,6 +2,7 @@ import 'package:estilo_neutral/features/search/application/usecases/search_engin
 import 'package:estilo_neutral/features/search/domain/entities/inventario_item.dart';
 import 'package:estilo_neutral/features/search/infrastructure/repositories/cloud_inventario_search_repository.dart';
 import 'package:flutter_test/flutter_test.dart';
+import '../catalogo_prueba.dart';
 
 void main() {
   group('SearchEngine con datos de Inventario', () {
@@ -9,7 +10,7 @@ void main() {
     late SearchEngine<InventarioItem> searchEngine;
 
     setUp(() {
-      repository = CloudInventarioSearchRepository();
+      repository = CloudInventarioSearchRepository(fallbackItems: catalogoDePrueba);
       searchEngine = SearchEngine<InventarioItem>();
     });
 

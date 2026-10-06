@@ -13,6 +13,31 @@ class _FakeSheetsDataService extends SheetsDataService {
   @override
   String get nextAbonoId => 'ab00000099';
 
+  /// Facturas destino con la deuda que tienen "ahora" en los datos.
+  final Map<String, double> deudaPorVenta = {'v00000005': 100.0};
+
+  @override
+  List<Venta> get ventas => [
+        for (final e in deudaPorVenta.entries)
+          Venta(
+            id: e.key,
+            fecha: DateTime(2026, 4, 2),
+            clienteId: 'c00000001',
+            tasaBcv: 474,
+            tasaUsd: 474,
+            metodoPagoId: 'mp00000001',
+            comisionPagoMovilBs: 0,
+            montoBs: 0,
+            montoUsd: 100,
+            abonoUsd: 100 - e.value,
+            deudaUsd: e.value,
+            totalPagarUsd: 100,
+            validacion: 'OK',
+            estado: EstadoVenta.pendiente,
+            organizacionId: 'org1',
+          ),
+      ];
+
   @override
   TasaRegistro? tasaBcvVigente(String moneda) => TasaRegistro(
         id: 't00000001',
@@ -127,10 +152,30 @@ void main() {
       final creditOp = tx.operations.firstWhere((o) => o.sheet == 'creditos_clientes');
       expect(creditOp.data!['estado'], 'APLICADO');
 
+      // El abono no lleva ID (lo genera el servidor) y la deuda del cliente
+      // baja en el mismo lote.
+      expect(abonoOp.data!.containsKey('id'), isFalse);
+      final deudaOp = tx.operations.firstWhere((o) => o.sheet == 'clientes');
+      expect(deudaOp.action, 'increment');
+      expect(deudaOp.delta, -100.0);
+
       // Op 3: audit_log con SHA-256
       final auditOp = tx.operations.firstWhere((o) => o.sheet == 'audit_log');
       expect(auditOp.data!['norma'], contains('ISO 8000'));
       expect(auditOp.data!['hash_evidencia'], isNotNull);
+    });
+
+    test('T10b: si la deuda bajó desde que se abrió la pantalla, se aplica solo la deuda actual', () async {
+      fakeDataService.deudaPorVenta['v00000005'] = 30.0;
+      final result = await ApplyClientCredit(repository: repository).execute(
+        clienteId: 'c00000001',
+        targetVentaId: 'v00000005',
+        deudaVenta: 100.0, // la que se vio al abrir
+        userEmail: 'admin@antigravity.io',
+      );
+      expect(result.isSuccess, isTrue);
+      final abonoOp = fakeDataService.lastExecutedTransaction!.operations.firstWhere((o) => o.sheet == 'abonos');
+      expect(abonoOp.data!['monto'], 30.0);
     });
 
     // T11. ApplyClientCredit falla en op_abono -> rollback total (0 cambios)

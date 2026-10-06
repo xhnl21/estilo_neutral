@@ -5,6 +5,8 @@ import '../../core/config/environment_config.dart';
 import '../../core/design_system/design_system.dart';
 import '../../models/models.dart';
 import '../../shared/shared.dart';
+import '../cubits/usuario_form/usuario_form_cubit.dart';
+import '../cubits/usuario_form/usuario_form_state.dart';
 import '../cubits/usuarios/usuarios_cubit.dart';
 import '../cubits/usuarios/usuarios_state.dart';
 
@@ -38,18 +40,17 @@ class _UsuariosViewState extends State<_UsuariosView> {
   Widget build(BuildContext context) {
     return BlocConsumer<UsuariosCubit, UsuariosState>(
       listenWhen: (prev, curr) =>
-          curr.actionSuccessMessage != null &&
-          prev.actionSuccessMessage != curr.actionSuccessMessage,
+          (curr.actionSuccessMessage != null && prev.actionSuccessMessage != curr.actionSuccessMessage) ||
+          (curr.actionErrorMessage != null && prev.actionErrorMessage != curr.actionErrorMessage),
       listener: (context, state) {
-        if (state.actionSuccessMessage != null) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              backgroundColor: AppPalette.success,
-              content: Text(state.actionSuccessMessage!),
-              duration: const Duration(seconds: 2),
-            ),
-          );
-        }
+        final error = state.actionErrorMessage;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            backgroundColor: error != null ? AppPalette.error : AppPalette.success,
+            content: Text(error ?? state.actionSuccessMessage!),
+            duration: Duration(seconds: error != null ? 4 : 2),
+          ),
+        );
       },
       builder: (context, state) {
         final cubit = context.read<UsuariosCubit>();
@@ -373,218 +374,21 @@ class _UsuariosViewState extends State<_UsuariosView> {
   }
 
   void _showUsuarioDialog(BuildContext context, {Usuario? usuario}) {
-    final isEditing = usuario != null;
-    final id = isEditing ? usuario.id : widget.dataService.nextUsuarioId;
-    final emailController = TextEditingController(text: usuario?.email ?? '');
-    final nombreController = TextEditingController(text: usuario?.nombre ?? '');
-    final tiposDoc = widget.dataService.tiposDocumentoActivos;
-    var tipoDocSeleccionado =
-        usuario != null && usuario.tipoDocumento.isNotEmpty
-            ? usuario.tipoDocumento
-            : 'V';
-    final cedulaController = TextEditingController(text: usuario?.cedula ?? '');
-    final organizaciones = widget.dataService.organizaciones;
-    final organizacionActual = isEditing
-        ? widget.dataService.organizacionIdForUsuario(usuario.email)
-        : null;
-    var organizacionSeleccionada = organizacionActual ??
-        (organizaciones.isNotEmpty ? organizaciones.first.id : null);
-
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       shape: const RoundedRectangleBorder(
           borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
-      builder: (ctx) => StatefulBuilder(
-        builder: (context, setModalState) => Padding(
-          padding: EdgeInsets.only(
-            bottom: MediaQuery.of(ctx).viewInsets.bottom + AppSpacing.lg,
-            left: AppSpacing.lg,
-            right: AppSpacing.lg,
-            top: AppSpacing.lg,
-          ),
-          child: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Expanded(
-                      child: Text(
-                        isEditing
-                            ? 'Editar Usuario'
-                            : 'Nuevo Usuario Autorizado',
-                        style: AppTypography.titleLarge.copyWith(fontSize: 17),
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                    IconButton(
-                      icon: const Icon(CupertinoIcons.xmark_circle_fill,
-                          color: AppPalette.textSecondary),
-                      onPressed: () => Navigator.pop(ctx),
-                    ),
-                  ],
-                ),
-                if (isEditing)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 2),
-                    child: Text(
-                      id,
-                      style: AppTypography.labelSmall
-                          .copyWith(color: AppPalette.textSecondary),
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                const SizedBox(height: AppSpacing.md),
-                AppTextField(
-                  label: 'Correo electrónico (Google)',
-                  controller: emailController,
-                  hint: 'usuario@ejemplo.com',
-                  keyboardType: TextInputType.emailAddress,
-                  readOnly: isEditing,
-                ),
-                if (isEditing)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 4),
-                    child: Text(
-                      'El correo no se puede cambiar una vez creado: es la clave usada por Seguridad y el login.',
-                      style: AppTypography.labelSmall
-                          .copyWith(color: AppPalette.textSecondary),
-                    ),
-                  ),
-                const SizedBox(height: AppSpacing.sm),
-                AppTextField(
-                  label: 'Nombre (opcional)',
-                  controller: nombreController,
-                  hint: 'Ej: Juan Pérez',
-                ),
-                const SizedBox(height: AppSpacing.sm),
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    SizedBox(
-                      width: 90,
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          // Text('Tipo Doc.', style: AppTypography.labelSmall),
-                          // const SizedBox(height: 6),
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 10),
-                            decoration: BoxDecoration(
-                              color: AppPalette.surface,
-                              borderRadius: BorderRadius.circular(8),
-                              border: Border.all(color: AppPalette.divider),
-                            ),
-                            child: DropdownButtonHideUnderline(
-                              child: DropdownButton<String>(
-                                value: tiposDoc.contains(tipoDocSeleccionado)
-                                    ? tipoDocSeleccionado
-                                    : tiposDoc.first,
-                                isExpanded: true,
-                                items: tiposDoc
-                                    .map((t) => DropdownMenuItem(
-                                        value: t, child: Text(t)))
-                                    .toList(),
-                                onChanged: (val) {
-                                  if (val != null) {
-                                    setModalState(
-                                        () => tipoDocSeleccionado = val);
-                                  }
-                                },
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(width: AppSpacing.sm),
-                    Expanded(
-                      child: AppTextField(
-                        label: 'Cédula / Documento',
-                        controller: cedulaController,
-                        hint: '12345678',
-                        keyboardType: TextInputType.number,
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: AppSpacing.sm),
-                DropdownButtonFormField<String>(
-                  initialValue: organizacionSeleccionada,
-                  decoration: const InputDecoration(
-                    labelText: 'Organización',
-                    filled: true,
-                    fillColor: AppPalette.surface,
-                    border:
-                        OutlineInputBorder(borderRadius: AppSpacing.roundedSm),
-                  ),
-                  items: organizaciones
-                      .map((o) =>
-                          DropdownMenuItem(value: o.id, child: Text(o.nombre)))
-                      .toList(),
-                  onChanged: (val) =>
-                      setModalState(() => organizacionSeleccionada = val),
-                ),
-                const SizedBox(height: AppSpacing.lg),
-                Row(
-                  children: [
-                    Expanded(
-                        child: AppOutlinedButton(
-                            label: 'Cancelar',
-                            onPressed: () => Navigator.pop(ctx))),
-                    const SizedBox(width: AppSpacing.md),
-                    Expanded(
-                      child: AppButton(
-                        label:
-                            isEditing ? 'Guardar Cambios' : 'Autorizar Acceso',
-                        icon: isEditing
-                            ? CupertinoIcons.check_mark
-                            : CupertinoIcons.add,
-                        onPressed: () async {
-                          final email =
-                              emailController.text.trim().toLowerCase();
-                          if (email.isEmpty || organizacionSeleccionada == null) {
-                            return;
-                          }
-
-                          final nuevoUsuario = Usuario(
-                            id: id,
-                            email: email,
-                            nombre: nombreController.text.trim(),
-                            tipoDocumento: tipoDocSeleccionado,
-                            cedula: cedulaController.text.trim(),
-                          );
-
-                          Navigator.pop(ctx);
-
-                          if (isEditing) {
-                            await widget.dataService.updateUsuario(
-                              nuevoUsuario,
-                              organizacionId: organizacionSeleccionada!,
-                            );
-                          } else {
-                            await widget.dataService.addUsuario(
-                              nuevoUsuario,
-                              organizacionId: organizacionSeleccionada!,
-                            );
-                          }
-                        },
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-        ),
+      builder: (_) => BlocProvider(
+        create: (_) => UsuarioFormCubit(dataService: widget.dataService, usuario: usuario),
+        child: _UsuarioFormSheet(id: usuario?.id),
       ),
     );
   }
 
   void _confirmDelete(BuildContext context, Usuario usuario) {
+    // El diálogo no queda debajo del BlocProvider: se toma el Cubit acá.
+    final cubit = context.read<UsuariosCubit>();
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -598,9 +402,9 @@ class _UsuariosViewState extends State<_UsuariosView> {
           FilledButton(
             style: FilledButton.styleFrom(backgroundColor: AppPalette.error),
             child: const Text('Eliminar'),
-            onPressed: () async {
+            onPressed: () {
               Navigator.pop(ctx);
-              await widget.dataService.deleteUsuario(usuario);
+              cubit.deleteUsuario(usuario);
             },
           ),
         ],
@@ -624,6 +428,222 @@ class _UsuariosViewState extends State<_UsuariosView> {
               child: const Text('Entendido'),
               onPressed: () => Navigator.pop(ctx)),
         ],
+      ),
+    );
+  }
+}
+
+/// Formulario de alta/edición de un usuario autorizado. El estado de negocio
+/// (catálogos, validación, guardado) vive en [UsuarioFormCubit]; acá solo
+/// quedan los `TextEditingController`.
+class _UsuarioFormSheet extends StatefulWidget {
+  final String? id;
+
+  const _UsuarioFormSheet({this.id});
+
+  @override
+  State<_UsuarioFormSheet> createState() => _UsuarioFormSheetState();
+}
+
+class _UsuarioFormSheetState extends State<_UsuarioFormSheet> {
+  late final TextEditingController _email;
+  late final TextEditingController _nombre;
+  late final TextEditingController _cedula;
+
+  @override
+  void initState() {
+    super.initState();
+    final s = context.read<UsuarioFormCubit>().state;
+    _email = TextEditingController(text: s.emailInicial);
+    _nombre = TextEditingController(text: s.nombreInicial);
+    _cedula = TextEditingController(text: s.cedulaInicial);
+  }
+
+  @override
+  void dispose() {
+    _email.dispose();
+    _nombre.dispose();
+    _cedula.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return BlocConsumer<UsuarioFormCubit, UsuarioFormState>(
+      listenWhen: (prev, curr) => curr.resultMessage != null && prev.resultMessage != curr.resultMessage,
+      listener: (context, state) {
+        final guardado = state.status == UsuarioFormStatus.guardado;
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          backgroundColor: guardado ? AppPalette.success : AppPalette.error,
+          content: Text(state.resultMessage!),
+          duration: Duration(seconds: guardado ? 2 : 4),
+        ));
+        // Si falló, el formulario queda abierto para corregir o reintentar.
+        if (guardado) Navigator.of(context).pop();
+      },
+      builder: (context, state) => _build(context, state),
+    );
+  }
+
+  Widget _build(BuildContext context, UsuarioFormState state) {
+    final cubit = context.read<UsuarioFormCubit>();
+    final isEditing = state.isEditing;
+    final ocupado = state.isSubmitting;
+
+    return PopScope(
+      canPop: !ocupado,
+      child: Padding(
+        padding: EdgeInsets.only(
+          bottom: MediaQuery.of(context).viewInsets.bottom + AppSpacing.lg,
+          left: AppSpacing.lg,
+          right: AppSpacing.lg,
+          top: AppSpacing.lg,
+        ),
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Expanded(
+                    child: Text(
+                      isEditing ? 'Editar Usuario' : 'Nuevo Usuario Autorizado',
+                      style: AppTypography.titleLarge.copyWith(fontSize: 17),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(CupertinoIcons.xmark_circle_fill, color: AppPalette.textSecondary),
+                    onPressed: ocupado ? null : () => Navigator.pop(context),
+                  ),
+                ],
+              ),
+              if (isEditing && widget.id != null)
+                Padding(
+                  padding: const EdgeInsets.only(top: 2),
+                  child: Text(
+                    widget.id!,
+                    style: AppTypography.labelSmall.copyWith(color: AppPalette.textSecondary),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              const SizedBox(height: AppSpacing.md),
+              AppTextField(
+                label: 'Correo electrónico (Google)',
+                controller: _email,
+                hint: 'usuario@ejemplo.com',
+                keyboardType: TextInputType.emailAddress,
+                readOnly: isEditing || ocupado,
+                errorText: state.errors[UsuarioFormField.email],
+                onChanged: (_) => cubit.fieldChanged(UsuarioFormField.email),
+              ),
+              if (isEditing)
+                Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: Text(
+                    'El correo no se puede cambiar una vez creado: es la clave usada por Seguridad y el login.',
+                    style: AppTypography.labelSmall.copyWith(color: AppPalette.textSecondary),
+                  ),
+                ),
+              const SizedBox(height: AppSpacing.sm),
+              AppTextField(
+                label: 'Nombre (opcional)',
+                controller: _nombre,
+                hint: 'Ej: Juan Pérez',
+                readOnly: ocupado,
+              ),
+              const SizedBox(height: AppSpacing.sm),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  SizedBox(
+                    width: 90,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10),
+                      decoration: BoxDecoration(
+                        color: AppPalette.surface,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: AppPalette.divider),
+                      ),
+                      child: DropdownButtonHideUnderline(
+                        child: DropdownButton<String>(
+                          value: state.tipoDocumento,
+                          isExpanded: true,
+                          items: state.tiposDocumento
+                              .map((t) => DropdownMenuItem(value: t, child: Text(t)))
+                              .toList(),
+                          onChanged: ocupado
+                              ? null
+                              : (val) {
+                                  if (val != null) cubit.tipoDocumentoChanged(val);
+                                },
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: AppSpacing.sm),
+                  Expanded(
+                    child: AppTextField(
+                      label: 'Cédula / Documento',
+                      controller: _cedula,
+                      hint: '12345678',
+                      keyboardType: TextInputType.number,
+                      readOnly: ocupado,
+                      errorText: state.errors[UsuarioFormField.cedula],
+                      onChanged: (_) => cubit.fieldChanged(UsuarioFormField.cedula),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: AppSpacing.sm),
+              // La key recrea el campo si el Cubit cambia la selección
+              // (p. ej. la organización elegida se borró).
+              DropdownButtonFormField<String>(
+                key: ValueKey('usuario_org_${state.organizacionId}'),
+                initialValue: state.organizacionId,
+                isExpanded: true,
+                decoration: InputDecoration(
+                  labelText: 'Organización',
+                  filled: true,
+                  fillColor: AppPalette.surface,
+                  border: const OutlineInputBorder(borderRadius: AppSpacing.roundedSm),
+                  errorText: state.errors[UsuarioFormField.organizacion],
+                ),
+                items: state.organizaciones
+                    .map((o) => DropdownMenuItem(
+                          value: o.id,
+                          child: Text(o.nombre, overflow: TextOverflow.ellipsis),
+                        ))
+                    .toList(),
+                onChanged: ocupado ? null : cubit.organizacionChanged,
+              ),
+              const SizedBox(height: AppSpacing.lg),
+              Row(
+                children: [
+                  Expanded(
+                    child: AppOutlinedButton(
+                      label: 'Cancelar',
+                      onPressed: ocupado ? null : () => Navigator.pop(context),
+                    ),
+                  ),
+                  const SizedBox(width: AppSpacing.md),
+                  Expanded(
+                    child: AppButton(
+                      label: isEditing ? 'Guardar Cambios' : 'Autorizar Acceso',
+                      icon: isEditing ? CupertinoIcons.check_mark : CupertinoIcons.add,
+                      isLoading: ocupado,
+                      onPressed: ocupado
+                          ? null
+                          : () => cubit.submit(email: _email.text, nombre: _nombre.text, cedula: _cedula.text),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

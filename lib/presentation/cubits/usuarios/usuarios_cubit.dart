@@ -64,37 +64,33 @@ class UsuariosCubit extends Cubit<UsuariosState> {
     _syncFromService();
   }
 
-  Future<void> addUsuario(Usuario usuario, {required String organizacionId}) async {
-    emit(state.copyWith(status: UsuariosStatus.loading));
-    final success = await dataService.addUsuario(usuario, organizacionId: organizacionId);
-    emit(state.copyWith(
-      status: UsuariosStatus.success,
-      actionSuccessMessage: success
-          ? 'Usuario "${usuario.email}" registrado y sincronizado en Google Sheets.'
-          : 'Usuario "${usuario.email}" guardado localmente.',
-    ));
-  }
-
-  Future<void> updateUsuario(Usuario usuario, {required String organizacionId}) async {
-    emit(state.copyWith(status: UsuariosStatus.loading));
-    final success = await dataService.updateUsuario(usuario, organizacionId: organizacionId);
-    emit(state.copyWith(
-      status: UsuariosStatus.success,
-      actionSuccessMessage: success
-          ? 'Usuario "${usuario.email}" actualizado con éxito.'
-          : 'Usuario "${usuario.email}" actualizado localmente.',
-    ));
-  }
-
+  /// Quita el acceso a [usuario] (usuario y membresía). Si Sheets no lo
+  /// confirma, el servicio revierte y se muestra el error.
   Future<void> deleteUsuario(Usuario usuario) async {
     emit(state.copyWith(status: UsuariosStatus.loading));
-    final success = await dataService.deleteUsuario(usuario);
-    emit(state.copyWith(
-      status: UsuariosStatus.success,
-      actionSuccessMessage: success
-          ? 'Usuario "${usuario.email}" desincorporado con éxito.'
-          : 'Usuario "${usuario.email}" desincorporado localmente.',
-    ));
+    try {
+      final ok = await dataService.deleteUsuario(usuario);
+      if (isClosed) return;
+      emit(ok
+          ? state.copyWith(
+              status: UsuariosStatus.success,
+              actionSuccessMessage: 'Se quitó el acceso a "${usuario.email}".',
+            )
+          : state.copyWith(
+              status: UsuariosStatus.success,
+              actionErrorMessage: 'No se pudo quitar el acceso a "${usuario.email}" en Google Sheets. No se cambió nada.',
+            ));
+    } catch (e) {
+      if (isClosed) return;
+      emit(state.copyWith(
+        status: UsuariosStatus.success,
+        actionErrorMessage: switch (e) {
+          StateError(:final message) => message,
+          ArgumentError(:final message) => message.toString(),
+          _ => 'Error al quitar el acceso: $e',
+        },
+      ));
+    }
   }
 
   @override

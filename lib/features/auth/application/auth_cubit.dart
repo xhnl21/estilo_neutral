@@ -28,18 +28,22 @@ class AuthCubit extends Cubit<AuthState> {
       isAuthenticated: true,
       userEmail: email,
       organizacionId: organizacionId,
+      clearMotivoCierreSesion: true,
     ));
   }
 
-  /// Cierra la sesión activa.
-  void logout() {
+  /// Cierra la sesión activa. [motivo] se informa en la pantalla de login
+  /// cuando el cierre no lo pidió el usuario (p. ej. acceso revocado).
+  void logout({String? motivo}) {
     emit(AuthState(
       isAuthenticated: false,
       isOnboarded: state.isOnboarded,
       userEmail: null,
       organizacionId: null,
+      motivoCierreSesion: motivo,
     ));
   }
+
 
   /// Marca el onboarding como completado.
   void completeOnboarding() {

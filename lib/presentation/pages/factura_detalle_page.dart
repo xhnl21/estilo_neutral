@@ -72,7 +72,13 @@ class _FacturaDetalleView extends StatelessWidget {
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        Text('Cliente: ${cliente?.nombre ?? venta.clienteId}', style: AppTypography.titleLarge.copyWith(fontSize: 15)),
+                        Expanded(
+                          child: Text(
+                            'Cliente: ${cliente?.nombre ?? venta.clienteId}',
+                            style: AppTypography.titleLarge.copyWith(fontSize: 15),
+                          ),
+                        ),
+                        const SizedBox(width: AppSpacing.sm),
                         AppChip(
                           label: isPaid
                               ? (isPaidWithCredit ? 'Pagada con saldo a favor' : 'Pagada')
@@ -192,6 +198,14 @@ class _FacturaDetalleView extends StatelessWidget {
                             child: ApplyCreditButton(
                               applicableAmount: totalCredito < venta.deudaUsd ? totalCredito : venta.deudaUsd,
                               onPressed: () {
+                                // Sin usuario identificado no se firma la operación (no se inventa un autor).
+                                if (dataService.currentUsuarioEmail == null) {
+                                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                                    content: Text('No hay un usuario identificado: no se puede aplicar el crédito.'),
+                                    backgroundColor: AppPalette.error,
+                                  ));
+                                  return;
+                                }
                                 final cubit = ApplyCreditCubit(
                                   repository: ServiceLocator().creditRepository,
                                   dataService: dataService,
@@ -205,7 +219,7 @@ class _FacturaDetalleView extends StatelessWidget {
                                   deudaVenta: venta.deudaUsd,
                                   totalCreditoDisponible: totalCredito,
                                   origenVentaId: availableCredits.firstOrNull?.origenVentaId,
-                                  userEmail: dataService.currentUsuarioEmail ?? 'Antigravity Senior Agent',
+                                  userEmail: dataService.currentUsuarioEmail!,
                                 );
                               },
                             ),

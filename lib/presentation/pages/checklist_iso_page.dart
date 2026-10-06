@@ -154,7 +154,7 @@ class _ChecklistIsoViewState extends State<_ChecklistIsoView> {
                                 size: 26,
                               ),
                               tooltip: 'Alternar conformidad',
-                              onPressed: () => widget.dataService.toggleChecklistEstado(item.nro),
+                              onPressed: () => cubit.toggleChecklistEstado(item.id),
                             ),
                           ),
                           const SizedBox(width: AppSpacing.sm),
@@ -218,12 +218,16 @@ class _ChecklistIsoViewState extends State<_ChecklistIsoView> {
   }
 
   void _showChecklistDialog(BuildContext context, {ChecklistISO? item}) {
+    // El bottom sheet no queda debajo del BlocProvider: se toma el Cubit acá.
+    final cubit = context.read<ChecklistIsoCubit>();
     final isEditing = item != null;
-    final nextNro = isEditing ? item.nro : widget.dataService.checklistIsos.length + 1;
+    // El nro definitivo lo asigna el servidor (máximo + 1).
+    final nextNro = isEditing ? item.nro : cubit.nextNro;
     final controlController = TextEditingController(text: item?.control ?? '');
     final normaController = TextEditingController(text: item?.norma ?? 'ISO/IEC 27001 §8.13');
     final evidenciaController = TextEditingController(text: item?.evidencia ?? '');
     var isConforme = item?.estado == '☑';
+    var errores = <String, String>{};
 
     showModalBottomSheet(
       context: context,
@@ -245,9 +249,11 @@ class _ChecklistIsoViewState extends State<_ChecklistIsoView> {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Text(
-                      isEditing ? 'Editar Requisito #$nextNro' : 'Nuevo Requisito Normativo',
-                      style: AppTypography.titleLarge.copyWith(fontSize: 17),
+                    Expanded(
+                      child: Text(
+                        isEditing ? 'Editar Requisito #$nextNro' : 'Nuevo Requisito Normativo',
+                        style: AppTypography.titleLarge.copyWith(fontSize: 17),
+                      ),
                     ),
                     IconButton(
                       icon: const Icon(CupertinoIcons.xmark_circle_fill, color: AppPalette.textSecondary),
@@ -256,9 +262,21 @@ class _ChecklistIsoViewState extends State<_ChecklistIsoView> {
                   ],
                 ),
                 const SizedBox(height: AppSpacing.md),
-                AppTextField(label: 'Descripción del Control', controller: controlController, hint: 'Ej: Backup verificado en 3 formatos'),
+                AppTextField(
+                  label: 'Descripción del Control',
+                  controller: controlController,
+                  hint: 'Ej: Backup verificado en 3 formatos',
+                  errorText: errores['control'],
+                  onChanged: (_) => setModalState(() => errores.remove('control')),
+                ),
                 const SizedBox(height: AppSpacing.sm),
-                AppTextField(label: 'Norma / Estándar', controller: normaController, hint: 'Ej: ISO 27001 / NIST / WCAG 2.2'),
+                AppTextField(
+                  label: 'Norma / Estándar',
+                  controller: normaController,
+                  hint: 'Ej: ISO 27001 / NIST / WCAG 2.2',
+                  errorText: errores['norma'],
+                  onChanged: (_) => setModalState(() => errores.remove('norma')),
+                ),
                 const SizedBox(height: AppSpacing.sm),
                 AppTextField(label: 'Evidencia Comprobable', controller: evidenciaController, hint: 'Ruta, hash o referencia'),
                 const SizedBox(height: AppSpacing.sm),
@@ -279,21 +297,30 @@ class _ChecklistIsoViewState extends State<_ChecklistIsoView> {
                         icon: CupertinoIcons.check_mark,
                         onPressed: () {
                           final control = controlController.text.trim();
-                          if (control.isEmpty) return;
 
+                          // Si no se tocó el switch se conserva el estado
+                          // original (p. ej. "N/A"), que el switch no representa.
+                          final estado = isEditing && isConforme == (item.estado == '☑')
+                              ? item.estado
+                              : (isConforme ? '☑' : '☐');
                           final nuevo = ChecklistISO(
+                            id: item?.id ?? '',
                             nro: nextNro,
                             control: control,
                             norma: normaController.text.trim(),
-                            estado: isConforme ? '☑' : '☐',
+                            estado: estado,
                             evidencia: evidenciaController.text.trim(),
                             timestamp: DateTime.now(),
                           );
+                          if (nuevo.errores.isNotEmpty) {
+                            setModalState(() => errores = nuevo.errores);
+                            return;
+                          }
 
                           if (isEditing) {
-                            widget.dataService.updateChecklistIso(nuevo);
+                            cubit.updateChecklistIso(nuevo);
                           } else {
-                            widget.dataService.addChecklistIso(nuevo);
+                            cubit.addChecklistIso(nuevo);
                           }
                           Navigator.pop(ctx);
                         },
@@ -310,6 +337,7 @@ class _ChecklistIsoViewState extends State<_ChecklistIsoView> {
   }
 
   void _confirmDelete(BuildContext context, ChecklistISO item) {
+    final cubit = context.read<ChecklistIsoCubit>();
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -321,7 +349,7 @@ class _ChecklistIsoViewState extends State<_ChecklistIsoView> {
             style: FilledButton.styleFrom(backgroundColor: AppPalette.error),
             child: const Text('Eliminar'),
             onPressed: () {
-              widget.dataService.deleteChecklistIso(item.nro);
+              cubit.deleteChecklistIso(item.id);
               Navigator.pop(ctx);
             },
           ),

@@ -1,3 +1,4 @@
+import 'documento_identidad.dart';
 import 'number_parser.dart';
 
 /// Modelo de entidad Cliente mapeado desde la hoja "clientes"
@@ -42,9 +43,11 @@ class Cliente {
     this.cedula = '',
   });
 
-  /// Helper que devuelve el documento formateado (ej. "V-12345678" o "" si no tiene)
-  String get documentoCompleto =>
-      cedula.trim().isEmpty ? '' : '${tipoDocumento.toUpperCase()}-${cedula.trim()}';
+  /// Helper que devuelve el documento formateado (ej. "V-12345678",
+  /// "J-12345678-9" o "" si no tiene)
+  String get documentoCompleto => cedula.trim().isEmpty
+      ? ''
+      : DocumentoIdentidad.formatear(tipoDocumento, cedula);
 
   factory Cliente.fromRow(List<dynamic> row) {
     return Cliente(

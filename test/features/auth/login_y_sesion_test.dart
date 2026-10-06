@@ -1,0 +1,177 @@
+import 'package:flutter_test/flutter_test.dart';
+import 'package:google_sign_in/google_sign_in.dart';
+import 'package:estilo_neutral/features/auth/application/auth_cubit.dart';
+import 'package:estilo_neutral/features/auth/application/control_acceso_sesion.dart';
+import 'package:estilo_neutral/features/auth/domain/auth_state.dart';
+import 'package:estilo_neutral/features/auth/presentation/cubit/login_cubit.dart';
+import 'package:estilo_neutral/features/auth/presentation/cubit/login_state.dart';
+import 'package:estilo_neutral/shared/auth/biometric_auth_service.dart';
+import 'package:estilo_neutral/shared/google_sheets/sheets_auth.dart';
+import 'package:estilo_neutral/shared/google_sheets/sheets_data_service.dart';
+import '../../test_servidor.dart';
+
+const _org = '67774411-6aa1-4aa3-a4b2-d3fc6913b768';
+
+class _Cuenta extends Fake implements GoogleSignInAccount {
+  @override
+  final String email;
+  _Cuenta(this.email);
+}
+
+class _FakeSheetsAuth extends Fake implements SheetsAuth {
+  GoogleSignInAccount? silenciosa;
+  GoogleSignInAccount? interactiva;
+  int signOuts = 0;
+
+  @override
+  Future<GoogleSignInAccount?> signInSilently() async => silenciosa;
+  @override
+  Future<GoogleSignInAccount?> signIn() async => interactiva;
+  @override
+  Future<void> signOut() async => signOuts++;
+}
+
+class _FakeBiometria extends Fake implements BiometricAuthService {
+  bool resultado = true;
+  @override
+  Future<bool> isAvailable() async => true;
+  @override
+  Future<bool> hasFaceId() async => false;
+  @override
+  Future<bool> authenticate({String reason = ''}) async => resultado;
+}
+
+/// Datos de respaldo (Neida con biometría activa y Xavier sin método, ambos
+/// en la organización por defecto) y un servidor simulado que confirma las
+/// escrituras. Sin sesión ni organización actuales: las fija cada test.
+Future<SheetsDataService> _servicio() async {
+  final (ds, _) = await servicioConServidor(usuario: null);
+  ds.setCurrentOrganizacion(null);
+  return ds;
+}
+
+void main() {
+  late SheetsDataService ds;
+  late AuthCubit auth;
+  late _FakeSheetsAuth google;
+  late _FakeBiometria biometria;
+
+  setUp(() async {
+    ds = await _servicio();
+    auth = AuthCubit(initialState: const AuthState(isAuthenticated: false));
+    google = _FakeSheetsAuth();
+    biometria = _FakeBiometria();
+  });
+
+  LoginCubit loginCubit() => LoginCubit(
+        authCubit: auth,
+        sheetsAuth: google,
+        dataService: ds,
+        biometricAuthService: biometria,
+      );
+
+  group('LoginCubit', () {
+    test('sin sesión previa muestra el botón', () async {
+      final cubit = loginCubit();
+      await cubit.restaurarSesion();
+      expect(cubit.state.status, LoginStatus.listo);
+      expect(cubit.state.showButton, isTrue);
+      await cubit.close();
+    });
+
+    test('usuario autorizado sin método de seguridad entra directo', () async {
+      google.silenciosa = _Cuenta('xhnl21@gmail.com');
+      final cubit = loginCubit();
+      await cubit.restaurarSesion();
+      expect(cubit.state.status, LoginStatus.autenticado);
+      expect(auth.isAuthenticated, isTrue);
+      expect(auth.organizacionId, _org);
+      await cubit.close();
+    });
+
+    test('cuenta sin acceso: se rechaza y se cierra la sesión de Google', () async {
+      google.interactiva = _Cuenta('intruso@gmail.com');
+      final cubit = loginCubit();
+      await cubit.restaurarSesion();
+      await cubit.accionPrincipal();
+      expect(cubit.state.status, LoginStatus.listo);
+      expect(cubit.state.errorMessage, contains('no está registrada'));
+      expect(google.signOuts, 1);
+      expect(auth.isAuthenticated, isFalse);
+      await cubit.close();
+    });
+
+    test('con biometría activa pide confirmarla antes de entrar', () async {
+      google.silenciosa = _Cuenta('neidapulgar1989@gmail.com');
+      final cubit = loginCubit();
+      await cubit.restaurarSesion();
+      expect(cubit.state.metodoPendiente, 'biometrico');
+      expect(auth.isAuthenticated, isFalse);
+
+      biometria.resultado = false;
+      await cubit.accionPrincipal();
+      expect(cubit.state.errorMessage, contains('No se pudo verificar'));
+
+      biometria.resultado = true;
+      await cubit.accionPrincipal();
+      expect(cubit.state.status, LoginStatus.autenticado);
+      expect(auth.isAuthenticated, isTrue);
+      await cubit.close();
+    });
+
+    test('muestra el motivo de un cierre de sesión forzado', () async {
+      auth.logout(motivo: 'Tu acceso fue revocado.');
+      final cubit = loginCubit();
+      expect(cubit.state.errorMessage, 'Tu acceso fue revocado.');
+      await cubit.close();
+    });
+  });
+
+  group('ControlAccesoSesion', () {
+    late ControlAccesoSesion control;
+
+    setUp(() {
+      control = ControlAccesoSesion(dataService: ds, authCubit: auth, sheetsAuth: google);
+      auth.login(email: 'xhnl21@gmail.com', organizacionId: _org);
+      ds.setCurrentOrganizacion(_org);
+      ds.setCurrentUsuario('xhnl21@gmail.com');
+    });
+    tearDown(() => control.dispose());
+
+    test('un cambio que no afecta el acceso no cierra la sesión', () async {
+      ds.notifyListeners();
+      await Future<void>.delayed(Duration.zero);
+      expect(auth.isAuthenticated, isTrue);
+    });
+
+    test('si eliminan al usuario con la app abierta, se cierra su sesión', () async {
+      final usuario = ds.usuarios.firstWhere((u) => u.email == 'xhnl21@gmail.com');
+      await ds.deleteUsuario(usuario);
+      await Future<void>.delayed(Duration.zero);
+
+      expect(auth.isAuthenticated, isFalse);
+      expect(auth.state.motivoCierreSesion, contains('revocado'));
+      expect(google.signOuts, 1);
+      expect(ds.currentOrganizacionId, isNull);
+    });
+
+    test('si lo mueven de organización, tiene que volver a iniciar sesión', () async {
+      final usuario = ds.usuarios.firstWhere((u) => u.email == 'xhnl21@gmail.com');
+      await ds.addOrganizacion('Otra');
+      final otra = ds.organizaciones.firstWhere((o) => o.nombre == 'Otra');
+      await ds.updateUsuario(usuario, organizacionId: otra.id);
+      await Future<void>.delayed(Duration.zero);
+
+      expect(auth.isAuthenticated, isFalse);
+      expect(auth.state.motivoCierreSesion, contains('organización cambió'));
+    });
+
+    test('sin sesión abierta no hace nada', () async {
+      auth.logout();
+      final usuario = ds.usuarios.firstWhere((u) => u.email == 'xhnl21@gmail.com');
+      await ds.deleteUsuario(usuario);
+      await Future<void>.delayed(Duration.zero);
+      expect(google.signOuts, 0);
+    });
+  });
+}

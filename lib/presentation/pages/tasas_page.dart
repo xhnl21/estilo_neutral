@@ -86,12 +86,24 @@ class _TasasView extends StatelessWidget {
                   : ListView(
                       padding: const EdgeInsets.fromLTRB(AppSpacing.lg, AppSpacing.md, AppSpacing.lg, 80),
                       children: [
+                        // Error de la última carga (B3): los datos que se ven
+                        // pueden no estar actualizados.
+                        if (state.errorMessage != null) ...[
+                          Semantics(
+                            liveRegion: true,
+                            child: Text(
+                              'No se pudieron cargar las tasas: ${state.errorMessage}',
+                              style: AppTypography.bodyMedium.copyWith(color: AppPalette.error),
+                            ),
+                          ),
+                          const SizedBox(height: AppSpacing.sm),
+                        ],
                         MonedaSelector(
                           label: 'MONEDA BASE DEL SISTEMA',
                           value: monedaActual ?? 'USD',
                           onChanged: orgId.isEmpty
                               ? null
-                              : (val) => dataService.setMonedaOrganizacion(orgId, val),
+                              : (val) => cubit.cambiarMoneda(orgId, val),
                         ),
                         const SizedBox(height: AppSpacing.md),
                         if (usdVigente != null)
@@ -117,19 +129,17 @@ class _TasasView extends StatelessWidget {
                                       child: Column(
                                         crossAxisAlignment: CrossAxisAlignment.start,
                                         children: [
-                                          Row(
+                                          Wrap(
+                                            spacing: 6,
+                                            runSpacing: 4,
+                                            crossAxisAlignment: WrapCrossAlignment.center,
                                             children: [
                                               Text(
                                                 '${t.moneda} • ${t.fecha.toIso8601String().split('T').first}',
                                                 style: AppTypography.bodyMedium.copyWith(fontWeight: FontWeight.w600),
                                               ),
-                                              if (t.fuente == 'manual') ...[
-                                                const SizedBox(width: 6),
-                                                AppChip(
-                                                  label: 'Manual · ${dataService.organizaciones.where((o) => o.id == t.organizacionId).firstOrNull?.nombre ?? t.organizacionId}',
-                                                  variant: AppChipVariant.info,
-                                                ),
-                                              ],
+                                              if (t.fuente == 'manual')
+                                                const AppChip(label: 'Manual', variant: AppChipVariant.info),
                                             ],
                                           ),
                                           Text(

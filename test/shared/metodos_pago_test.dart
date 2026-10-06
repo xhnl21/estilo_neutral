@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:estilo_neutral/models/models.dart';
 import 'package:estilo_neutral/shared/google_sheets/sheets_data_service.dart';
-import '../test_sheets_config.dart';
+import '../test_servidor.dart';
 
 void main() {
   group('MetodoPago Model Tests', () {
@@ -34,9 +34,8 @@ void main() {
   group('SheetsDataService - Métodos de Pago & Abonos', () {
     late SheetsDataService ds;
 
-    setUp(() {
-      ds = SheetsDataService(spreadsheetId: testSpreadsheetId, appsScriptUrl: testAppsScriptUrl);
-      ds.setCurrentOrganizacion('67774411-6aa1-4aa3-a4b2-d3fc6913b768');
+    setUp(() async {
+      (ds, _) = await servicioConServidor(inicializar: false);
     });
 
     test('Inicializa con el catálogo de 6 métodos de pago por defecto activos', () {

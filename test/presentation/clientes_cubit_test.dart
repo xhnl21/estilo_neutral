@@ -2,16 +2,14 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:estilo_neutral/models/cliente.dart';
 import 'package:estilo_neutral/presentation/cubits/clientes/clientes_cubit.dart';
 import 'package:estilo_neutral/shared/google_sheets/sheets_data_service.dart';
-import '../test_sheets_config.dart';
+import '../test_servidor.dart';
 
 void main() {
   late SheetsDataService dataService;
   late ClientesCubit cubit;
 
   setUp(() async {
-    dataService = SheetsDataService(spreadsheetId: testSpreadsheetId, appsScriptUrl: testAppsScriptUrl);
-    await dataService.initialize();
-    dataService.setCurrentOrganizacion('67774411-6aa1-4aa3-a4b2-d3fc6913b768');
+    (dataService, _) = await servicioConServidor();
     cubit = ClientesCubit(dataService: dataService);
   });
 
@@ -36,7 +34,7 @@ void main() {
     expect(cubit.state.filteredClientes, isEmpty);
   });
 
-  test('addCliente updates state and triggers success action message', () async {
+  test('reacts to clientes added in dataService and exposes their resumen', () async {
     final newCliente = Cliente(
       id: 'c99990001',
       nombre: 'Nuevo Cliente Cubit',
@@ -46,18 +44,31 @@ void main() {
       fechaRegistro: DateTime(2026, 9, 15),
     );
 
-    await cubit.addCliente(newCliente);
+    await dataService.addCliente(newCliente);
 
-    expect(cubit.state.clientes.any((c) => c.id == 'c99990001'), isTrue);
-    expect(cubit.state.actionSuccessMessage, isNotNull);
-    expect(cubit.state.actionSuccessMessage, contains('Nuevo Cliente Cubit'));
+    // El ID lo asigna el servidor (R1), no el que traía el objeto.
+    final creado = cubit.state.clientes.firstWhere((c) => c.nombre == 'Nuevo Cliente Cubit');
+    expect(creado.id, isNot('c99990001'));
+    expect(cubit.state.resumenes.containsKey(creado.id), isTrue);
+    expect(cubit.state.resumenDe(creado.id).hasDebt, isFalse);
   });
 
-  test('deleteCliente removes client from list', () {
-    final clienteToDelete = cubit.state.clientes.first;
-    cubit.deleteCliente(clienteToDelete.id);
+  test('deleteCliente removes client from list', () async {
+    // Un cliente sin ventas ni créditos: los que tienen historial no se
+    // pueden eliminar (ver motivoNoEliminableCliente).
+    final clienteToDelete = Cliente(
+      id: 'c99990002',
+      nombre: 'Sin Historial',
+      telefono: '',
+      email: '',
+      saldoDeudaUsd: 0.0,
+      fechaRegistro: DateTime(2026, 9, 15),
+    );
+    await dataService.addCliente(clienteToDelete);
+    final id = dataService.clientes.firstWhere((c) => c.nombre == 'Sin Historial').id;
+    await cubit.deleteCliente(id);
 
-    expect(cubit.state.clientes.any((c) => c.id == clienteToDelete.id), isFalse);
+    expect(cubit.state.clientes.any((c) => c.id == id), isFalse);
     expect(cubit.state.actionSuccessMessage, contains('desincorporado'));
   });
 }

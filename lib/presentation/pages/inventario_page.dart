@@ -1,17 +1,14 @@
-import 'dart:typed_data';
 
-import 'package:dio/dio.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:gal/gal.dart';
 import 'package:image_picker/image_picker.dart';
 import '../../core/config/environment_config.dart';
 import '../../core/design_system/design_system.dart';
-import '../../core/network/dio_client.dart';
 import '../../models/models.dart';
 import '../../shared/shared.dart';
+import '../cubits/foto_producto/foto_producto_cubit.dart';
+import '../cubits/foto_producto/foto_producto_state.dart';
 import '../cubits/inventario/inventario_cubit.dart';
 import '../cubits/inventario/inventario_state.dart';
 
@@ -55,18 +52,20 @@ class _InventarioViewState extends State<_InventarioView> {
   Widget build(BuildContext context) {
     return BlocConsumer<InventarioCubit, InventarioState>(
       listenWhen: (prev, curr) =>
-          curr.actionSuccessMessage != null &&
-          prev.actionSuccessMessage != curr.actionSuccessMessage,
+          (curr.actionSuccessMessage != null &&
+              prev.actionSuccessMessage != curr.actionSuccessMessage) ||
+          (curr.errorMessage != null && prev.errorMessage != curr.errorMessage),
       listener: (context, state) {
-        if (state.actionSuccessMessage != null) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              backgroundColor: AppPalette.success,
-              content: Text(state.actionSuccessMessage!),
-              duration: const Duration(seconds: 2),
-            ),
-          );
-        }
+        final error = state.errorMessage;
+        final exito = state.actionSuccessMessage;
+        if (error == null && exito == null) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            backgroundColor: error != null ? AppPalette.error : AppPalette.success,
+            content: Text(error ?? exito!),
+            duration: Duration(seconds: error != null ? 4 : 2),
+          ),
+        );
       },
       builder: (context, state) {
         final cubit = context.read<InventarioCubit>();
@@ -371,9 +370,7 @@ class _InventarioViewState extends State<_InventarioView> {
                                                       tooltip: 'Reducir stock',
                                                       onPressed: isDepleted
                                                           ? null
-                                                          : () => widget
-                                                              .dataService
-                                                              .adjustStock(
+                                                          : () => cubit.adjustStock(
                                                                   producto.id,
                                                                   -1),
                                                     ),
@@ -399,9 +396,7 @@ class _InventarioViewState extends State<_InventarioView> {
                                                       icon: const Icon(
                                                           CupertinoIcons.plus),
                                                       tooltip: 'Aumentar stock',
-                                                      onPressed: () => widget
-                                                          .dataService
-                                                          .adjustStock(
+                                                      onPressed: () => cubit.adjustStock(
                                                               producto.id, 1),
                                                     ),
                                                   ],
@@ -500,15 +495,13 @@ class _InventarioViewState extends State<_InventarioView> {
   /// existe en inventario — los cambios se guardan al instante (no hace
   /// falta un botón "Guardar" aparte, es la única acción de este diálogo).
   void _showFotoActionSheet(BuildContext context, Producto producto) {
-    var fotoIdActual = producto.fotoId;
-
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       shape: const RoundedRectangleBorder(
           borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
-      builder: (ctx) => StatefulBuilder(
-        builder: (context, setModalState) => Padding(
+      builder: (ctx) => Builder(
+        builder: (context) => Padding(
           padding: EdgeInsets.only(
             bottom: MediaQuery.of(ctx).viewInsets.bottom + AppSpacing.lg,
             left: AppSpacing.lg,
@@ -538,23 +531,9 @@ class _InventarioViewState extends State<_InventarioView> {
               ),
               const SizedBox(height: AppSpacing.sm),
               _FotoPicker(
-                fotoId: fotoIdActual,
+                fotoId: producto.fotoId,
                 dataService: widget.dataService,
-                onChanged: (nuevoFotoId) {
-                  setModalState(() => fotoIdActual = nuevoFotoId);
-                  final actualizado = Producto(
-                    id: producto.id,
-                    cantidad: producto.cantidad,
-                    nombre: producto.nombre,
-                    marca: producto.marca,
-                    modelo: producto.modelo,
-                    talla: producto.talla,
-                    precioUsd: producto.precioUsd,
-                    fotoId: nuevoFotoId,
-                    organizacionId: producto.organizacionId,
-                  );
-                  widget.dataService.updateProducto(actualizado);
-                },
+                productoId: producto.id,
               ),
             ],
           ),
@@ -564,19 +543,21 @@ class _InventarioViewState extends State<_InventarioView> {
   }
 
   void _showProductoDialog(BuildContext context, {Producto? producto}) {
+    // Los diálogos no quedan debajo del BlocProvider: se toma el Cubit acá.
+    final cubit = context.read<InventarioCubit>();
     final isEditing = producto != null;
     final id = isEditing ? producto.id : widget.dataService.nextProductoId;
     final nombreController =
         TextEditingController(text: producto?.nombre ?? '');
-    final marcaController =
-        TextEditingController(text: producto?.marca ?? 'Genérica');
-    final modeloController =
-        TextEditingController(text: producto?.modelo ?? 'Casual');
-    final tallaController = TextEditingController(text: producto?.talla ?? 'M');
+    // Un producto nuevo no trae valores de ejemplo (stock y precio se
+    // podían guardar por error; regla R7 de docs/estandar-hojas.md).
+    final marcaController = TextEditingController(text: producto?.marca ?? '');
+    final modeloController = TextEditingController(text: producto?.modelo ?? '');
+    final tallaController = TextEditingController(text: producto?.talla ?? '');
     final cantidadController =
-        TextEditingController(text: producto?.cantidad.toString() ?? '10');
+        TextEditingController(text: producto?.cantidad.toString() ?? '');
     final precioController = TextEditingController(
-        text: producto?.precioUsd.toStringAsFixed(2) ?? '20.00');
+        text: producto?.precioUsd.toStringAsFixed(2) ?? '');
     var pendingFotoId = producto?.fotoId;
 
     showModalBottomSheet(
@@ -601,11 +582,14 @@ class _InventarioViewState extends State<_InventarioView> {
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Text(
-                        isEditing
-                            ? 'Editar Producto ($id)'
-                            : 'Registrar Nuevo Producto',
-                        style: AppTypography.titleLarge.copyWith(fontSize: 17),
+                      Expanded(
+                        child: Text(
+                          isEditing
+                              ? 'Editar Producto ($id)'
+                              : 'Registrar Nuevo Producto',
+                          style: AppTypography.titleLarge.copyWith(fontSize: 17),
+                          overflow: TextOverflow.ellipsis,
+                        ),
                       ),
                       IconButton(
                         icon: const Icon(CupertinoIcons.xmark_circle_fill,
@@ -618,8 +602,7 @@ class _InventarioViewState extends State<_InventarioView> {
                   _FotoPicker(
                     fotoId: pendingFotoId,
                     dataService: widget.dataService,
-                    onChanged: (nuevoFotoId) =>
-                        setModalState(() => pendingFotoId = nuevoFotoId),
+                    onChanged: (nuevoFotoId) => pendingFotoId = nuevoFotoId,
                   ),
                   const SizedBox(height: AppSpacing.md),
                   AppTextField(
@@ -634,6 +617,7 @@ class _InventarioViewState extends State<_InventarioView> {
                         child: AppTextField(
                           label: 'Marca',
                           controller: marcaController,
+                          hint: 'Ej: Levi\'s',
                         ),
                       ),
                       const SizedBox(width: AppSpacing.md),
@@ -641,6 +625,7 @@ class _InventarioViewState extends State<_InventarioView> {
                         child: AppTextField(
                           label: 'Modelo',
                           controller: modeloController,
+                          hint: 'Ej: Casual',
                         ),
                       ),
                     ],
@@ -660,6 +645,7 @@ class _InventarioViewState extends State<_InventarioView> {
                         child: AppTextField(
                           label: 'Cantidad en Stock',
                           controller: cantidadController,
+                          hint: 'Ej: 10',
                           keyboardType: TextInputType.number,
                         ),
                       ),
@@ -669,6 +655,7 @@ class _InventarioViewState extends State<_InventarioView> {
                   AppTextField(
                     label: 'Precio Unitario (USD)',
                     controller: precioController,
+                    hint: 'Ej: 20.00',
                     keyboardType:
                         const TextInputType.numberWithOptions(decimal: true),
                   ),
@@ -689,27 +676,38 @@ class _InventarioViewState extends State<_InventarioView> {
                               ? CupertinoIcons.check_mark
                               : CupertinoIcons.add,
                           onPressed: () {
-                            final nombre = nombreController.text.trim();
-                            if (nombre.isEmpty) return;
-
-                            final p = Producto(
+                            final armado = InventarioCubit.construirProducto(
                               id: id,
-                              cantidad:
-                                  int.tryParse(cantidadController.text) ?? 0,
-                              nombre: nombre,
-                              marca: marcaController.text.trim(),
-                              modelo: modeloController.text.trim(),
-                              talla: tallaController.text.trim(),
-                              precioUsd: double.tryParse(precioController.text
-                                      .replaceAll(',', '.')) ??
-                                  0.0,
+                              nombre: nombreController.text,
+                              marca: marcaController.text,
+                              modelo: modeloController.text,
+                              talla: tallaController.text,
+                              cantidad: cantidadController.text,
+                              precio: precioController.text,
                               fotoId: pendingFotoId,
                             );
+                            final p = armado.producto;
+                            if (p == null) {
+                              showDialog(
+                                context: ctx,
+                                builder: (dCtx) => AlertDialog(
+                                  title: const Text('Revisá los datos'),
+                                  content: Text(armado.error!),
+                                  actions: [
+                                    TextButton(
+                                      onPressed: () => Navigator.pop(dCtx),
+                                      child: const Text('Entendido'),
+                                    ),
+                                  ],
+                                ),
+                              );
+                              return;
+                            }
 
                             if (isEditing) {
-                              widget.dataService.updateProducto(p);
+                              cubit.updateProducto(p);
                             } else {
-                              widget.dataService.addProducto(p);
+                              cubit.addProducto(p);
                             }
                             Navigator.pop(ctx);
                           },
@@ -727,6 +725,8 @@ class _InventarioViewState extends State<_InventarioView> {
   }
 
   void _confirmDelete(BuildContext context, Producto producto) {
+    // Los diálogos no quedan debajo del BlocProvider: se toma el Cubit acá.
+    final cubit = context.read<InventarioCubit>();
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -742,7 +742,7 @@ class _InventarioViewState extends State<_InventarioView> {
             style: FilledButton.styleFrom(backgroundColor: AppPalette.error),
             child: const Text('Eliminar'),
             onPressed: () {
-              widget.dataService.deleteProducto(producto.id);
+              cubit.deleteProducto(producto.id);
               Navigator.pop(ctx);
             },
           ),
@@ -757,155 +757,96 @@ class _InventarioViewState extends State<_InventarioView> {
 /// una foto nueva SIEMPRE crea una fila nueva en "galeria" — nunca se pisa
 /// ni se borra una foto existente (ver
 /// [SheetsDataService.subirFotoGaleria]), así que una foto que ya usó un
-/// producto vendido nunca se pierde.
-class _FotoPicker extends StatefulWidget {
+/// producto vendido nunca se pierde. La subida y la asignación viven en
+/// [FotoProductoCubit].
+class _FotoPicker extends StatelessWidget {
   final String? fotoId;
   final SheetsDataService dataService;
-  final ValueChanged<String?> onChanged;
+
+  /// Producto ya existente: la foto se le asigna en Sheets (aunque se
+  /// cierre la pantalla durante la subida).
+  final String? productoId;
+
+  /// Formulario: avisa la foto elegida, que se guarda con el producto.
+  final ValueChanged<String?>? onChanged;
 
   const _FotoPicker({
     required this.fotoId,
     required this.dataService,
-    required this.onChanged,
+    this.productoId,
+    this.onChanged,
   });
 
   @override
-  State<_FotoPicker> createState() => _FotoPickerState();
-}
-
-class _FotoPickerState extends State<_FotoPicker> {
-  final Dio _dio = DioClient().dio;
-  bool _procesando = false;
-  String? _procesandoMensaje;
-
-  void _mostrarInfo(String mensaje) {
-    if (!mounted) return;
-    ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: Text(mensaje)));
-  }
-
-  void _mostrarError(String mensaje) {
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(mensaje), backgroundColor: AppPalette.error),
+  Widget build(BuildContext context) {
+    return BlocProvider(
+      create: (_) => FotoProductoCubit(dataService: dataService, fotoIdInicial: fotoId, productoId: productoId),
+      child: _FotoPickerView(onChanged: onChanged),
     );
   }
+}
 
-  Future<void> _tomarOElegir(ImageSource source) async {
+class _FotoPickerView extends StatelessWidget {
+  final ValueChanged<String?>? onChanged;
+
+  const _FotoPickerView({this.onChanged});
+
+  Future<void> _tomarOElegir(BuildContext context, ImageSource source) async {
+    final cubit = context.read<FotoProductoCubit>();
+    final messenger = ScaffoldMessenger.of(context);
     XFile? picked;
     try {
-      picked = await ImagePicker()
-          .pickImage(source: source, imageQuality: 85, maxWidth: 1600);
+      picked = await ImagePicker().pickImage(source: source, imageQuality: 85, maxWidth: 1600);
     } catch (_) {
-      _mostrarError(
-        source == ImageSource.camera
-            ? 'No se pudo abrir la cámara.'
-            : 'No se pudo abrir la galería.',
-      );
+      messenger.showSnackBar(SnackBar(
+        content: Text(source == ImageSource.camera ? 'No se pudo abrir la cámara.' : 'No se pudo abrir la galería.'),
+        backgroundColor: AppPalette.error,
+      ));
       return;
     }
     if (picked == null) return; // el usuario canceló
-
-    setState(() {
-      _procesando = true;
-      _procesandoMensaje = 'Subiendo foto...';
-    });
-    try {
-      final original = await picked.readAsBytes();
-      var bytes = original;
-      var fileName = picked.name;
-      var mimeType = picked.mimeType ?? 'image/jpeg';
-      // image_picker ya reduce calidad/dimensiones al elegir la foto, pero
-      // eso no aplica a PNG. Se comprime de nuevo acá (a JPEG, sin
-      // transparencia real en fotos de productos) para bajar el peso del
-      // payload en base64 — más chico, más rápido y menos probable de pisar
-      // el timeout de red al subir.
-      try {
-        final comprimido = await FlutterImageCompress.compressWithList(
-          original,
-          minWidth: 1600,
-          minHeight: 1600,
-          quality: 80,
-          format: CompressFormat.jpeg,
-        );
-        if (comprimido.length < original.length) {
-          bytes = comprimido;
-          mimeType = 'image/jpeg';
-          final sinExtension = fileName.contains('.')
-              ? fileName.substring(0, fileName.lastIndexOf('.'))
-              : fileName;
-          fileName = '$sinExtension.jpg';
-        }
-      } catch (_) {
-        // Si la compresión falla (formato no soportado, etc.), seguimos con
-        // los bytes originales tal cual venían de image_picker.
-      }
-
-      final nuevoFotoId = await widget.dataService.subirFotoGaleria(
-        bytes: bytes,
-        fileName: fileName,
-        mimeType: mimeType,
-      );
-      if (!mounted) return;
-      if (nuevoFotoId != null) {
-        // El CDN público de Drive (lh3.googleusercontent.com) tarda unos
-        // segundos en empezar a servir un archivo recién creado; esperamos a
-        // que la URL responda antes de mostrarla, para no pintar el ícono de
-        // error de entrada aunque la foto ya haya quedado bien guardada.
-        setState(() => _procesandoMensaje = 'Verificando foto...');
-        await _esperarUrlDisponible(
-            widget.dataService.fotoUrlPorId(nuevoFotoId));
-        if (!mounted) return;
-        widget.onChanged(nuevoFotoId);
-        _mostrarInfo('Foto subida correctamente.');
-      } else {
-        _mostrarError('No se pudo subir la foto. Probá de nuevo.');
-      }
-    } finally {
-      if (mounted) setState(() => _procesando = false);
-    }
-  }
-
-  Future<void> _esperarUrlDisponible(String? url) async {
-    if (url == null || url.isEmpty) return;
-    for (var intento = 0; intento < 5; intento++) {
-      try {
-        final response = await _dio.get(url,
-            options: Options(receiveTimeout: const Duration(seconds: 5)));
-        if (response.statusCode == 200) return;
-      } catch (_) {}
-      await Future.delayed(const Duration(seconds: 1));
-    }
-  }
-
-  Future<void> _descargar() async {
-    final url = widget.dataService.fotoUrlPorId(widget.fotoId);
-    if (url == null || url.isEmpty) return;
-
-    setState(() {
-      _procesando = true;
-      _procesandoMensaje = 'Descargando foto...';
-    });
-    try {
-      final response = await _dio.get<List<int>>(url,
-          options: Options(responseType: ResponseType.bytes));
-      if (response.statusCode != 200 || response.data == null) {
-        _mostrarError('No se pudo descargar la foto.');
-        return;
-      }
-      await Gal.putImageBytes(Uint8List.fromList(response.data!));
-      _mostrarInfo('Foto guardada en tu galería.');
-    } catch (_) {
-      _mostrarError('No se pudo descargar la foto.');
-    } finally {
-      if (mounted) setState(() => _procesando = false);
-    }
+    await cubit.subir(
+      bytes: await picked.readAsBytes(),
+      fileName: picked.name,
+      mimeType: picked.mimeType ?? 'image/jpeg',
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    final url = widget.dataService.fotoUrlPorId(widget.fotoId);
-    final hasPhoto = url != null && url.isNotEmpty;
+    return MultiBlocListener(
+      listeners: [
+        BlocListener<FotoProductoCubit, FotoProductoState>(
+          listenWhen: (prev, curr) => prev.fotoId != curr.fotoId,
+          listener: (context, state) => onChanged?.call(state.fotoId),
+        ),
+        BlocListener<FotoProductoCubit, FotoProductoState>(
+          listenWhen: (prev, curr) => curr.mensaje != null && prev.mensaje != curr.mensaje,
+          listener: (context, state) {
+            ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+              content: Text(state.mensaje!),
+              backgroundColor: state.mensajeEsError ? AppPalette.error : null,
+            ));
+            context.read<FotoProductoCubit>().mensajeMostrado();
+          },
+        ),
+      ],
+      child: BlocBuilder<FotoProductoCubit, FotoProductoState>(
+        builder: (context, state) => _build(context, state),
+      ),
+    );
+  }
+
+  Widget _build(BuildContext context, FotoProductoState state) {
+    final cubit = context.read<FotoProductoCubit>();
+    final procesando = state.procesando;
+    final url = state.fotoUrl;
+    final mensajeProceso = switch (state.status) {
+      FotoProductoStatus.subiendo => 'Subiendo foto...',
+      FotoProductoStatus.verificando => 'Verificando foto...',
+      FotoProductoStatus.descargando => 'Descargando foto...',
+      FotoProductoStatus.listo => '',
+    };
 
     return Column(
       children: [
@@ -918,7 +859,7 @@ class _FotoPickerState extends State<_FotoPicker> {
               borderRadius: BorderRadius.circular(12),
               border: Border.all(color: AppPalette.border, width: 1.5),
             ),
-            child: _procesando
+            child: procesando
                 ? Center(
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
@@ -926,27 +867,24 @@ class _FotoPickerState extends State<_FotoPicker> {
                         const CupertinoActivityIndicator(),
                         const SizedBox(height: 6),
                         Text(
-                          _procesandoMensaje ?? '',
-                          style: AppTypography.labelSmall.copyWith(
-                              fontSize: 10, color: AppPalette.textSecondary),
+                          mensajeProceso,
+                          style: AppTypography.labelSmall.copyWith(fontSize: 10, color: AppPalette.textSecondary),
                         ),
                       ],
                     ),
                   )
-                : hasPhoto
+                : state.tieneFoto
                     ? ClipRRect(
                         borderRadius: BorderRadius.circular(11),
                         child: Image.network(
-                          url,
+                          url!,
                           fit: BoxFit.cover,
                           loadingBuilder: (context, child, progress) {
                             if (progress == null) return child;
-                            return const Center(
-                                child: CupertinoActivityIndicator());
+                            return const Center(child: CupertinoActivityIndicator());
                           },
                           errorBuilder: (_, __, ___) => const Center(
-                            child: Icon(CupertinoIcons.exclamationmark_circle,
-                                color: AppPalette.warning, size: 28),
+                            child: Icon(CupertinoIcons.exclamationmark_circle, color: AppPalette.warning, size: 28),
                           ),
                         ),
                       )
@@ -954,13 +892,9 @@ class _FotoPickerState extends State<_FotoPicker> {
                         child: Column(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            Icon(CupertinoIcons.photo,
-                                color: AppPalette.blue400, size: 36),
+                            Icon(CupertinoIcons.photo, color: AppPalette.blue400, size: 36),
                             SizedBox(height: 4),
-                            Text('Sin foto asignada',
-                                style: TextStyle(
-                                    fontSize: 11,
-                                    color: AppPalette.textSecondary)),
+                            Text('Sin foto asignada', style: TextStyle(fontSize: 11, color: AppPalette.textSecondary)),
                           ],
                         ),
                       ),
@@ -975,26 +909,24 @@ class _FotoPickerState extends State<_FotoPicker> {
             AppOutlinedButton(
               label: 'Tomar foto',
               icon: CupertinoIcons.camera,
-              onPressed:
-                  _procesando ? null : () => _tomarOElegir(ImageSource.camera),
+              onPressed: procesando ? null : () => _tomarOElegir(context, ImageSource.camera),
             ),
             AppOutlinedButton(
               label: 'Galería',
               icon: CupertinoIcons.photo,
-              onPressed:
-                  _procesando ? null : () => _tomarOElegir(ImageSource.gallery),
+              onPressed: procesando ? null : () => _tomarOElegir(context, ImageSource.gallery),
             ),
-            if (hasPhoto)
+            if (state.tieneFoto)
               AppOutlinedButton(
                 label: 'Descargar',
                 icon: CupertinoIcons.arrow_down_circle,
-                onPressed: _procesando ? null : _descargar,
+                onPressed: procesando ? null : cubit.descargar,
               ),
-            if (hasPhoto)
+            if (state.tieneFoto)
               AppOutlinedButton(
                 label: 'Quitar',
                 icon: CupertinoIcons.xmark,
-                onPressed: _procesando ? null : () => widget.onChanged(null),
+                onPressed: procesando ? null : cubit.quitar,
               ),
           ],
         ),

@@ -29,7 +29,11 @@ class CodigosTelefonoCubit extends Cubit<CodigosTelefonoState> {
       codigos: currentList,
       filteredCodigos: filtered,
       totalActivos: dataService.codigosTelefonoActivos.length,
-      errorMessage: dataService.errorMessage,
+      // El error de carga va aparte: reemitirlo como errorMessage mostraba
+      // un aviso de error justo después del de éxito de una acción.
+      errorCarga: dataService.errorMessage,
+      limpiarErrorCarga: dataService.errorMessage == null,
+      enUso: dataService.codigosTelefonoEnUso,
     ));
   }
 
@@ -67,7 +71,7 @@ class CodigosTelefonoCubit extends Cubit<CodigosTelefonoState> {
     } catch (e) {
       emit(state.copyWith(
         status: CodigosTelefonoStatus.failure,
-        errorMessage: e.toString(),
+        errorMessage: _mensajeError(e),
       ));
       rethrow;
     } finally {
@@ -86,7 +90,7 @@ class CodigosTelefonoCubit extends Cubit<CodigosTelefonoState> {
     } catch (e) {
       emit(state.copyWith(
         status: CodigosTelefonoStatus.failure,
-        errorMessage: e.toString(),
+        errorMessage: _mensajeError(e),
       ));
       rethrow;
     } finally {
@@ -102,7 +106,7 @@ class CodigosTelefonoCubit extends Cubit<CodigosTelefonoState> {
     } catch (e) {
       emit(state.copyWith(
         status: CodigosTelefonoStatus.failure,
-        errorMessage: e.toString(),
+        errorMessage: _mensajeError(e),
       ));
       rethrow;
     }
@@ -120,13 +124,21 @@ class CodigosTelefonoCubit extends Cubit<CodigosTelefonoState> {
     } catch (e) {
       emit(state.copyWith(
         status: CodigosTelefonoStatus.failure,
-        errorMessage: e.toString(),
+        errorMessage: _mensajeError(e),
       ));
       rethrow;
     }
   }
 
   bool isCodigoTelefonoEnUso(String codigo) => dataService.isCodigoTelefonoEnUso(codigo);
+
+  /// Mensaje legible de los errores del servicio (sin "Bad state:" ni
+  /// "Invalid argument(s):").
+  static String _mensajeError(Object e) {
+    if (e is StateError) return e.message;
+    if (e is ArgumentError) return e.message.toString();
+    return e.toString();
+  }
 
   @override
   Future<void> close() {

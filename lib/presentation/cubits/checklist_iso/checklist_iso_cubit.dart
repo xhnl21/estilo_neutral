@@ -44,28 +44,45 @@ class ChecklistIsoCubit extends Cubit<ChecklistIsoState> {
     _syncFromService();
   }
 
-  void addChecklistIso(ChecklistISO check) {
-    dataService.addChecklistIso(check);
-    emit(state.copyWith(
-      status: ChecklistIsoStatus.success,
-      actionSuccessMessage: 'Control normativo agregado con éxito.',
-    ));
-  }
+  /// Nro provisional para un control nuevo (el servidor asigna el definitivo).
+  int get nextNro => dataService.nextChecklistNro;
 
-  void updateChecklistIso(ChecklistISO check) {
-    dataService.updateChecklistIso(check);
-    emit(state.copyWith(
-      status: ChecklistIsoStatus.success,
-      actionSuccessMessage: 'Control normativo actualizado.',
-    ));
-  }
+  Future<void> addChecklistIso(ChecklistISO check) => _ejecutar(
+        () => dataService.addChecklistIso(check),
+        exito: 'Control normativo agregado con éxito.',
+      );
 
-  void deleteChecklistIso(int nro) {
-    dataService.deleteChecklistIso(nro);
-    emit(state.copyWith(
-      status: ChecklistIsoStatus.success,
-      actionSuccessMessage: 'Control normativo revocado.',
-    ));
+  Future<void> updateChecklistIso(ChecklistISO check) => _ejecutar(
+        () => dataService.updateChecklistIso(check),
+        exito: 'Control normativo actualizado.',
+      );
+
+  Future<void> toggleChecklistEstado(String id) => _ejecutar(
+        () => dataService.toggleChecklistEstado(id),
+        exito: 'Estado del control actualizado.',
+      );
+
+  Future<void> deleteChecklistIso(String id) => _ejecutar(
+        () => dataService.deleteChecklistIso(id),
+        exito: 'Control normativo revocado.',
+      );
+
+  /// Espera la operación del servicio (que revierte si Sheets falla) y emite
+  /// el mensaje de éxito o el error real.
+  Future<void> _ejecutar(Future<void> Function() operacion, {required String exito}) async {
+    try {
+      await operacion();
+      if (isClosed) return;
+      emit(state.copyWith(status: ChecklistIsoStatus.success, actionSuccessMessage: exito));
+    } catch (e) {
+      if (isClosed) return;
+      final mensaje = switch (e) {
+        StateError(:final message) => message,
+        ArgumentError(:final message) => message.toString(),
+        _ => e.toString(),
+      };
+      emit(state.copyWith(errorMessage: mensaje));
+    }
   }
 
   @override

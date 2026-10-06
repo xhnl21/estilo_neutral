@@ -91,7 +91,8 @@ class _ReportingView extends StatelessWidget {
                             Row(
                               mainAxisAlignment: MainAxisAlignment.spaceBetween,
                               children: [
-                                Text('CONSOLIDADO GENERAL DE CIERRES', style: AppTypography.labelSmall.copyWith(letterSpacing: 0.5)),
+                                Text('CONSOLIDADO GENERAL DE CIERRES',
+                                    style: AppTypography.labelSmall.copyWith(letterSpacing: 0.5)),
                                 const ExcludeSemantics(
                                   child: Icon(AppIcons.summary, size: 18, color: AppPalette.blue700),
                                 ),
@@ -113,7 +114,8 @@ class _ReportingView extends StatelessWidget {
                       Semantics(
                         header: true,
                         headingLevel: 2,
-                        child: Text('Histórico de Cierres Diarios', style: AppTypography.titleLarge.copyWith(fontSize: 16)),
+                        child: Text('Histórico de Cierres Diarios',
+                            style: AppTypography.titleLarge.copyWith(fontSize: 16)),
                       ),
                       const SizedBox(height: AppSpacing.sm),
 
@@ -216,152 +218,192 @@ class _ReportingView extends StatelessWidget {
   void _showCierreDialog(BuildContext context, {ResumenDiario? resumen}) {
     final cubit = context.read<ReportingCubit>();
     final isEditing = resumen != null;
-    final fechaStr = resumen != null ? resumen.fecha.toIso8601String().split('T').first : DateTime.now().toIso8601String().split('T').first;
+    final fechaStr = resumen != null
+        ? resumen.fecha.toIso8601String().split('T').first
+        : DateTime.now().toIso8601String().split('T').first;
     final fechaController = TextEditingController(text: fechaStr);
-    final nroVentasController = TextEditingController(text: resumen?.nroVentas.toString() ?? '1');
-    final totalUsdController = TextEditingController(text: resumen?.totalUsd.toStringAsFixed(2) ?? '20.00');
-    final totalBsController = TextEditingController(text: resumen?.totalBs.toStringAsFixed(2) ?? '9480.00');
-    final tasaBcvController = TextEditingController(text: resumen?.tasaBcv.toStringAsFixed(2) ?? '474.00');
-    final tasaUsdController = TextEditingController(text: resumen?.tasaUsd.toStringAsFixed(2) ?? '480.00');
-    final compradosController = TextEditingController(text: resumen?.usdComprados.toStringAsFixed(2) ?? '0.00');
-    final vendidosController = TextEditingController(text: resumen?.usdVendidos.toStringAsFixed(2) ?? '20.00');
+    // Un cierre nuevo no trae montos de ejemplo: se podrían guardar por error.
+    final nroVentasController = TextEditingController(text: resumen?.nroVentas.toString() ?? '');
+    final totalUsdController = TextEditingController(text: resumen?.totalUsd.toStringAsFixed(2) ?? '');
+    final totalBsController = TextEditingController(text: resumen?.totalBs.toStringAsFixed(2) ?? '');
+    final tasaBcvController = TextEditingController(
+        text: resumen?.tasaBcv.toStringAsFixed(2) ?? cubit.tasaBcvVigente?.toStringAsFixed(2) ?? '');
+    final tasaUsdController = TextEditingController(text: resumen?.tasaUsd.toStringAsFixed(2) ?? '');
+    final compradosController = TextEditingController(text: resumen?.usdComprados.toStringAsFixed(2) ?? '');
+    final vendidosController = TextEditingController(text: resumen?.usdVendidos.toStringAsFixed(2) ?? '');
 
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
-      builder: (ctx) => Padding(
-        padding: EdgeInsets.only(
-          bottom: MediaQuery.of(ctx).viewInsets.bottom + AppSpacing.lg,
-          left: AppSpacing.lg,
-          right: AppSpacing.lg,
-          top: AppSpacing.lg,
-        ),
-        child: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    isEditing ? 'Editar Cierre Diario ($fechaStr)' : 'Nuevo Cierre Diario',
-                    style: AppTypography.titleLarge.copyWith(fontSize: 17),
-                  ),
-                  IconButton(
-                    icon: const Icon(CupertinoIcons.xmark_circle_fill, color: AppPalette.textSecondary),
-                    onPressed: () => Navigator.pop(ctx),
-                  ),
-                ],
-              ),
-              const SizedBox(height: AppSpacing.md),
-              AppTextField(
-                label: 'Fecha (YYYY-MM-DD)',
-                controller: fechaController,
-              ),
-              const SizedBox(height: AppSpacing.sm),
-              Row(
-                children: [
-                  Expanded(
-                    child: AppTextField(
-                      label: 'Nro. Ventas',
-                      controller: nroVentasController,
-                      keyboardType: TextInputType.number,
+      builder: (ctx) => LiberarControladores(
+        controladores: [
+          fechaController,
+          nroVentasController,
+          totalUsdController,
+          totalBsController,
+          tasaBcvController,
+          tasaUsdController,
+          compradosController,
+          vendidosController
+        ],
+        child: Padding(
+          padding: EdgeInsets.only(
+            bottom: MediaQuery.of(ctx).viewInsets.bottom + AppSpacing.lg,
+            left: AppSpacing.lg,
+            right: AppSpacing.lg,
+            top: AppSpacing.lg,
+          ),
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Expanded(
+                      child: Text(
+                        isEditing ? 'Editar Cierre Diario ($fechaStr)' : 'Nuevo Cierre Diario',
+                        style: AppTypography.titleLarge.copyWith(fontSize: 17),
+                        overflow: TextOverflow.ellipsis,
+                      ),
                     ),
-                  ),
-                  const SizedBox(width: AppSpacing.md),
-                  Expanded(
-                    child: AppTextField(
-                      label: 'Total USD',
-                      controller: totalUsdController,
-                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                    IconButton(
+                      icon: const Icon(CupertinoIcons.xmark_circle_fill, color: AppPalette.textSecondary),
+                      onPressed: () => Navigator.pop(ctx),
                     ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: AppSpacing.sm),
-              AppTextField(
-                label: 'Total en Bolívares (Bs.)',
-                controller: totalBsController,
-                keyboardType: const TextInputType.numberWithOptions(decimal: true),
-              ),
-              const SizedBox(height: AppSpacing.sm),
-              Row(
-                children: [
-                  Expanded(
-                    child: AppTextField(
-                      label: 'Tasa BCV',
-                      controller: tasaBcvController,
-                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  ],
+                ),
+                const SizedBox(height: AppSpacing.md),
+                // La fecha (con la organización) identifica al cierre: al
+                // editar no se puede cambiar, o se pisaría el cierre de otro día.
+                AppTextField(
+                  label: 'Fecha (AAAA-MM-DD)',
+                  controller: fechaController,
+                  readOnly: isEditing,
+                  hint: '2026-10-06',
+                ),
+                const SizedBox(height: AppSpacing.sm),
+                Row(
+                  children: [
+                    Expanded(
+                      child: AppTextField(
+                        label: 'Nro. Ventas',
+                        controller: nroVentasController,
+                        keyboardType: TextInputType.number,
+                      ),
                     ),
-                  ),
-                  const SizedBox(width: AppSpacing.md),
-                  Expanded(
-                    child: AppTextField(
-                      label: 'Tasa USD',
-                      controller: tasaUsdController,
-                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                    const SizedBox(width: AppSpacing.md),
+                    Expanded(
+                      child: AppTextField(
+                        label: 'Total USD',
+                        controller: totalUsdController,
+                        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                      ),
                     ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: AppSpacing.sm),
-              Row(
-                children: [
-                  Expanded(
-                    child: AppTextField(
-                      label: 'USD Comprados',
-                      controller: compradosController,
-                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  ],
+                ),
+                const SizedBox(height: AppSpacing.sm),
+                AppTextField(
+                  label: 'Total en Bolívares (Bs.)',
+                  controller: totalBsController,
+                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                ),
+                const SizedBox(height: AppSpacing.sm),
+                Row(
+                  children: [
+                    Expanded(
+                      child: AppTextField(
+                        label: 'Tasa BCV',
+                        controller: tasaBcvController,
+                        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                      ),
                     ),
-                  ),
-                  const SizedBox(width: AppSpacing.md),
-                  Expanded(
-                    child: AppTextField(
-                      label: 'USD Vendidos',
-                      controller: vendidosController,
-                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                    const SizedBox(width: AppSpacing.md),
+                    Expanded(
+                      child: AppTextField(
+                        label: 'Tasa USD',
+                        controller: tasaUsdController,
+                        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                      ),
                     ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: AppSpacing.lg),
-              Row(
-                children: [
-                  Expanded(
-                    child: AppOutlinedButton(label: 'Cancelar', onPressed: () => Navigator.pop(ctx)),
-                  ),
-                  const SizedBox(width: AppSpacing.md),
-                  Expanded(
-                    child: AppButton(
-                      label: isEditing ? 'Guardar Cambios' : 'Registrar Cierre',
-                      icon: CupertinoIcons.check_mark,
-                      onPressed: () {
-                        final fecha = DateTime.tryParse(fechaController.text.trim()) ?? DateTime.now();
-                        final r = ResumenDiario(
-                          fecha: fecha,
-                          nroVentas: int.tryParse(nroVentasController.text) ?? 0,
-                          totalBs: double.tryParse(totalBsController.text.replaceAll(',', '.')) ?? 0.0,
-                          totalUsd: double.tryParse(totalUsdController.text.replaceAll(',', '.')) ?? 0.0,
-                          tasaBcv: double.tryParse(tasaBcvController.text.replaceAll(',', '.')) ?? 474.0,
-                          tasaUsd: double.tryParse(tasaUsdController.text.replaceAll(',', '.')) ?? 480.0,
-                          usdComprados: double.tryParse(compradosController.text.replaceAll(',', '.')) ?? 0.0,
-                          usdVendidos: double.tryParse(vendidosController.text.replaceAll(',', '.')) ?? 0.0,
-                        );
+                  ],
+                ),
+                const SizedBox(height: AppSpacing.sm),
+                Row(
+                  children: [
+                    Expanded(
+                      child: AppTextField(
+                        label: 'USD Comprados',
+                        controller: compradosController,
+                        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                      ),
+                    ),
+                    const SizedBox(width: AppSpacing.md),
+                    Expanded(
+                      child: AppTextField(
+                        label: 'USD Vendidos',
+                        controller: vendidosController,
+                        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: AppSpacing.lg),
+                Row(
+                  children: [
+                    Expanded(
+                      child: AppOutlinedButton(label: 'Cancelar', onPressed: () => Navigator.pop(ctx)),
+                    ),
+                    const SizedBox(width: AppSpacing.md),
+                    Expanded(
+                      child: AppButton(
+                        label: isEditing ? 'Guardar Cambios' : 'Registrar Cierre',
+                        icon: CupertinoIcons.check_mark,
+                        onPressed: () {
+                          final cierre = ReportingCubit.construirCierre(
+                            fecha: fechaController.text,
+                            nroVentas: nroVentasController.text,
+                            totalBs: totalBsController.text,
+                            totalUsd: totalUsdController.text,
+                            tasaBcv: tasaBcvController.text,
+                            tasaUsd: tasaUsdController.text,
+                            usdComprados: compradosController.text,
+                            usdVendidos: vendidosController.text,
+                          );
+                          // Al editar se conserva el ID del cierre original.
+                          final r = isEditing ? cierre.resumen?.copyWith(id: resumen.id) : cierre.resumen;
+                          if (r == null) {
+                            showDialog(
+                              context: ctx,
+                              builder: (dCtx) => AlertDialog(
+                                title: const Text('Revisá los datos'),
+                                content: Text(cierre.error!),
+                                actions: [
+                                  TextButton(
+                                    child: const Text('Entendido'),
+                                    onPressed: () => Navigator.pop(dCtx),
+                                  ),
+                                ],
+                              ),
+                            );
+                            return;
+                          }
 
-                        if (isEditing) {
-                          cubit.updateResumen(r);
-                        } else {
-                          cubit.addResumen(r);
-                        }
-                        Navigator.pop(ctx);
-                      },
+                          if (isEditing) {
+                            cubit.updateResumen(r);
+                          } else {
+                            cubit.addResumen(r);
+                          }
+                          Navigator.pop(ctx);
+                        },
+                      ),
                     ),
-                  ),
-                ],
-              ),
-            ],
+                  ],
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -382,7 +424,7 @@ class _ReportingView extends StatelessWidget {
             style: FilledButton.styleFrom(backgroundColor: AppPalette.error),
             child: const Text('Eliminar'),
             onPressed: () {
-              cubit.deleteResumen(r.fecha);
+              cubit.deleteResumen(r.id);
               Navigator.pop(ctx);
             },
           ),

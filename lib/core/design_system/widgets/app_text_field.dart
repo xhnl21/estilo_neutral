@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../tokens/colors.dart';
 import '../tokens/spacing.dart';
 import '../tokens/typography.dart';
@@ -16,6 +17,11 @@ class AppTextField extends StatelessWidget {
   final Widget? suffix;
   final bool readOnly;
   final int maxLines;
+  final String? errorText;
+  final TextInputAction? textInputAction;
+  final TextCapitalization textCapitalization;
+  final List<TextInputFormatter>? inputFormatters;
+  final ValueChanged<String>? onFieldSubmitted;
 
   const AppTextField({
     super.key,
@@ -30,6 +36,11 @@ class AppTextField extends StatelessWidget {
     this.suffix,
     this.readOnly = false,
     this.maxLines = 1,
+    this.errorText,
+    this.textInputAction,
+    this.textCapitalization = TextCapitalization.none,
+    this.inputFormatters,
+    this.onFieldSubmitted,
   });
 
   @override
@@ -39,6 +50,10 @@ class AppTextField extends StatelessWidget {
       onChanged: onChanged,
       validator: validator,
       keyboardType: keyboardType,
+      textInputAction: textInputAction,
+      textCapitalization: textCapitalization,
+      inputFormatters: inputFormatters,
+      onFieldSubmitted: onFieldSubmitted,
       obscureText: obscureText,
       readOnly: readOnly,
       maxLines: maxLines,
@@ -46,6 +61,7 @@ class AppTextField extends StatelessWidget {
       decoration: InputDecoration(
         labelText: label,
         hintText: hint,
+        errorText: errorText,
         prefixIcon: prefixIcon != null
             ? Icon(prefixIcon, size: 20, color: AppPalette.textSecondary)
             : null,
@@ -81,7 +97,8 @@ class AppTextField extends StatelessWidget {
           color: AppPalette.blue700,
           fontWeight: FontWeight.w600,
         ),
-        hintStyle: AppTypography.bodyMedium.copyWith(color: AppPalette.textDisabled),
+        hintStyle:
+            AppTypography.bodyMedium.copyWith(color: AppPalette.textDisabled),
       ),
     );
   }
