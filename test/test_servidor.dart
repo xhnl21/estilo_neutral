@@ -31,6 +31,9 @@ class ServidorSimulado implements HttpClientAdapter {
   };
   final _contadores = <String, int>{};
 
+  /// Cantidad de lecturas gviz recibidas, por hoja.
+  final lecturas = <String, int>{};
+
   String _nuevoId(Map<String, dynamic> payload) {
     final hoja = payload['sheet']?.toString() ?? '';
     final data = payload['data'];
@@ -53,6 +56,8 @@ class ServidorSimulado implements HttpClientAdapter {
   Future<ResponseBody> fetch(RequestOptions o, Stream<Uint8List>? _, Future<void>? __) async {
     final gviz = o.uri.toString().contains('gviz');
     if (gviz) {
+      final hoja = o.uri.queryParameters['sheet'] ?? '';
+      lecturas[hoja] = (lecturas[hoja] ?? 0) + 1;
       return ResponseBody.fromBytes(utf8.encode('error'), 500,
           headers: {Headers.contentTypeHeader: ['text/plain']});
     }

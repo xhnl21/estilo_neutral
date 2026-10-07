@@ -1,3 +1,5 @@
+import 'package:flutter/widgets.dart';
+
 import '../../../core/utils/logger.dart';
 import '../../../shared/google_sheets/sheets_auth.dart';
 import '../../../shared/google_sheets/sheets_data_service.dart';
@@ -7,23 +9,54 @@ import 'auth_cubit.dart';
 /// la app (lo eliminaron de "usuarios", le quitaron la membresía, lo movieron
 /// de organización o se borró su organización).
 ///
-/// Respeta la política de cero polling (docs/no_polling_policy.md): no
-/// consulta Sheets por su cuenta. Reevalúa [SheetsDataService.resolverAcceso]
-/// cada vez que llegan datos nuevos — refresco manual, cualquier alta,
-/// edición o baja, o el arranque de la app.
-class ControlAccesoSesion {
+/// Una revocación hecha desde otro dispositivo se detecta:
+/// - **al intentar guardar:** cada escritura lleva el email de la sesión y
+///   Apps Script la rechaza si esa cuenta perdió el acceso
+///   ([SheetsDataService.accesoRevocadoEnServidor]);
+/// - **al volver a la app** desde segundo plano: se releen solo las hojas de
+///   acceso ([SheetsDataService.releerAcceso]), como mucho una vez cada
+///   [intervaloMinimo];
+/// - con cualquier otra descarga de datos (abrir la app, refrescar).
+///
+/// Respeta la política de cero polling (docs/no_polling_policy.md): no hay
+/// consultas periódicas, solo lecturas puntuales disparadas por un evento.
+class ControlAccesoSesion with WidgetsBindingObserver {
+  /// Mínimo entre dos relecturas por volver a primer plano: cambiar de app
+  /// varias veces seguidas no dispara una lectura por vez.
+  static const intervaloMinimo = Duration(seconds: 30);
+
   final SheetsDataService dataService;
   final AuthCubit authCubit;
   final SheetsAuth? sheetsAuth;
 
   bool _revocando = false;
+  DateTime? _ultimaRelectura;
+  final bool _observaCicloDeVida;
 
   ControlAccesoSesion({
     required this.dataService,
     required this.authCubit,
     this.sheetsAuth,
-  }) {
+    bool observarCicloDeVida = true,
+  }) : _observaCicloDeVida = observarCicloDeVida {
     dataService.addListener(_verificar);
+    if (_observaCicloDeVida) WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) alVolverAPrimerPlano();
+  }
+
+  /// Relee el acceso al volver a la app, salvo que se haya hecho hace menos
+  /// de [intervaloMinimo]. Público para tests.
+  Future<void> alVolverAPrimerPlano({DateTime? ahora}) async {
+    if (!authCubit.isAuthenticated) return;
+    final momento = ahora ?? DateTime.now();
+    final ultima = _ultimaRelectura;
+    if (ultima != null && momento.difference(ultima) < intervaloMinimo) return;
+    _ultimaRelectura = momento;
+    await dataService.releerAcceso();
   }
 
   Future<void> _verificar() async {
@@ -32,8 +65,11 @@ class ControlAccesoSesion {
     if (email == null) return;
 
     final acceso = dataService.resolverAcceso(email);
+    final rechazoServidor = dataService.accesoRevocadoEnServidor;
     final String motivo;
-    if (acceso.organizacionId == null) {
+    if (rechazoServidor != null) {
+      motivo = 'Tu acceso fue revocado. $rechazoServidor';
+    } else if (acceso.organizacionId == null) {
       motivo = 'Tu acceso fue revocado. ${acceso.motivo}';
     } else if (acceso.organizacionId != authCubit.organizacionId) {
       motivo = 'Tu organización cambió. Volvé a iniciar sesión para continuar.';
@@ -58,5 +94,8 @@ class ControlAccesoSesion {
     }
   }
 
-  void dispose() => dataService.removeListener(_verificar);
+  void dispose() {
+    dataService.removeListener(_verificar);
+    if (_observaCicloDeVida) WidgetsBinding.instance.removeObserver(this);
+  }
 }

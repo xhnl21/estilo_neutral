@@ -33,5 +33,7 @@ Este documento formaliza la decisión arquitectónica de **eliminar cualquier me
    - La interfaz incluye botones prominentes de **"Actualizar"** y gestos de arrastre (`RefreshIndicator` / `pull-to-refresh`).
 3. **Escritura con Relectura de Confirmación Atómica**:
    - Cada operación CRUD (ej. registrar venta) escribe la fila en la hoja de cálculo y ejecuta una sola relectura puntual para actualizar el caché local en memoria.
-4. **Invalidación Explícita de Caché**:
+4. **Relectura del acceso al volver a la app**:
+   - Cuando la app vuelve de segundo plano, se releen **solo** las hojas `usuarios`, `organizaciones` y `usuario_organizacion`, como mucho una vez cada 30 segundos (`ControlAccesoSesion`). Es una lectura puntual disparada por un evento, no un sondeo periódico. Además, cada escritura lleva el email de la sesión y Apps Script la rechaza si esa cuenta perdió el acceso, sin ninguna consulta extra.
+5. **Invalidación Explícita de Caché**:
    - El caché local en memoria tiene un TTL manual pasivo (se evalúa solo cuando el usuario pide datos) y se invalida automáticamente ante cualquier operación de escritura.

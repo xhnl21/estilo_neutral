@@ -13,7 +13,6 @@ Solo queda pendiente la [deuda técnica registrada](#1-deuda-técnica-registrada
 | ID | Qué | Detalle |
 |---|---|---|
 | DT-1 | No hay roles: cualquier usuario con sesión administra usuarios y organizaciones | [docs/deuda-tecnica.md](docs/deuda-tecnica.md#dt-1-no-hay-roles-cualquier-usuario-con-sesión-administra-usuarios-y-organizaciones) |
-| DT-2 | Un acceso revocado se detecta recién cuando llegan datos nuevos | [docs/deuda-tecnica.md](docs/deuda-tecnica.md#dt-2-un-acceso-revocado-se-detecta-recién-cuando-llegan-datos-nuevos) |
 | DT-3 | La opción "2FA" de Seguridad no pide un segundo factor | [docs/deuda-tecnica.md](docs/deuda-tecnica.md#dt-3-la-opción-2fa-de-seguridad-no-pide-un-segundo-factor) |
 
 ---

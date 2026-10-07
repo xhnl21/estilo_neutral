@@ -44,13 +44,18 @@ class _FakeBiometria extends Fake implements BiometricAuthService {
 /// Datos de respaldo (Neida con biometría activa y Xavier sin método, ambos
 /// en la organización por defecto) y un servidor simulado que confirma las
 /// escrituras. Sin sesión ni organización actuales: las fija cada test.
+late ServidorSimulado _servidor;
+
 Future<SheetsDataService> _servicio() async {
-  final (ds, _) = await servicioConServidor(usuario: null);
+  final (ds, servidor) = await servicioConServidor(usuario: null);
+  _servidor = servidor;
   ds.setCurrentOrganizacion(null);
   return ds;
 }
 
 void main() {
+  // ControlAccesoSesion observa el ciclo de vida de la app (WidgetsBinding).
+  TestWidgetsFlutterBinding.ensureInitialized();
   late SheetsDataService ds;
   late AuthCubit auth;
   late _FakeSheetsAuth google;
@@ -164,6 +169,53 @@ void main() {
 
       expect(auth.isAuthenticated, isFalse);
       expect(auth.state.motivoCierreSesion, contains('organización cambió'));
+    });
+
+    test('cada escritura lleva el email de la sesión', () async {
+      await ds.addOrganizacion('Para probar');
+      expect(_servidor.enviados.last['usuario_sesion'], 'xhnl21@gmail.com');
+    });
+
+    test('si el servidor rechaza una escritura por acceso revocado, se cierra la sesión', () async {
+      // Lo revocaron desde otro dispositivo: la copia local todavía lo
+      // muestra autorizado, pero Apps Script rechaza lo que intente guardar.
+      _servidor.respuesta =
+          '{"status":"error","code":"acceso_revocado","message":"La cuenta xhnl21@gmail.com ya no está autorizada."}';
+      await expectLater(ds.addOrganizacion('No se guarda'), throwsA(isA<StateError>()));
+      await Future<void>.delayed(Duration.zero);
+
+      expect(ds.organizaciones.any((o) => o.nombre == 'No se guarda'), isFalse);
+      expect(auth.isAuthenticated, isFalse);
+      expect(auth.state.motivoCierreSesion, contains('ya no está autorizada'));
+      expect(google.signOuts, 1);
+    });
+
+    test('un rechazo por otro motivo no cierra la sesión', () async {
+      _servidor.rechazar('Registro no encontrado');
+      await expectLater(ds.addOrganizacion('X'), throwsA(isA<StateError>()));
+      await Future<void>.delayed(Duration.zero);
+      expect(auth.isAuthenticated, isTrue);
+    });
+
+    test('al volver a primer plano relee solo las hojas de acceso, como mucho una vez cada 30 s', () async {
+      final t0 = DateTime(2026, 10, 7, 10);
+      _servidor.lecturas.clear(); // descarta la carga inicial
+      await control.alVolverAPrimerPlano(ahora: t0);
+      expect(_servidor.lecturas.keys, unorderedEquals(['usuarios', 'organizaciones', 'usuario_organizacion']));
+      expect(_servidor.lecturas['usuarios'], 1);
+
+      await control.alVolverAPrimerPlano(ahora: t0.add(const Duration(seconds: 10)));
+      expect(_servidor.lecturas['usuarios'], 1);
+
+      await control.alVolverAPrimerPlano(ahora: t0.add(const Duration(seconds: 31)));
+      expect(_servidor.lecturas['usuarios'], 2);
+    });
+
+    test('sin sesión abierta no relee al volver a primer plano', () async {
+      auth.logout();
+      _servidor.lecturas.clear();
+      await control.alVolverAPrimerPlano();
+      expect(_servidor.lecturas, isEmpty);
     });
 
     test('sin sesión abierta no hace nada', () async {

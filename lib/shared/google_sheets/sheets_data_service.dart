@@ -138,7 +138,34 @@ class SheetsDataService extends ChangeNotifier {
   /// Establece el usuario activo (o `null` para limpiar, p.ej. al cerrar sesión).
   void setCurrentUsuario(String? email) {
     _currentUsuarioEmail = email?.trim().toLowerCase();
+    _accesoRevocadoEnServidor = null;
     notifyListeners();
+  }
+
+  String? _accesoRevocadoEnServidor;
+
+  /// Motivo con el que Apps Script rechazó una escritura porque el usuario de
+  /// la sesión perdió el acceso (`code: "acceso_revocado"`), o `null`.
+  /// `ControlAccesoSesion` lo escucha para cerrar la sesión.
+  String? get accesoRevocadoEnServidor => _accesoRevocadoEnServidor;
+
+  /// Vuelve a leer solo las hojas que deciden el acceso (`usuarios`,
+  /// `organizaciones`, `usuario_organizacion`) y avisa a los listeners. Una
+  /// lectura puntual por evento (p. ej. la app vuelve a primer plano), nunca
+  /// periódica (docs/no_polling_policy.md). Sin red no cambia nada.
+  Future<void> releerAcceso() async {
+    if (_isLoading) return;
+    try {
+      await Future.wait([
+        _fetchSheet('usuarios', _parseUsuarios, expectedHeaders: const ['id', 'email', 'nombre']),
+        _fetchSheet('organizaciones', _parseOrganizaciones, expectedHeaders: const ['id', 'nombre']),
+        _fetchSheet('usuario_organizacion', _parseUsuarioOrganizaciones,
+            expectedHeaders: const ['id', 'usuario_email', 'organizacion_id']),
+      ]);
+      notifyListeners();
+    } catch (e) {
+      Logger.warning('SheetsDataService: no se pudo releer el acceso: $e');
+    }
   }
 
   /// `true` solo si la última sincronización pudo leer la hoja
@@ -884,11 +911,16 @@ class SheetsDataService extends ChangeNotifier {
     final url = appsScriptUrl;
     if (url == null || url.trim().isEmpty) return (huboRedirect: false, data: null);
 
+    // El script rechaza la escritura si esta cuenta perdió el acceso
+    // (`code: "acceso_revocado"`, ver ControlAccesoSesion).
+    final usuario = _currentUsuarioEmail;
+    final cuerpo = usuario == null ? payload : {...payload, 'usuario_sesion': usuario};
+
     Response response;
     try {
       response = await _dio.post(
         url,
-        data: payload,
+        data: cuerpo,
         options: Options(sendTimeout: sendTimeout, receiveTimeout: receiveTimeout),
       );
     } catch (e) {
@@ -918,15 +950,22 @@ class SheetsDataService extends ChangeNotifier {
     if (response.statusCode != 200) return (huboRedirect: huboRedirect, data: null);
 
     final raw = response.data;
-    if (raw is Map<String, dynamic>) return (huboRedirect: huboRedirect, data: raw);
-    if (raw is String && raw.isNotEmpty) {
+    Map<String, dynamic>? data;
+    if (raw is Map<String, dynamic>) {
+      data = raw;
+    } else if (raw is String && raw.isNotEmpty) {
       try {
-        return (huboRedirect: huboRedirect, data: jsonDecode(raw) as Map<String, dynamic>);
+        data = jsonDecode(raw) as Map<String, dynamic>;
       } catch (_) {
-        return (huboRedirect: huboRedirect, data: null);
+        data = null;
       }
     }
-    return (huboRedirect: huboRedirect, data: null);
+    if (data != null && data['code'] == 'acceso_revocado' && usuario != null) {
+      _accesoRevocadoEnServidor = data['message']?.toString() ?? 'Tu acceso fue revocado.';
+      Logger.warning('SheetsDataService: el servidor rechazó la escritura de $usuario: $_accesoRevocadoEnServidor');
+      notifyListeners();
+    }
+    return (huboRedirect: huboRedirect, data: data);
   }
 
   /// Sincroniza de forma asíncrona la acción con la Web App de Google Apps Script (Opción A)

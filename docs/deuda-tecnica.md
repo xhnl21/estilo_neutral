@@ -31,29 +31,7 @@ Cualquier persona a la que se le dé acceso, aunque sea solo para operar ventas 
 2. **Autorización en la app.** Exponer el rol del usuario actual y ocultar o deshabilitar los módulos Usuarios y Organizaciones para quien no sea `administrador`. Esto tiene que hacerse en los Cubits; ocultar solo el menú no alcanza, porque se puede llegar a las rutas igual.
 3. **Aislamiento entre organizaciones.** Que un administrador solo vea y administre usuarios de su propia organización.
 4. **Protecciones mínimas.** Impedir que alguien se elimine a sí mismo o se quite su propio rol, y que una organización se quede sin ningún administrador.
-5. **Autorización en el servidor.** Hoy Apps Script acepta cualquier POST a la URL `/exec` sin verificar quién lo envía (ver [cumplimiento-normativo.md](cumplimiento-normativo.md)). Mientras eso no cambie, los controles de la app se pueden saltear llamando al script directamente. La solución completa requiere que el script valide la identidad del usuario, por ejemplo con un ID token de Google, y su rol.
-
----
-
-## DT-2. Un acceso revocado se detecta recién cuando llegan datos nuevos
-
-**Registrada:** 2026-10-06 · **Severidad:** Baja
-
-### Qué pasa
-
-`ControlAccesoSesion` (`lib/features/auth/application/control_acceso_sesion.dart`) cierra la sesión de un usuario en cuanto pierde el acceso. Esto incluye que lo eliminen, le quiten la membresía, lo muevan de organización o se borre su organización.
-
-Para respetar la [política de cero polling](no_polling_policy.md), no consulta Sheets por su cuenta. Vuelve a evaluar el acceso cada vez que `SheetsDataService` recibe datos nuevos:
-
-- un refresco manual;
-- cualquier alta, edición o baja hecha desde ese dispositivo;
-- el arranque de la app.
-
-Si a alguien le quitan el acceso desde **otro** dispositivo y esa persona no refresca ni guarda nada, sigue dentro hasta que lo haga o hasta que reinicie la app.
-
-### Qué haría falta
-
-Si se necesita una revocación inmediata, la verificación tiene que hacerse en el servidor: que Apps Script rechace las escrituras de un usuario sin acceso (ver el punto 5 de DT-1). Una consulta periódica desde la app no es una opción, porque la política de cero polling la prohíbe.
+5. **Autorización en el servidor.** Hoy Apps Script no verifica quién envía cada POST a la URL `/exec` (ver [cumplimiento-normativo.md](cumplimiento-normativo.md)). Desde el 2026-10-07 rechaza las escrituras cuyo `usuario_sesion` ya no tiene acceso (así una sesión revocada no puede seguir guardando), pero ese email lo manda el cliente: alguien que llame al script directamente puede omitirlo o falsificarlo. Mientras eso no cambie, los controles de la app se pueden saltear llamando al script directamente. La solución completa requiere que el script valide la identidad del usuario, por ejemplo con un ID token de Google, y su rol.
 
 ---
 

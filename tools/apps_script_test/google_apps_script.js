@@ -118,6 +118,20 @@ function doPost(e) {
 
     const ss = getSpreadsheet();
 
+    // La app envía el email de la sesión en cada escritura
+    // (ver ControlAccesoSesion y docs/no_polling_policy.md). Si esa cuenta perdió el acceso (la borraron de
+    // "usuarios", le quitaron la membresía o se borró su organización), se
+    // rechaza sin escribir nada y la app cierra la sesión. Sin el campo
+    // (builds viejas) se acepta como antes. No autentica: el email lo manda
+    // el cliente (ver DT-1, punto 5).
+    const usuarioSesion = String(payload.usuario_sesion || "").trim().toLowerCase();
+    if (usuarioSesion) {
+      const motivo = _motivoSinAcceso(ss, usuarioSesion);
+      if (motivo) {
+        return respond({ status: "error", code: "acceso_revocado", message: motivo }, 403);
+      }
+    }
+
     // =========================================================================
     // ACCIÓN ESPECIAL: SUBIR IMAGEN A GOOGLE DRIVE
     // =========================================================================
@@ -1126,6 +1140,45 @@ function _findRowById(sheet, id) {
     }
   }
   return -1;
+}
+
+/**
+ * Motivo por el que [email] no tiene acceso a la app, o null si lo tiene.
+ * Mismas reglas que SheetsDataService.resolverAcceso: estar en "usuarios",
+ * tener membresía en "usuario_organizacion" y que esa organización exista.
+ * Si falta alguna de las hojas (esquema sin migrar) no bloquea.
+ */
+function _motivoSinAcceso(ss, email) {
+  const filas = function (nombre) {
+    const sh = ss.getSheetByName(nombre);
+    if (!sh || sh.getLastRow() < 1) return null;
+    return sh.getDataRange().getValues();
+  };
+  const columna = function (tabla, encabezado) {
+    return tabla[0].map(function (h) { return String(h).trim().toLowerCase(); }).indexOf(encabezado);
+  };
+  const usuarios = filas("usuarios");
+  const membresias = filas("usuario_organizacion");
+  const organizaciones = filas("organizaciones");
+  if (!usuarios || !membresias || !organizaciones) return null;
+
+  const cEmail = columna(usuarios, "email");
+  const cMiembro = columna(membresias, "usuario_email");
+  const cOrg = columna(membresias, "organizacion_id");
+  const cIdOrg = columna(organizaciones, "id");
+  if (cEmail < 0 || cMiembro < 0 || cOrg < 0 || cIdOrg < 0) return null;
+
+  const igual = function (v) { return String(v).trim().toLowerCase() === email; };
+  if (!usuarios.slice(1).some(function (f) { return igual(f[cEmail]); })) {
+    return "La cuenta " + email + " ya no está autorizada.";
+  }
+  const membresia = membresias.slice(1).filter(function (f) { return igual(f[cMiembro]); })[0];
+  if (!membresia) return "La cuenta " + email + " ya no pertenece a ninguna organización.";
+  const orgId = String(membresia[cOrg]).trim();
+  if (!organizaciones.slice(1).some(function (f) { return String(f[cIdOrg]).trim() === orgId; })) {
+    return "La organización de la cuenta " + email + " ya no existe.";
+  }
+  return null;
 }
 
 function _findRowByColumnValue(sheet, columnIndex, value) {
