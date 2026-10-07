@@ -93,6 +93,35 @@ class UsuariosCubit extends Cubit<UsuariosState> {
     }
   }
 
+  /// Motivo por el que no se puede inactivar a [usuario], o `null`.
+  String? motivoNoInactivable(Usuario usuario) => dataService.motivoNoInactivable(usuario);
+
+  /// Activa o inactiva a [usuario] sin borrarlo. Inactivo no puede iniciar
+  /// sesión y el servidor le cierra la sesión abierta (push silencioso).
+  Future<void> cambiarEstado(Usuario usuario, {required bool activo}) async {
+    emit(state.copyWith(status: UsuariosStatus.loading));
+    try {
+      await dataService.cambiarEstadoUsuario(usuario.id, activo: activo);
+      if (isClosed) return;
+      emit(state.copyWith(
+        status: UsuariosStatus.success,
+        actionSuccessMessage: activo
+            ? '"${usuario.email}" puede volver a iniciar sesión.'
+            : '"${usuario.email}" quedó inactivo: se cerró su sesión y no puede volver a entrar.',
+      ));
+    } catch (e) {
+      if (isClosed) return;
+      emit(state.copyWith(
+        status: UsuariosStatus.success,
+        actionErrorMessage: switch (e) {
+          StateError(:final message) => message,
+          ArgumentError(:final message) => message.toString(),
+          _ => 'Error al cambiar el estado: $e',
+        },
+      ));
+    }
+  }
+
   @override
   Future<void> close() {
     dataService.removeListener(_onDataServiceChanged);

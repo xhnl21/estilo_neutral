@@ -26,7 +26,8 @@ class EnviarNotificacionCubit extends Cubit<EnviarNotificacionState> {
     final organizaciones = List.of(dataService.organizaciones)..sort((a, b) => a.nombre.compareTo(b.nombre));
     final idsOrg = organizaciones.map((o) => o.id).toSet();
     final porOrg = <String, List<Usuario>>{};
-    for (final u in dataService.usuarios) {
+    // Un usuario inactivo no recibe notificaciones (el servidor lo excluye).
+    for (final u in dataService.usuarios.where((u) => u.activo)) {
       final org = dataService.organizacionIdForUsuario(u.email);
       if (org == null || !idsOrg.contains(org)) continue;
       (porOrg[org] ??= []).add(u);

@@ -2,6 +2,7 @@ import 'package:flutter/widgets.dart';
 
 import '../../../core/utils/logger.dart';
 import '../../../shared/google_sheets/sheets_auth.dart';
+import '../../notificaciones/infrastructure/push_gateway.dart';
 import '../../../shared/google_sheets/sheets_data_service.dart';
 import 'auth_cubit.dart';
 
@@ -16,6 +17,10 @@ import 'auth_cubit.dart';
 /// - **al volver a la app** desde segundo plano: se releen solo las hojas de
 ///   acceso ([SheetsDataService.releerAcceso]), como mucho una vez cada
 ///   [intervaloMinimo];
+/// - **al instante, por push silencioso:** al inactivar o eliminar un usuario,
+///   el Apps Script le envía un FCM `sesion_revocada`. Con la app abierta lo
+///   atiende PushCubit; en segundo plano queda anotado y se atiende al volver
+///   (sin esperar [intervaloMinimo]);
 /// - con cualquier otra descarga de datos (abrir la app, refrescar).
 ///
 /// Respeta la política de cero polling (docs/no_polling_policy.md): no hay
@@ -28,6 +33,7 @@ class ControlAccesoSesion with WidgetsBindingObserver {
   final SheetsDataService dataService;
   final AuthCubit authCubit;
   final SheetsAuth? sheetsAuth;
+  final PushGateway? push;
 
   bool _revocando = false;
   DateTime? _ultimaRelectura;
@@ -37,6 +43,7 @@ class ControlAccesoSesion with WidgetsBindingObserver {
     required this.dataService,
     required this.authCubit,
     this.sheetsAuth,
+    this.push,
     bool observarCicloDeVida = true,
   }) : _observaCicloDeVida = observarCicloDeVida {
     dataService.addListener(_verificar);
@@ -51,10 +58,12 @@ class ControlAccesoSesion with WidgetsBindingObserver {
   /// Relee el acceso al volver a la app, salvo que se haya hecho hace menos
   /// de [intervaloMinimo]. Público para tests.
   Future<void> alVolverAPrimerPlano({DateTime? ahora}) async {
+    // Se consume siempre, para que un aviso viejo no quede pendiente.
+    final avisoRevocacion = await push?.consumirAvisoRevocacion() ?? false;
     if (!authCubit.isAuthenticated) return;
     final momento = ahora ?? DateTime.now();
     final ultima = _ultimaRelectura;
-    if (ultima != null && momento.difference(ultima) < intervaloMinimo) return;
+    if (!avisoRevocacion && ultima != null && momento.difference(ultima) < intervaloMinimo) return;
     _ultimaRelectura = momento;
     await dataService.releerAcceso();
   }

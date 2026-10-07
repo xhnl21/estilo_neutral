@@ -1,4 +1,5 @@
 import 'documento_identidad.dart';
+import 'fila_hoja.dart';
 import 'number_parser.dart';
 
 /// Modelo de entidad Cliente mapeado desde la hoja "clientes"
@@ -31,6 +32,10 @@ class Cliente {
   /// Columna I: Número de cédula o documento de identidad
   final String cedula;
 
+  /// Columna J (`status`): un cliente inactivo se conserva (historial de
+  /// ventas) pero no se le puede vender. Vacía = activo.
+  final bool activo;
+
   const Cliente({
     required this.id,
     required this.nombre,
@@ -41,6 +46,7 @@ class Cliente {
     this.organizacionId = '67774411-6aa1-4aa3-a4b2-d3fc6913b768',
     this.tipoDocumento = 'V',
     this.cedula = '',
+    this.activo = true,
   });
 
   /// Helper que devuelve el documento formateado (ej. "V-12345678",
@@ -64,6 +70,7 @@ class Cliente {
           ? row[7].toString().trim().toUpperCase()
           : 'V',
       cedula: row.length > 8 ? row[8].toString().trim() : '',
+      activo: estadoActivo(row.length > 9 ? row[9] : null),
     );
   }
 
@@ -78,6 +85,7 @@ class Cliente {
       organizacionId,
       tipoDocumento,
       cedula,
+      activo,
     ];
   }
 
@@ -92,6 +100,7 @@ class Cliente {
       'organizacion_id': organizacionId,
       'tipo_documento': tipoDocumento,
       'cedula': cedula,
+      'status': activo,
     };
   }
 
@@ -105,6 +114,7 @@ class Cliente {
     String? organizacionId,
     String? tipoDocumento,
     String? cedula,
+    bool? activo,
   }) {
     return Cliente(
       id: id ?? this.id,
@@ -116,6 +126,7 @@ class Cliente {
       organizacionId: organizacionId ?? this.organizacionId,
       tipoDocumento: tipoDocumento ?? this.tipoDocumento,
       cedula: cedula ?? this.cedula,
+      activo: activo ?? this.activo,
     );
   }
 }

@@ -50,6 +50,24 @@ Reglas que aplica el servidor (Apps Script):
  4. Cierra sesión ── eliminar_dispositivo ──▶ borra su token
 ```
 
+### 1.2 Cierre de sesión silencioso (usuario inactivado o eliminado)
+
+Usuarios y clientes tienen un campo `status` (`activo` / `inactivo`): columna **F** de `usuarios` y **J** de `clientes`. Vacío cuenta como activo. Inactivar no borra el registro.
+
+- **Cliente inactivo:** conserva ventas, deudas y abonos, pero no aparece al registrar una venta nueva.
+- **Usuario inactivo:** no puede iniciar sesión, el servidor rechaza sus escrituras (`acceso_revocado`) y no recibe notificaciones.
+
+Al inactivar o eliminar un usuario, el script (`_expulsarUsuario`) le envía a cada teléfono suyo un mensaje FCM **silencioso** (solo datos, `tipo: sesion_revocada`, sin título ni cuerpo) y borra sus filas de `dispositivos`:
+
+| Estado de la app | Qué pasa |
+|---|---|
+| Abierta | `PushCubit` no muestra nada, relee las hojas de acceso y `ControlAccesoSesion` cierra la sesión con el motivo ("La cuenta … está inactiva."). |
+| En segundo plano o cerrada | `manejadorSegundoPlano` no muestra nada y anota el aviso; al volver a la app se relee el acceso (sin esperar los 30 s habituales) y se cierra la sesión. Si estaba cerrada, el login la rechaza. |
+
+La app no confía a ciegas en el aviso: siempre relee el acceso, así un aviso viejo (por ejemplo, de antes de reactivar la cuenta) no cierra una sesión válida. Si FCM falla, la sesión igual se cierra en la próxima escritura o al volver a la app.
+
+Para inactivar desde la hoja (sin la app): escribir `inactivo` en la columna `status` de `usuarios`. El disparador de edición (`alEditarNotificaciones`, el mismo de §5.2, instalado con `crearTriggerNotificacionesDesdeHoja()`) envía el push silencioso igual que desde la app. Sin el disparador, la sesión se cierra en la siguiente lectura o escritura.
+
 ---
 
 ## 2. Estado de la configuración
@@ -326,6 +344,7 @@ El teléfono se registra al iniciar sesión y cuando FCM renueva el token, y se 
 | "Límite de 30 notificaciones por hora" | El remitente ya envió 30 en la última hora. | Esperar, o enviar desde la hoja. |
 | No llega nada, pero el envío figura `ENVIADA` | La app instalada es anterior a `1.0.0+2014` y no sabe mostrar los mensajes solo de datos. | Instalar la versión actual. |
 | Llega varios segundos tarde con la app cerrada | Android tiene que arrancar la app en segundo plano para armarla (más lento en builds debug). | Normal. En Xiaomi/MIUI: Ajustes → Apps → Estilo Neutral → **Ahorro de batería: sin restricciones** e **Inicio automático** activado. |
+| Un usuario inactivado sigue con la sesión abierta | App anterior a `1.0.0+2017` (no conoce el aviso silencioso), sin conexión, o se inactivó a mano en la hoja sin el disparador instalado. | Se cierra igual al volver a la app o al intentar guardar. Instalar la versión actual. |
 | `INSTALL_FAILED_VERSION_DOWNGRADE` al instalar | El teléfono tiene un `versionCode` mayor. Builds viejos con `--split-per-abi` usaban `2009`. | `--version X.Y.Z+<mayor>`. El deploy lo detecta y sugiere el número. |
 | `INSTALL_FAILED_UPDATE_INCOMPATIBLE` | La app instalada tiene otra firma (por ejemplo, debug de `flutter run`). | Instalar el build debug encima, o desinstalar y poner el release (se pierden los datos locales). |
 
@@ -358,6 +377,8 @@ node tools/apps_script/tests/notificaciones.test.js # tests del script, sin Goog
 | App: estado | `presentation/cubit/push_cubit.dart` (registro y apertura), `enviar_notificacion_cubit.dart` |
 | App: pantalla | `presentation/pages/enviar_notificacion_page.dart`, ruta `/notificaciones` |
 | App: servicio | `SheetsDataService.registrarDispositivo`, `eliminarDispositivo`, `enviarNotificacion` (`_accionEnServidor`) |
+| App: cierre silencioso | `PushCubit.atenderSesionRevocada`, `manejadorSegundoPlano` + `consumirAvisoRevocacion`, `lib/features/auth/application/control_acceso_sesion.dart` |
+| Script: estado y expulsión | `_estadoActivo`, `_asegurarColumnaEstado`, `_expulsarUsuario`, `_enviarMensajesFcm` en `google_apps_script.js` |
 | Arranque | `lib/main.dart`, `lib/app/di/injection.dart`, `lib/firebase_options.dart` (provisorio) |
 | Android | `android/settings.gradle.kts`, `android/app/build.gradle.kts`, `AndroidManifest.xml`, `res/drawable/ic_notificacion.xml`, `res/drawable-nodpi/*`, `res/values/colors.xml`, `res/raw/keep.xml` |
 | iOS | `ios/Runner/Info.plist` (`remote-notification`), `ios/Podfile` |

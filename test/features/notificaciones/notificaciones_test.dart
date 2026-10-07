@@ -39,6 +39,8 @@ class _PushFalso implements PushGateway {
   Future<void> mostrarLocal(MensajePush mensaje) async => mostrados.add(mensaje);
   @override
   Future<void> eliminarToken() async => tokensEliminados++;
+  @override
+  Future<bool> consumirAvisoRevocacion() async => false;
 }
 
 Future<void> _esperar() => Future<void>.delayed(const Duration(milliseconds: 10));
@@ -267,6 +269,35 @@ void main() {
       await _esperar();
       expect(push.mostrados.single.titulo, 'Hola');
       expect(rutas, ['/ventas']);
+      await cubit.close();
+    });
+
+    test('el push silencioso de sesión revocada no se muestra y relee el acceso (con un reintento)', () async {
+      final cubit = PushCubit(
+        gateway: push,
+        dataService: ds,
+        authCubit: auth,
+        navegar: rutas.add,
+        esperaReintento: Duration.zero,
+      );
+      auth.login(email: 'xhnl21@gmail.com', organizacionId: organizacionDePrueba);
+      await _esperar();
+      servidor.lecturas.clear();
+      push.primerPlano.add(const MensajePush(datos: {'tipo': tipoSesionRevocada, 'motivo': 'La cuenta fue inactivada.'}));
+      await _esperar();
+      expect(push.mostrados, isEmpty);
+      // La copia local todavía lo muestra activo: relee y reintenta una vez.
+      expect(servidor.lecturas['usuarios'], 2);
+      await cubit.close();
+    });
+
+    test('push de sesión revocada sin sesión abierta: no hace nada', () async {
+      final cubit = crear();
+      servidor.lecturas.clear();
+      push.primerPlano.add(const MensajePush(datos: {'tipo': tipoSesionRevocada}));
+      await _esperar();
+      expect(push.mostrados, isEmpty);
+      expect(servidor.lecturas, isEmpty);
       await cubit.close();
     });
 

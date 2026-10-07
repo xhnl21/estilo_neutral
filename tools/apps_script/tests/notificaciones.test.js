@@ -51,7 +51,7 @@ function crearContexto(props, embebida) {
     LockService: { getScriptLock: () => ({ waitLock() {}, releaseLock() {} }) },
     PropertiesService: { getScriptProperties: () => ({ getProperty: (k) => props[k] || null }) },
     CacheService: { getScriptCache: () => ({ get: (k) => (cache[k] ?? null), put: (k, v) => { cache[k] = v; } }) },
-    Utilities: { base64EncodeWebSafe: (x) => Buffer.from(x).toString('base64'), computeRsaSha256Signature: () => [1, 2, 3] },
+    Utilities: { base64EncodeWebSafe: (x) => Buffer.from(x).toString('base64'), computeRsaSha256Signature: () => [1, 2, 3], formatDate: (d) => d.toISOString().slice(0, 10) },
     UrlFetchApp: {
       fetch: () => ({ getResponseCode: () => 200, getContentText: () => '{"access_token":"at"}' }),
       fetchAll: (pedidos) => pedidos.map((p) => {
@@ -177,5 +177,51 @@ const tokensDe = (e) => e.map((m) => m.token).sort().join(',');
   check(r.status === 'success' && hojas.notificaciones && hojas.notificaciones.filas[0][0] === 'id', 'preparar_notificaciones: crea la hoja y el disparador');
   const sin = JSON.parse(vm.runInContext(`doPost({postData:{contents: JSON.stringify({action:"preparar_notificaciones"})}})`, ctx));
   check(sin.status === 'error', 'preparar_notificaciones: exige usuario de la sesión');
+}
+{ // inactivar usuario: push silencioso, borra sus dispositivos y deja de recibir
+  const { ctx, hojas, enviados } = crearContexto(cred);
+  const r = JSON.parse(vm.runInContext(`doPost({postData:{contents: JSON.stringify({action:"update", sheet:"usuarios", id:"u1", usuario_sesion:"bea@x.com", data:{status:false}})}})`, ctx));
+  check(r.status === 'success', 'inactivar: update aceptado -> ' + JSON.stringify(r).slice(0, 120));
+  check(hojas.usuarios.filas[0][5] === 'status' && hojas.usuarios.filas[1][5] === 'inactivo', 'inactivar: escribe la columna F "status"');
+  const silencioso = enviados.filter((m) => m.data && m.data.tipo === 'sesion_revocada');
+  check(silencioso.length === 1 && silencioso[0].token === 'tok-ana' && !silencioso[0].data.titulo && !silencioso[0].notification, 'inactivar: push silencioso solo a sus tokens');
+  check(!hojas.dispositivos.filas.some((f) => f[1] === 'ana@x.com'), 'inactivar: borra sus dispositivos');
+  check(/inactiva/.test(vm.runInContext(`_motivoSinAcceso(getSpreadsheet(), "ana@x.com")`, ctx) || ''), 'inactivar: ya no tiene acceso');
+  const rechazo = JSON.parse(vm.runInContext(`doPost({postData:{contents: JSON.stringify({action:"enviar_notificacion", usuario_sesion:"ana@x.com", data:{alcance:"global",titulo:"T",cuerpo:"C"}})}})`, ctx));
+  check(rechazo.status === 'error', 'inactivar: el inactivo no puede usar el servidor');
+  hojas.dispositivos.filas.push(['dv9', 'ana@x.com', 'org1', 'tok-ana-2', 'android', '']);
+  enviados.length = 0;
+  vm.runInContext(`_enviarNotificacion(getSpreadsheet(), "bea@x.com", {alcance:"global", titulo:"T", cuerpo:"C"})`, ctx);
+  check(!enviados.some((m) => m.token === 'tok-ana-2'), 'inactivar: el inactivo no recibe notificaciones');
+  vm.runInContext(`doPost({postData:{contents: JSON.stringify({action:"update", sheet:"usuarios", id:"u1", usuario_sesion:"bea@x.com", data:{status:true}})}})`, ctx);
+  check(hojas.usuarios.filas[1][5] === 'activo' && vm.runInContext(`_motivoSinAcceso(getSpreadsheet(), "ana@x.com")`, ctx) === null, 'activar: recupera el acceso');
+}
+{ // inactivar escribiendo en la hoja: el disparador de edición lo expulsa
+  const { ctx, hojas, enviados } = crearContexto(cred);
+  hojas.usuarios.filas[2][5] = 'inactivo';
+  const rango = { getSheet: () => hojas.usuarios, getColumn: () => 6, getLastColumn: () => 6, getRow: () => 3, getNumRows: () => 1 };
+  ctx.__e = { range: rango };
+  vm.runInContext(`alEditarNotificaciones(__e)`, ctx);
+  check(enviados.length === 1 && enviados[0].token === 'tok-bea' && enviados[0].data.tipo === 'sesion_revocada', 'hoja: inactivar a mano envía el push silencioso');
+  rango.getColumn = () => 3; rango.getLastColumn = () => 3;
+  vm.runInContext(`alEditarNotificaciones(__e)`, ctx);
+  check(enviados.length === 1, 'hoja: editar otra columna no expulsa');
+}
+{ // eliminar usuario también lo expulsa; sin dispositivos no falla
+  const { ctx, hojas, enviados } = crearContexto(cred);
+  vm.runInContext(`doPost({postData:{contents: JSON.stringify({action:"delete", sheet:"usuarios", id:"u2", usuario_sesion:"ana@x.com"})}})`, ctx);
+  check(enviados.some((m) => m.token === 'tok-bea' && m.data.tipo === 'sesion_revocada'), 'eliminar usuario: push silencioso');
+  const r = vm.runInContext(`_expulsarUsuario(getSpreadsheet(), "nadie@x.com", "x")`, ctx);
+  check(r.enviados === 0, 'expulsar sin dispositivos: no hace nada');
+}
+{ // clientes: crear con status y cambiarlo
+  const { ctx, hojas } = crearContexto(cred);
+  hojas.clientes = hoja('clientes', [['id','nombre','telefono','email','saldo_deuda_usd','fecha_registro','organizacion_id','tipo_documento','cedula']]);
+  vm.runInContext(`doPost({postData:{contents: JSON.stringify({action:"create", sheet:"clientes", usuario_sesion:"ana@x.com", data:{nombre:"Zoe", organizacion_id:"org1", cedula:"123"}})}})`, ctx);
+  const fila = hojas.clientes.filas[1];
+  check(hojas.clientes.filas[0][9] === 'status' && fila && fila[9] === 'activo', 'cliente nuevo: status "activo" en J -> ' + JSON.stringify(fila));
+  const id = fila ? fila[0] : '';
+  vm.runInContext(`doPost({postData:{contents: JSON.stringify({action:"update", sheet:"clientes", id:"${id}", usuario_sesion:"ana@x.com", data:{status:false}})}})`, ctx);
+  check(hojas.clientes.filas[1] && hojas.clientes.filas[1][9] === 'inactivo' && hojas.clientes.filas[1][1] === 'Zoe', 'cliente: inactivar sin tocar el resto');
 }
 process.exit(fallas ? 1 : 0);

@@ -1,3 +1,4 @@
+import 'fila_hoja.dart';
 /// Modelo de entidad Usuario mapeado desde la hoja "usuarios".
 /// La organización a la que pertenece cada usuario ya no se embebe acá:
 /// vive en la hoja de relación "usuario_organizacion" (ver [UsuarioOrganizacion]),
@@ -20,12 +21,17 @@ class Usuario {
   /// Columna E: Cédula o número de documento
   final String cedula;
 
+  /// Columna F (`status`): un usuario inactivo no puede entrar ni escribir,
+  /// pero su registro se conserva. Vacía = activo.
+  final bool activo;
+
   const Usuario({
     required this.id,
     required this.email,
     this.nombre = '',
     this.tipoDocumento = 'V',
     this.cedula = '',
+    this.activo = true,
   });
 
   /// Helper que devuelve el documento formateado (ej. "V-12345678" o "" si no tiene)
@@ -41,6 +47,7 @@ class Usuario {
           ? row[3].toString().trim().toUpperCase()
           : 'V',
       cedula: row.length > 4 ? row[4].toString().trim() : '',
+      activo: estadoActivo(row.length > 5 ? row[5] : null),
     );
   }
 
@@ -51,6 +58,7 @@ class Usuario {
       'nombre': nombre,
       'tipo_documento': tipoDocumento,
       'cedula': cedula,
+      'status': activo,
     };
   }
 
@@ -60,6 +68,7 @@ class Usuario {
     String? nombre,
     String? tipoDocumento,
     String? cedula,
+    bool? activo,
   }) {
     return Usuario(
       id: id ?? this.id,
@@ -67,6 +76,7 @@ class Usuario {
       nombre: nombre ?? this.nombre,
       tipoDocumento: tipoDocumento ?? this.tipoDocumento,
       cedula: cedula ?? this.cedula,
+      activo: activo ?? this.activo,
     );
   }
 }

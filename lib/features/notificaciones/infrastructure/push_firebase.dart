@@ -6,6 +6,7 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/painting.dart' show Color;
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 import '../../../core/utils/logger.dart';
 import '../../../firebase_options.dart';
@@ -25,6 +26,14 @@ const canalGeneral = AndroidNotificationChannel(
 /// android/app/src/main/res/values/colors.xml y que el Apps Script).
 const colorNotificacion = Color(0xFFBC976F);
 
+/// Dónde el manejador de segundo plano (otro isolate) deja anotado un aviso
+/// de sesión revocada para que la app lo atienda al volver a primer plano.
+const _almacenAvisos = FlutterSecureStorage(
+  aOptions: AndroidOptions(encryptedSharedPreferences: true),
+  mOptions: MacOsOptions(accessibility: KeychainAccessibility.first_unlock),
+);
+const _claveAvisoRevocacion = 'aviso_sesion_revocada';
+
 /// Mensajes que llegan con la app cerrada o en segundo plano. El script
 /// envía mensajes **solo de datos** (sin `notification`), así que la
 /// notificación la arma la app con la imagen incluida en el APK: no depende
@@ -33,12 +42,19 @@ const colorNotificacion = Color(0xFFBC976F);
 /// una función de nivel superior.
 @pragma('vm:entry-point')
 Future<void> manejadorSegundoPlano(RemoteMessage mensaje) async {
+  final recibido = mensajeDesde(mensaje);
+  // Push silencioso (cuenta inactivada o eliminada): no se muestra nada; se
+  // anota para cerrar la sesión apenas la app vuelva a primer plano.
+  if (recibido.esSesionRevocada) {
+    await _almacenAvisos.write(key: _claveAvisoRevocacion, value: DateTime.now().toIso8601String());
+    return;
+  }
   // Un mensaje con `notification` (builds o envíos viejos) ya lo muestra el
   // sistema; mostrarlo acá lo duplicaría.
   if (mensaje.notification != null || !Platform.isAndroid) return;
   final locales = FlutterLocalNotificationsPlugin();
   await _inicializarLocales(locales);
-  await mostrarNotificacionLocal(locales, mensajeDesde(mensaje));
+  await mostrarNotificacionLocal(locales, recibido);
 }
 
 /// Convierte un mensaje de FCM: el texto viene en `notification` (envíos
@@ -211,6 +227,19 @@ class PushFirebase implements PushGateway {
 
   @override
   Future<void> eliminarToken() => _fcm.deleteToken();
+
+  @override
+  Future<bool> consumirAvisoRevocacion() async {
+    try {
+      final aviso = await _almacenAvisos.read(key: _claveAvisoRevocacion);
+      if (aviso == null) return false;
+      await _almacenAvisos.delete(key: _claveAvisoRevocacion);
+      return true;
+    } catch (e) {
+      Logger.warning('No se pudo leer el aviso de sesión revocada: $e');
+      return false;
+    }
+  }
 }
 
 /// Une varios streams en uno (sin depender de package:async).

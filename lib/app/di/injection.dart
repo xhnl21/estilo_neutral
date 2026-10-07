@@ -82,6 +82,7 @@ class ServiceLocator {
       dataService: sheetsDataService,
       authCubit: authCubit,
       sheetsAuth: sheetsAuth,
+      push: push,
     );
     appRouter = AppRouter(
       authCubit: authCubit,

@@ -42,6 +42,7 @@ Acá se registran las personas que te compran.
 - **Buscar:** usá el buscador de arriba, por nombre, teléfono o correo.
 - **Ver sus compras:** ícono de carrito 🛒 en la tarjeta del cliente → te lleva a **Ventas** mostrando solo las facturas de ese cliente (con un botoncito para volver a ver todas).
 - **Editar o borrar:** cada cliente tiene un ícono de lápiz (editar) y uno de papelera (borrar). Borrar pide confirmación porque no se puede deshacer.
+- **Inactivar / Activar:** botón **Inactivar** en la tarjeta del cliente. No se borra: conserva sus ventas, deudas y abonos, y queda marcado **Inactivo**, pero no aparece al registrar una venta nueva. **Activar** lo devuelve a la lista de ventas.
 
 ## Inventario
 
@@ -100,7 +101,8 @@ Acá se administra quién puede entrar al sistema.
 
 - **Dar acceso a alguien nuevo:** botón **"Nuevo Usuario"** → correo de Google, nombre (opcional) y a qué organización pertenece → guardar.
 - **Editar:** ícono de lápiz — se puede cambiar el nombre o mover a otra organización. El correo no se puede cambiar una vez creado (si alguien cambió de cuenta de Google, hay que eliminarlo y darlo de alta de nuevo con el correo correcto).
-- **Quitar acceso:** ícono de papelera → confirmar. Esa cuenta deja de poder entrar al sistema.
+- **Inactivar / Activar:** botón **Inactivar** → confirmar. El usuario no se borra (queda marcado **Inactivo**), pero no puede iniciar sesión, y si tiene la app abierta se le cierra la sesión al instante. **Activar** le devuelve el acceso. No podés inactivar tu propia cuenta.
+- **Quitar acceso:** ícono de papelera → confirmar. Esa cuenta deja de poder entrar al sistema (y también se le cierra la sesión abierta).
 
 ## Organizaciones
 

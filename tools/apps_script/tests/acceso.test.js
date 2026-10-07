@@ -7,8 +7,8 @@ eval(src.slice(ini, fin));
 const hoja = (rows) => ({ getLastRow: () => rows.length, getDataRange: () => ({ getValues: () => rows }) });
 const ss = (h) => ({ getSheetByName: (n) => h[n] ? hoja(h[n]) : null });
 const base = {
-  usuarios: [['id','email','nombre'],['u1','ana@x.com','Ana'],['u2','bea@x.com','Bea'],['u3','cami@x.com','C']],
-  usuario_organizacion: [['id','usuario_email','organizacion_id'],['uo1','ana@x.com','org1'],['uo2','cami@x.com','org-borrada']],
+  usuarios: [['id','email','nombre','tipo_documento','cedula','status'],['u1','ana@x.com','Ana','V','1',''],['u2','bea@x.com','Bea','V','2','activo'],['u3','cami@x.com','C','V','3','activo'],['u4','eli@x.com','Eli','V','4','inactivo']],
+  usuario_organizacion: [['id','usuario_email','organizacion_id'],['uo1','ana@x.com','org1'],['uo3','eli@x.com','org1'],['uo2','cami@x.com','org-borrada']],
   organizaciones: [['id','nombre'],['org1','Org']],
 };
 const casos = [
@@ -16,6 +16,7 @@ const casos = [
   ['intruso@x.com', 'ya no está autorizada'],
   ['bea@x.com', 'no pertenece'],
   ['cami@x.com', 'ya no existe'],
+  ['eli@x.com', 'está inactiva'],
 ];
 let ok = true;
 for (const [email, esperado] of casos) {

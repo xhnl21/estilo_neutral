@@ -156,6 +156,25 @@ class ClientesCubit extends Cubit<ClientesState> {
     }
   }
 
+  /// Activa o inactiva un cliente (no se borra: conserva ventas e historial).
+  Future<void> cambiarEstado(String id, {required bool activo}) async {
+    try {
+      await dataService.cambiarEstadoCliente(id, activo: activo);
+      if (isClosed) return;
+      emit(state.copyWith(
+        status: ClientesStatus.success,
+        actionSuccessMessage: activo ? 'Cliente activado.' : 'Cliente inactivado: no aparece para ventas nuevas.',
+      ));
+    } catch (e) {
+      if (isClosed) return;
+      emit(state.copyWith(errorMessage: switch (e) {
+        StateError(:final message) => message,
+        ArgumentError(:final message) => message.toString(),
+        _ => e.toString(),
+      }));
+    }
+  }
+
   @override
   Future<void> close() {
     dataService.removeListener(_onDataServiceChanged);

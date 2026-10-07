@@ -191,6 +191,9 @@ class SheetsDataService extends ChangeNotifier {
     if (!_usuarios.any((u) => u.email.trim().toLowerCase() == normalized)) {
       return (organizacionId: null, motivo: 'La cuenta $normalized no está registrada como usuario del sistema.');
     }
+    if (_usuarios.any((u) => u.email.trim().toLowerCase() == normalized && !u.activo)) {
+      return (organizacionId: null, motivo: 'La cuenta $normalized está inactiva.');
+    }
     final organizacionId = organizacionIdForUsuario(normalized);
     if (organizacionId == null || organizacionId.trim().isEmpty) {
       return (organizacionId: null, motivo: 'La cuenta $normalized no pertenece a ninguna organización.');
@@ -214,6 +217,10 @@ class SheetsDataService extends ChangeNotifier {
 
   List<Cliente> get clientes =>
       List.unmodifiable(_clientes.where((c) => _matchesCurrentOrg(c.organizacionId)));
+
+  /// Clientes activos de la organización actual: los únicos a los que se les
+  /// puede registrar una venta nueva.
+  List<Cliente> get clientesActivos => List.unmodifiable(clientes.where((c) => c.activo));
   List<Producto> get productos =>
       List.unmodifiable(_productos.where((p) => _matchesCurrentOrg(p.organizacionId)));
   List<Venta> get ventas =>
@@ -1240,6 +1247,7 @@ class SheetsDataService extends ChangeNotifier {
     final actualizado = cliente.copyWith(
       organizacionId: old.organizacionId,
       fechaRegistro: old.fechaRegistro,
+      activo: old.activo, // el estado solo cambia con cambiarEstadoCliente
     );
     _clientes[index] = actualizado;
     _logAudit(
@@ -1254,6 +1262,35 @@ class SheetsDataService extends ChangeNotifier {
     notifyListeners();
     await _sincronizarConRollback(
       {'action': 'update', 'sheet': 'clientes', 'id': actualizado.id, 'data': actualizado.toMap()},
+      revertir: () {
+        final i = _clientes.indexOf(actualizado);
+        if (i != -1) _clientes[i] = old;
+      },
+    );
+  }
+
+  /// Activa o inactiva un cliente. Inactivo se conserva (ventas, historial)
+  /// pero no aparece para ventas nuevas. Revierte y lanza [StateError] si
+  /// Sheets no lo confirma.
+  Future<void> cambiarEstadoCliente(String id, {required bool activo}) async {
+    final index = _clientes.indexWhere((c) => c.id == id);
+    if (index == -1) throw ArgumentError('No se encontró el cliente $id.');
+    final old = _clientes[index];
+    if (old.activo == activo) return;
+    final actualizado = old.copyWith(activo: activo);
+    _clientes[index] = actualizado;
+    _logAudit(
+      hoja: 'clientes',
+      celda: 'J${index + 2}',
+      valorAnterior: old.activo ? 'activo' : 'inactivo',
+      valorNuevo: activo ? 'activo' : 'inactivo',
+      accion: activo ? 'activacion_cliente' : 'inactivacion_cliente',
+      norma: 'ISO 8000 §4.2',
+      observaciones: 'Cliente $id ${activo ? 'activado' : 'inactivado'}',
+    );
+    notifyListeners();
+    await _sincronizarConRollback(
+      {'action': 'update', 'sheet': 'clientes', 'id': id, 'data': {'status': activo}},
       revertir: () {
         final i = _clientes.indexOf(actualizado);
         if (i != -1) _clientes[i] = old;
@@ -3107,7 +3144,8 @@ usuarioEmail: 'xhnl21@gmail.com',
       throw ArgumentError('La organización elegida ya no existe.');
     }
     final anterior = _usuarios[index];
-    final actualizado = usuario.copyWith(email: anterior.email);
+    // El estado solo cambia con cambiarEstadoUsuario.
+    final actualizado = usuario.copyWith(email: anterior.email, activo: anterior.activo);
     _usuarios[index] = actualizado;
 
     final membresiaAnterior = _membresiaDe(anterior.email);
@@ -3172,6 +3210,49 @@ usuarioEmail: 'xhnl21@gmail.com',
     } on StateError {
       return false;
     }
+  }
+
+  /// Motivo por el que no se puede cambiar el estado de [usuario], o `null`.
+  /// Nadie puede inactivarse a sí mismo (se quedaría afuera sin poder volver).
+  String? motivoNoInactivable(Usuario usuario) {
+    if (usuario.email.trim().toLowerCase() == _currentUsuarioEmail) {
+      return 'No podés inactivar tu propia cuenta.';
+    }
+    return null;
+  }
+
+  /// Activa o inactiva un usuario sin borrarlo. Inactivo no puede iniciar
+  /// sesión, y el servidor le envía un push silencioso que cierra la sesión
+  /// abierta en sus teléfonos. Revierte y lanza [StateError] si Sheets no lo
+  /// confirma; [ArgumentError] si es el propio usuario de la sesión.
+  Future<void> cambiarEstadoUsuario(String id, {required bool activo}) async {
+    final index = _usuarios.indexWhere((u) => u.id == id);
+    if (index == -1) throw ArgumentError('No se encontró el usuario $id.');
+    final old = _usuarios[index];
+    if (old.activo == activo) return;
+    if (!activo) {
+      final motivo = motivoNoInactivable(old);
+      if (motivo != null) throw ArgumentError(motivo);
+    }
+    final actualizado = old.copyWith(activo: activo);
+    _usuarios[index] = actualizado;
+    _logAudit(
+      hoja: 'usuarios',
+      celda: 'F${index + 2}',
+      valorAnterior: old.activo ? 'activo' : 'inactivo',
+      valorNuevo: activo ? 'activo' : 'inactivo',
+      accion: activo ? 'activacion_usuario' : 'inactivacion_usuario',
+      norma: 'ISO/IEC 27001 §9.2',
+      observaciones: 'Usuario ${old.email} ${activo ? 'activado' : 'inactivado'}',
+    );
+    notifyListeners();
+    await _sincronizarConRollback(
+      {'action': 'update', 'sheet': 'usuarios', 'id': id, 'data': {'status': activo}},
+      revertir: () {
+        final i = _usuarios.indexOf(actualizado);
+        if (i != -1) _usuarios[i] = old;
+      },
+    );
   }
 
   /// Elimina un usuario y su membresía. Su fila de `seguridad` queda (es

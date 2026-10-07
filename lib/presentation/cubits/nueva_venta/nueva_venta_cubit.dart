@@ -33,7 +33,8 @@ class NuevaVentaCubit extends Cubit<NuevaVentaState> {
   }
 
   void _syncFromService({bool isInitial = false}) {
-    final clientes = List.of(dataService.clientes);
+    // A un cliente inactivo no se le registran ventas nuevas.
+    final clientes = List.of(dataService.clientesActivos);
     final productosUnicos = <String, Producto>{};
     for (final p in dataService.productos) {
       productosUnicos.putIfAbsent(p.id, () => p);

@@ -14,13 +14,19 @@ import 'push_state.dart';
 ///   "dispositivos" (y lo vuelve a registrar si FCM lo renueva);
 /// - al cerrar sesión borra el token, para que no le lleguen notificaciones
 ///   de otro usuario a este teléfono;
-/// - con la app abierta muestra la notificación localmente;
+/// - con la app abierta muestra la notificación localmente, salvo el push
+///   silencioso de sesión revocada: ese relee el acceso y, si la cuenta quedó
+///   inactiva o eliminada, ControlAccesoSesion cierra la sesión al instante;
 /// - al tocar una notificación con `ruta`, navega con [navegar].
 class PushCubit extends Cubit<PushState> {
   final PushGateway gateway;
   final SheetsDataService dataService;
   final AuthCubit authCubit;
   final void Function(String ruta) navegar;
+
+  /// Espera antes de releer otra vez si la primera lectura todavía no
+  /// mostraba el cambio (la hoja publicada puede tardar unos segundos).
+  final Duration esperaReintento;
 
   final _suscripciones = <StreamSubscription<dynamic>>[];
   String? _token;
@@ -31,15 +37,39 @@ class PushCubit extends Cubit<PushState> {
     required this.dataService,
     required this.authCubit,
     required this.navegar,
+    this.esperaReintento = const Duration(seconds: 5),
   }) : super(PushState(status: gateway.disponible ? PushStatus.inactivo : PushStatus.noDisponible)) {
     if (!gateway.disponible) return;
     _suscripciones
       ..add(authCubit.stream.listen(_alCambiarSesion))
       ..add(gateway.tokenRenovado.listen(_alRenovarToken))
-      ..add(gateway.mensajesEnPrimerPlano.listen(gateway.mostrarLocal))
+      ..add(gateway.mensajesEnPrimerPlano.listen(_alRecibir))
       ..add(gateway.mensajesAbiertos.listen(_abrir));
     unawaited(_abrirMensajeInicial());
     if (authCubit.isAuthenticated) unawaited(registrar());
+  }
+
+  Future<void> _alRecibir(MensajePush mensaje) async {
+    if (mensaje.esSesionRevocada) {
+      await atenderSesionRevocada();
+    } else {
+      await gateway.mostrarLocal(mensaje);
+    }
+  }
+
+  /// Relee el acceso (no confía a ciegas en el aviso: puede ser viejo y la
+  /// cuenta ya estar activa otra vez). Si la cuenta perdió el acceso,
+  /// ControlAccesoSesion cierra la sesión con el motivo.
+  Future<void> atenderSesionRevocada() async {
+    final email = authCubit.userEmail;
+    if (!authCubit.isAuthenticated || email == null) return;
+    Logger.info('PushCubit: aviso de sesión revocada, se relee el acceso.');
+    await dataService.releerAcceso();
+    if (isClosed || !authCubit.isAuthenticated) return;
+    if (dataService.resolverAcceso(email).organizacionId == null) return;
+    await Future<void>.delayed(esperaReintento);
+    if (isClosed || !authCubit.isAuthenticated) return;
+    await dataService.releerAcceso();
   }
 
   Future<void> _abrirMensajeInicial() async {

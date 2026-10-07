@@ -22,3 +22,10 @@ class FilaHoja {
 }
 
 const organizacionPorDefecto = '67774411-6aa1-4aa3-a4b2-d3fc6913b768';
+
+/// Lee la columna `status` de una hoja: vacía = **activo** (filas anteriores a
+/// la columna); `FALSE`, `false`, `0`, `inactivo` o `no` = inactivo.
+bool estadoActivo(Object? valor) {
+  final v = (valor ?? '').toString().trim().toLowerCase();
+  return !const {'false', '0', 'inactivo', 'no'}.contains(v);
+}

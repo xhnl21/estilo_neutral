@@ -5,6 +5,7 @@ import 'package:estilo_neutral/features/auth/application/control_acceso_sesion.d
 import 'package:estilo_neutral/features/auth/domain/auth_state.dart';
 import 'package:estilo_neutral/features/auth/presentation/cubit/login_cubit.dart';
 import 'package:estilo_neutral/features/auth/presentation/cubit/login_state.dart';
+import 'package:estilo_neutral/features/notificaciones/infrastructure/push_gateway.dart';
 import 'package:estilo_neutral/shared/auth/biometric_auth_service.dart';
 import 'package:estilo_neutral/shared/google_sheets/sheets_auth.dart';
 import 'package:estilo_neutral/shared/google_sheets/sheets_data_service.dart';
@@ -29,6 +30,18 @@ class _FakeSheetsAuth extends Fake implements SheetsAuth {
   Future<GoogleSignInAccount?> signIn() async => interactiva;
   @override
   Future<void> signOut() async => signOuts++;
+}
+
+/// Solo el aviso de sesión revocada que deja el manejador de segundo plano.
+class _PushConAviso extends PushNoDisponible {
+  bool aviso = false;
+  _PushConAviso() : super('test');
+  @override
+  Future<bool> consumirAvisoRevocacion() async {
+    final hay = aviso;
+    aviso = false;
+    return hay;
+  }
 }
 
 class _FakeBiometria extends Fake implements BiometricAuthService {
@@ -124,6 +137,24 @@ void main() {
       await cubit.close();
     });
 
+    test('cuenta inactiva: no puede iniciar sesión', () async {
+      final usuario = ds.usuarios.firstWhere((u) => u.email == 'xhnl21@gmail.com');
+      await ds.cambiarEstadoUsuario(usuario.id, activo: false);
+      google.interactiva = _Cuenta('xhnl21@gmail.com');
+      final cubit = loginCubit();
+      await cubit.restaurarSesion();
+      await cubit.accionPrincipal();
+      expect(cubit.state.errorMessage, contains('está inactiva'));
+      expect(auth.isAuthenticated, isFalse);
+      expect(google.signOuts, 1);
+
+      // Reactivada, vuelve a entrar.
+      await ds.cambiarEstadoUsuario(usuario.id, activo: true);
+      await cubit.accionPrincipal();
+      expect(auth.isAuthenticated, isTrue);
+      await cubit.close();
+    });
+
     test('muestra el motivo de un cierre de sesión forzado', () async {
       auth.logout(motivo: 'Tu acceso fue revocado.');
       final cubit = loginCubit();
@@ -134,9 +165,11 @@ void main() {
 
   group('ControlAccesoSesion', () {
     late ControlAccesoSesion control;
+    late _PushConAviso push;
 
     setUp(() {
-      control = ControlAccesoSesion(dataService: ds, authCubit: auth, sheetsAuth: google);
+      push = _PushConAviso();
+      control = ControlAccesoSesion(dataService: ds, authCubit: auth, sheetsAuth: google, push: push);
       auth.login(email: 'xhnl21@gmail.com', organizacionId: _org);
       ds.setCurrentOrganizacion(_org);
       ds.setCurrentUsuario('xhnl21@gmail.com');
@@ -158,6 +191,31 @@ void main() {
       expect(auth.state.motivoCierreSesion, contains('revocado'));
       expect(google.signOuts, 1);
       expect(ds.currentOrganizacionId, isNull);
+    });
+
+    test('si lo inactivan (desde otro dispositivo), se cierra su sesión', () async {
+      final usuario = ds.usuarios.firstWhere((u) => u.email == 'xhnl21@gmail.com');
+      ds.setCurrentUsuario('neidapulgar1989@gmail.com'); // lo inactiva otra cuenta
+      await ds.cambiarEstadoUsuario(usuario.id, activo: false);
+      await Future<void>.delayed(Duration.zero);
+
+      expect(auth.isAuthenticated, isFalse);
+      expect(auth.state.motivoCierreSesion, contains('está inactiva'));
+      expect(google.signOuts, 1);
+    });
+
+    test('un aviso de sesión revocada (push en segundo plano) relee aunque no pasaron 30 s', () async {
+      final t0 = DateTime(2026, 10, 7, 10);
+      await control.alVolverAPrimerPlano(ahora: t0);
+      _servidor.lecturas.clear();
+
+      await control.alVolverAPrimerPlano(ahora: t0.add(const Duration(seconds: 5)));
+      expect(_servidor.lecturas, isEmpty);
+
+      push.aviso = true;
+      await control.alVolverAPrimerPlano(ahora: t0.add(const Duration(seconds: 6)));
+      expect(_servidor.lecturas['usuarios'], 1);
+      expect(push.aviso, isFalse, reason: 'el aviso se consume');
     });
 
     test('si lo mueven de organización, tiene que volver a iniciar sesión', () async {

@@ -203,6 +203,12 @@ class _UsuariosViewState extends State<_UsuariosView> {
                                                       fontSize: 11,
                                                     ),
                                                   ),
+                                                  if (!usuario.activo)
+                                                    const AppChip(
+                                                      label: 'Inactivo',
+                                                      variant:
+                                                          AppChipVariant.warning,
+                                                    ),
                                                   if (usuario.documentoCompleto
                                                       .isNotEmpty)
                                                     Container(
@@ -336,7 +342,27 @@ class _UsuariosViewState extends State<_UsuariosView> {
                                                 : _showEsquemaPendienteDialog(
                                                     context),
                                           ),
-                                          const SizedBox(width: 8),
+                                          OutlinedButton.icon(
+                                            style: OutlinedButton.styleFrom(
+                                              visualDensity:
+                                                  VisualDensity.compact,
+                                              foregroundColor: usuario.activo
+                                                  ? AppPalette.warning
+                                                  : AppPalette.success,
+                                              side: const BorderSide(
+                                                  color: AppPalette.border),
+                                            ),
+                                            icon: Icon(
+                                                usuario.activo
+                                                    ? CupertinoIcons.pause_circle
+                                                    : CupertinoIcons.play_circle,
+                                                size: 16),
+                                            label: Text(usuario.activo
+                                                ? 'Inactivar'
+                                                : 'Activar'),
+                                            onPressed: () =>
+                                                _confirmarEstado(context, usuario),
+                                          ),
                                           OutlinedButton.icon(
                                             style: OutlinedButton.styleFrom(
                                               visualDensity:
@@ -382,6 +408,49 @@ class _UsuariosViewState extends State<_UsuariosView> {
       builder: (_) => BlocProvider(
         create: (_) => UsuarioFormCubit(dataService: widget.dataService, usuario: usuario),
         child: _UsuarioFormSheet(id: usuario?.id),
+      ),
+    );
+  }
+
+  void _confirmarEstado(BuildContext context, Usuario usuario) {
+    final cubit = context.read<UsuariosCubit>();
+    final activar = !usuario.activo;
+    final motivo = activar ? null : cubit.motivoNoInactivable(usuario);
+    if (motivo != null) {
+      showDialog(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('No se puede inactivar'),
+          content: Text(motivo),
+          actions: [
+            FilledButton(
+                child: const Text('Entendido'),
+                onPressed: () => Navigator.pop(ctx)),
+          ],
+        ),
+      );
+      return;
+    }
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(activar ? '¿Activar usuario?' : '¿Inactivar usuario?'),
+        content: Text(activar
+            ? '${usuario.email} va a poder volver a iniciar sesión.'
+            : '${usuario.email} no se borra, pero no va a poder iniciar sesión. '
+                'Si tiene la app abierta, se le cierra la sesión al instante.'),
+        actions: [
+          TextButton(
+              child: const Text('Cancelar'),
+              onPressed: () => Navigator.pop(ctx)),
+          FilledButton(
+            child: Text(activar ? 'Activar' : 'Inactivar'),
+            onPressed: () {
+              Navigator.pop(ctx);
+              cubit.cambiarEstado(usuario, activo: activar);
+            },
+          ),
+        ],
       ),
     );
   }

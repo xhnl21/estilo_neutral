@@ -233,6 +233,13 @@ class _ClientesView extends StatelessWidget {
                                                             fontSize: 11,
                                                           ),
                                                         ),
+                                                        if (!cliente.activo)
+                                                          const AppChip(
+                                                            label: 'Inactivo',
+                                                            variant:
+                                                                AppChipVariant
+                                                                    .warning,
+                                                          ),
                                                         if (cliente
                                                             .documentoCompleto
                                                             .isNotEmpty)
@@ -551,6 +558,35 @@ class _ClientesView extends StatelessWidget {
                                                     visualDensity:
                                                         VisualDensity.compact,
                                                     foregroundColor:
+                                                        cliente.activo
+                                                            ? AppPalette.warning
+                                                            : AppPalette.success,
+                                                    side: const BorderSide(
+                                                        color:
+                                                            AppPalette.border),
+                                                  ),
+                                                  icon: Icon(
+                                                      cliente.activo
+                                                          ? CupertinoIcons
+                                                              .pause_circle
+                                                          : CupertinoIcons
+                                                              .play_circle,
+                                                      size: 16),
+                                                  label: Text(cliente.activo
+                                                      ? 'Inactivar'
+                                                      : 'Activar'),
+                                                  onPressed: () =>
+                                                      _confirmarEstado(
+                                                    context,
+                                                    cliente,
+                                                  ),
+                                                ),
+                                                OutlinedButton.icon(
+                                                  style:
+                                                      OutlinedButton.styleFrom(
+                                                    visualDensity:
+                                                        VisualDensity.compact,
+                                                    foregroundColor:
                                                         AppPalette.error,
                                                     side: const BorderSide(
                                                         color:
@@ -602,6 +638,37 @@ class _ClientesView extends StatelessWidget {
         create: (_) =>
             ClienteFormCubit(dataService: dataService, cliente: cliente),
         child: const _ClienteModalSheet(),
+      ),
+    );
+  }
+
+  void _confirmarEstado(BuildContext context, Cliente cliente) {
+    final cubit = context.read<ClientesCubit>();
+    final activar = !cliente.activo;
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(activar ? '¿Activar cliente?' : '¿Inactivar cliente?'),
+        content: Text(activar
+            ? '${cliente.nombre} (${cliente.id}) vuelve a aparecer para ventas nuevas.'
+            : '${cliente.nombre} (${cliente.id}) no se borra: conserva sus ventas, '
+                'deudas y abonos, pero no aparece para ventas nuevas.'),
+        actions: [
+          TextButton(
+            child: const Text('Cancelar'),
+            onPressed: () => Navigator.pop(ctx),
+          ),
+          FilledButton(
+            child: Text(activar ? 'Activar' : 'Inactivar'),
+            onPressed: () {
+              Logger.info(
+                'ClientesPage: ${activar ? 'Activando' : 'Inactivando'} cliente ${cliente.id}',
+              );
+              cubit.cambiarEstado(cliente.id, activo: activar);
+              Navigator.pop(ctx);
+            },
+          ),
+        ],
       ),
     );
   }

@@ -11,7 +11,15 @@ class MensajePush {
   const MensajePush({this.titulo, this.cuerpo, this.datos = const {}});
 
   String? get ruta => datos['ruta'];
+
+  /// Aviso silencioso del servidor: la cuenta fue inactivada o eliminada y
+  /// hay que cerrar la sesión. No se muestra.
+  bool get esSesionRevocada => datos['tipo'] == tipoSesionRevocada;
 }
+
+/// Valor de `tipo` del push silencioso que envía el Apps Script
+/// (`_expulsarUsuario`) al inactivar o eliminar un usuario.
+const tipoSesionRevocada = 'sesion_revocada';
 
 /// Canal de notificaciones push del dispositivo. Abstrae Firebase para que
 /// la lógica (PushCubit) se pueda probar sin él.
@@ -45,6 +53,10 @@ abstract class PushGateway {
 
   /// Invalida el token de este dispositivo (al cerrar sesión).
   Future<void> eliminarToken();
+
+  /// `true` si, con la app en segundo plano o cerrada, llegó un aviso de
+  /// sesión revocada que todavía no se atendió. Lo borra al leerlo.
+  Future<bool> consumirAvisoRevocacion();
 }
 
 /// Canal inactivo: Firebase sin configurar, plataforma sin soporte o error al
@@ -74,4 +86,6 @@ class PushNoDisponible implements PushGateway {
   Future<void> mostrarLocal(MensajePush mensaje) async {}
   @override
   Future<void> eliminarToken() async {}
+  @override
+  Future<bool> consumirAvisoRevocacion() async => false;
 }
