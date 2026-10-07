@@ -11,6 +11,7 @@ CLASP="$SCRIPT_DIR/node_modules/.bin/clasp"
 DEPLOYMENT_ID="AKfycbx6GOO7X-T5L6sBYMfJX-3fzjcss21MxQFvk7ilx4huUwWOPKTk5pOmALdZcPunAw8kwA"
 
 cp "$REPO_ROOT/google_apps_script.js" "$SCRIPT_DIR/google_apps_script.js"
+bash "$REPO_ROOT/tools/apps_script/generar_credencial_fcm.sh" "$SCRIPT_DIR/credencial_fcm.js"
 
 cd "$SCRIPT_DIR"
 

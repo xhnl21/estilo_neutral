@@ -26,6 +26,9 @@ git status --ignored --short | grep '^!!'
 | `tools/sheets_sync/client_secret.json` | Cliente OAuth de los scripts Python de migración | `tools/sheets_sync/*.py` | Solo para esos scripts | Google Cloud Console (§2.7) |
 | `tools/sheets_sync/token.json` | Sesión OAuth cacheada de esos scripts | `tools/sheets_sync/*.py` | Se genera solo | Primera ejecución (§2.7) |
 | `~/.clasprc.json` (fuera del repo) | Sesión de `clasp` para desplegar el Apps Script | `tools/apps_script*/deploy.sh` | Para desplegar | `bash tools/apps_script/login.sh` (§2.8) |
+| `fcm-clave-*.json` (raíz) | Clave privada de la cuenta de servicio `fcm-sender` | `generar_credencial_fcm.sh` | Para enviar notificaciones (si no hay propiedad del script) | Google Cloud → Cuentas de servicio → Claves (§2.11) |
+| `credencial_fcm.js` (raíz y `tools/apps_script_test/`) | Credencial FCM embebida que sube el deploy | Apps Script | Se genera solo | Lo genera `deploy.sh` (§2.11) |
+| `google-services-*.json` (raíz) | Descargas de Firebase por app (la buena es la de `android/app/`) | Nadie | No | Consola de Firebase (§2.4) |
 | `.claude/settings.local.json` | Permisos locales de Claude Code | Claude Code | No | Se crea a mano (§2.9) |
 | `respaldos/` | Copias de la hoja de producción y lotes de corrección | Personas (restauración) | No | Se generan antes de cada corrección de datos (§2.10) |
 | Propiedad del script `FCM_SERVICE_ACCOUNT` | Credencial para enviar notificaciones FCM | `google_apps_script.js` | Para notificaciones | Editor de Apps Script (§3.1) |
@@ -195,6 +198,30 @@ Lotes aplicados, registrados en la bitácora (`audit_log`):
 - `tx_limpieza_datos_2026-10-07`
 - `tx_cedulas_demo_2026-10-07`
 
+### 2.11 `fcm-clave-*.json` y `credencial_fcm.js` (credencial de FCM)
+
+`fcm-clave-estilo-neutral-<id>.json` es la clave **privada** de la cuenta de servicio `fcm-sender@estilo-neutral.iam.gserviceaccount.com`, que solo tiene el rol *Administrador de la API de Firebase Cloud Messaging*. Está en el `.gitignore` y tiene permisos `600`.
+
+| Campo | Qué es |
+|---|---|
+| `type` | `service_account`. |
+| `project_id` | `estilo-neutral`. |
+| `private_key_id` / `private_key` | Clave privada. **Secreto.** |
+| `client_email` | `fcm-sender@estilo-neutral.iam.gserviceaccount.com`. |
+| `client_id`, `auth_uri`, `token_uri`, `auth_provider_x509_cert_url`, `client_x509_cert_url`, `universe_domain` | Datos estándar de Google. |
+
+`tools/apps_script/generar_credencial_fcm.sh` la lee (o la que indique `FCM_CLAVE`) y genera **`credencial_fcm.js`**, con `const FCM_SERVICE_ACCOUNT_EMBEBIDA = {type, project_id, client_email, private_key, private_key_id, token_uri}`. Los dos `deploy.sh` lo ejecutan y suben el archivo (`.claspignore` lo permite). No se versiona.
+
+Orden en que el script busca la credencial:
+1. la propiedad del script `FCM_SERVICE_ACCOUNT`;
+2. `FCM_SERVICE_ACCOUNT_EMBEBIDA`.
+
+Si se rota la clave:
+1. crear una nueva en la cuenta de servicio;
+2. reemplazar el archivo local y la propiedad;
+3. volver a desplegar;
+4. **borrar la clave vieja** en Google Cloud. Las versiones viejas del Apps Script conservan la credencial embebida, así que la única forma de invalidarla es borrarla en Google Cloud.
+
 ---
 
 ## 3. Configuración fuera del repositorio
@@ -209,9 +236,10 @@ Lotes aplicados, registrados en la bitácora (`audit_log`):
 | Permisos (scopes) | `appsscript.json` → `oauthScopes` | `spreadsheets`, `drive`, `script.external_request`, `script.scriptapp`, `userinfo.email`. Si se agrega uno, hay que volver a autorizar el script desde el editor. |
 | Hoja de cálculo | `google_apps_script.js` → `DEFAULT_SPREADSHEET_ID` | La hoja de producción. |
 | Carpeta de fotos | `google_apps_script.js` → `DRIVE_FOLDER_ID` | Carpeta de Drive compartida "cualquiera con el enlace". |
-| **Propiedad del script `FCM_SERVICE_ACCOUNT`** | Editor → Configuración del proyecto → Propiedades del script | JSON completo de la cuenta de servicio de FCM: `type`, `project_id`, `private_key_id`, `private_key`, `client_email`, `client_id`, `token_uri`… El script usa `client_email`, `private_key` y `project_id`. **Cargado en producción.** |
+| **Propiedad del script `FCM_SERVICE_ACCOUNT`** | Editor → Configuración del proyecto → Propiedades del script | JSON completo de la cuenta de servicio `fcm-sender` (campos en §2.11); el script usa `client_email`, `private_key` y `project_id`. **Secreto.** Cargada en producción. Respaldo: `credencial_fcm.js` (§2.11). |
+| Acción `preparar_notificaciones` | `doPost` | Crea las hojas de notificaciones e instala el disparador. Se ejecutó en producción el 2026-10-07. |
 | Disparador diario de tasas | `crearTriggerDiarioTasas()` | Corre `obtenerTasaBCV` todos los días. |
-| Disparador de notificaciones desde la hoja | `crearTriggerNotificacionesDesdeHoja()` | Opcional: envía las filas de `notificaciones` marcadas `PENDIENTE`. Pendiente de instalar. |
+| Disparador de notificaciones desde la hoja | `crearTriggerNotificacionesDesdeHoja()` | Envía las filas de `notificaciones` marcadas `PENDIENTE`. **Instalado** en producción. |
 | Funciones para correr a mano | Editor → Ejecutar | `prepararHojasNotificaciones` (✔ ejecutada en prod), `enviarNotificacionesPendientes`, `migrarEsquema`, `repararCodigosTelefono`, `configurarValidacionesDatos`, `auditarIntegridadReferencial`. |
 
 ### 3.2 Google Cloud / Firebase
@@ -276,7 +304,7 @@ No hace falta crearlos. Si faltan o se rompen, se regeneran.
 
 | # | Qué | Impacto | Sugerencia |
 |---|---|---|---|
-| 1 | El valor por defecto de `APPS_SCRIPT_URL` en `lib/shared/google_sheets/sheets_config.dart` apunta a una implementación **distinta** (`AKfycbyDwgo8…`) de la que actualiza `deploy.sh` (`AKfycby6Jg1o…`). | Una build hecha **sin** `--dart-define-from-file` escribiría en un script viejo, sin las reglas actuales (acceso revocado, increment, notificaciones). | Cambiar el valor por defecto a la implementación de producción, o hacer que la app no escriba si falta la variable. |
+| 1 | ~~El valor por defecto de `APPS_SCRIPT_URL` apuntaba a una implementación vieja (`AKfycbyDwgo8…`).~~ | **Corregido el 2026-10-07:** ahora apunta a la de producción (`AKfycby6Jg1o…`). | — |
 | 2 | `ALLOWED_EMAILS` sigue en los tres `.env*`. | Ninguno (se ignora). Puede confundir. | Borrarlo de los `.env*` y de `.env.example`. |
 | 3 | `APP_NAME`, `API_BASE_URL` y `APP_PACKAGE_NAME` no los lee la app. | Ninguno. | Dejarlos como informativos o borrarlos. |
 | 4 | `dev` y `qa` usan la hoja y el script de producción. | Las pruebas escriben datos reales. | Una copia de la hoja para test y `.env.dev` / `.env.test` apuntando a ella y a la implementación de test. |

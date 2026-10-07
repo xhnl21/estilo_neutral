@@ -38,14 +38,14 @@
         </activity>
         <!-- FCM: canal e ícono de las notificaciones que llegan con la app
              cerrada o en segundo plano (las muestra el sistema). El canal lo
-             crea la app al iniciar (ver PushFirebase). Reemplazar el ícono por
-             uno monocromo (blanco sobre transparente) en drawable/. -->
+             crea la app al iniciar (ver PushFirebase). El ícono es monocromo
+             (drawable/ic_notificacion.xml). -->
         <meta-data
             android:name="com.google.firebase.messaging.default_notification_channel_id"
             android:value="estilo_neutral_general"/>
         <meta-data
             android:name="com.google.firebase.messaging.default_notification_icon"
-            android:resource="@mipmap/ic_launcher"/>
+            android:resource="@drawable/ic_notificacion"/>
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->
         <meta-data

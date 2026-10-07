@@ -27,7 +27,7 @@ function hoja(nombre, filas) {
   return sh;
 }
 
-function crearContexto(props) {
+function crearContexto(props, embebida) {
   const hojas = {
     usuarios: hoja('usuarios', [['id','email','nombre'],['u1','ana@x.com','Ana'],['u2','bea@x.com','Bea'],['u3','cami@x.com','Cami'],['u4','dani@x.com','Dani']]),
     usuario_organizacion: hoja('usuario_organizacion', [['id','usuario_email','organizacion_id'],['uo1','ana@x.com','org1'],['uo2','bea@x.com','org2'],['uo3','cami@x.com','org2'],['uo4','dani@x.com','org-borrada']]),
@@ -65,6 +65,7 @@ function crearContexto(props) {
     ScriptApp: { getProjectTriggers: () => [], newTrigger: () => ({ forSpreadsheet() { return this; }, onEdit() { return this; }, create() {} }) },
     DriveApp: {}, Logger: { log() {} },
   };
+  if (embebida) ctx.FCM_SERVICE_ACCOUNT_EMBEBIDA = embebida;
   vm.createContext(ctx);
   vm.runInContext(src, ctx);
   return { ctx, hojas, enviados, ss };
@@ -161,5 +162,18 @@ const tokensDe = (e) => e.map((m) => m.token).sort().join(',');
   check(ultimo.status === 'error' && /Límite/.test(ultimo.message), 'límite: el envío 31 de la hora se rechaza');
   const otro = vm.runInContext(`_enviarNotificacion(getSpreadsheet(), "bea@x.com", {alcance:"usuarios", usuarios:["ana@x.com"], titulo:"T", cuerpo:"C"})`, ctx);
   check(otro.status === 'success', 'límite: es por remitente');
+}
+{ // credencial embebida por deploy.sh (sin propiedad del script)
+  const { ctx } = crearContexto({}, { client_email: 'sa@p.iam', private_key: 'k', project_id: 'proyecto' });
+  const r = vm.runInContext(`_enviarNotificacion(getSpreadsheet(), "ana@x.com", {alcance:"usuarios", usuarios:["bea@x.com"], titulo:"T", cuerpo:"C"})`, ctx);
+  check(r.status === 'success' && r.enviados === 1, 'credencial embebida: se usa si no hay propiedad');
+}
+{ // acción preparar_notificaciones
+  const { ctx, hojas } = crearContexto(cred);
+  delete hojas.notificaciones;
+  const r = JSON.parse(vm.runInContext(`doPost({postData:{contents: JSON.stringify({action:"preparar_notificaciones", usuario_sesion:"ana@x.com"})}})`, ctx));
+  check(r.status === 'success' && hojas.notificaciones && hojas.notificaciones.filas[0][0] === 'id', 'preparar_notificaciones: crea la hoja y el disparador');
+  const sin = JSON.parse(vm.runInContext(`doPost({postData:{contents: JSON.stringify({action:"preparar_notificaciones"})}})`, ctx));
+  check(sin.status === 'error', 'preparar_notificaciones: exige usuario de la sesión');
 }
 process.exit(fallas ? 1 : 0);

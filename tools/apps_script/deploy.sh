@@ -13,7 +13,9 @@ DEPLOYMENT_ID="AKfycby6Jg1oaFa2yJAlEuDThxZhmDvI-LPu80KDedz-qMFn9h1rbvJoTANwG3ufb
 
 cd "$REPO_ROOT"
 
-echo "==> Subiendo google_apps_script.js y appsscript.json..."
+bash "$REPO_ROOT/tools/apps_script/generar_credencial_fcm.sh" "$REPO_ROOT/credencial_fcm.js"
+
+echo "==> Subiendo google_apps_script.js, credencial_fcm.js y appsscript.json..."
 "$CLASP" push --force
 
 echo "==> Publicando nueva versión en la implementación existente..."

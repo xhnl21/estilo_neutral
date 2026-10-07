@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- isShrinkResources: flutter_local_notifications busca el ícono por nombre
+     en tiempo de ejecución; sin esto el build release podría quitarlo. -->
+<resources xmlns:tools="http://schemas.android.com/tools"
+    tools:keep="@drawable/ic_notificacion" />

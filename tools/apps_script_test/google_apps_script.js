@@ -149,12 +149,21 @@ function doPost(e) {
       return respond(prepararHojasNotificaciones());
     }
 
-    if (action === "registrar_dispositivo" || action === "eliminar_dispositivo" || action === "enviar_notificacion") {
+    if (action === "registrar_dispositivo" || action === "eliminar_dispositivo" || action === "enviar_notificacion" ||
+        action === "preparar_notificaciones") {
       if (!usuarioSesion) {
         return respond({ status: "error", message: "Falta el usuario de la sesión." }, 401);
       }
       if (action === "registrar_dispositivo") return respond(_registrarDispositivo(ss, usuarioSesion, data));
       if (action === "eliminar_dispositivo") return respond(_eliminarDispositivo(ss, usuarioSesion, data));
+      // Idempotente: crea las hojas con sus listas desplegables e instala el
+      // disparador de envío desde la hoja (lo mismo que correr esas dos
+      // funciones desde el editor).
+      if (action === "preparar_notificaciones") {
+        const hojas = prepararHojasNotificaciones();
+        const disparador = crearTriggerNotificacionesDesdeHoja();
+        return respond({ status: "success", message: hojas.message + " " + disparador.message });
+      }
       // Título y mensaje sin sanitizar: viajan como texto de la notificación;
       // se sanitizan al escribirlos en la hoja.
       return respond(_enviarNotificacion(ss, usuarioSesion, payload.data || {}));
@@ -1441,10 +1450,18 @@ function _base64Url(bytesOTexto) {
 
 /** Token OAuth para FCM a partir de la cuenta de servicio (JWT RS256). */
 function _credencialFcm() {
+  // 1) Propiedad del script FCM_SERVICE_ACCOUNT (si se cargó a mano).
+  // 2) Si no, la credencial que embebe deploy.sh en credencial_fcm.js, un
+  //    archivo generado desde la clave local que no se versiona.
   const crudo = PropertiesService.getScriptProperties().getProperty("FCM_SERVICE_ACCOUNT");
-  if (!crudo) return { error: "FCM no está configurado: falta la propiedad del script FCM_SERVICE_ACCOUNT." };
   let cuenta;
-  try { cuenta = JSON.parse(crudo); } catch (e) { return { error: "FCM_SERVICE_ACCOUNT no es un JSON válido." }; }
+  if (crudo) {
+    try { cuenta = JSON.parse(crudo); } catch (e) { return { error: "FCM_SERVICE_ACCOUNT no es un JSON válido." }; }
+  } else if (typeof FCM_SERVICE_ACCOUNT_EMBEBIDA !== "undefined" && FCM_SERVICE_ACCOUNT_EMBEBIDA) {
+    cuenta = FCM_SERVICE_ACCOUNT_EMBEBIDA;
+  } else {
+    return { error: "FCM no está configurado: falta la propiedad del script FCM_SERVICE_ACCOUNT (o desplegar con la clave local, ver deploy.sh)." };
+  }
   if (!cuenta.client_email || !cuenta.private_key || !cuenta.project_id) {
     return { error: "FCM_SERVICE_ACCOUNT incompleto (faltan client_email, private_key o project_id)." };
   }

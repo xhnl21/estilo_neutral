@@ -2,3 +2,4 @@
 **/**
 !appsscript.json
 !google_apps_script.js
+!credencial_fcm.js

@@ -19,9 +19,12 @@ class SheetsConfig {
 
   static String get defaultSpreadsheetId => extractSpreadsheetId(_envSpreadsheetId);
 
+  /// Sin `--dart-define-from-file`, la app usa la implementación de
+  /// PRODUCCIÓN, la misma que actualiza tools/apps_script/deploy.sh (antes
+  /// apuntaba a una implementación vieja, sin las reglas actuales).
   static const String _envAppsScriptUrl = String.fromEnvironment(
     'APPS_SCRIPT_URL',
-    defaultValue: 'https://script.google.com/macros/s/AKfycbyDwgo8DSjQWN4vBVztYj_AJ1kur38nwdemGMcoe9--ZdSY5i_xEq17yczJqsSSJ4H7pQ/exec',
+    defaultValue: 'https://script.google.com/macros/s/AKfycby6Jg1oaFa2yJAlEuDThxZhmDvI-LPu80KDedz-qMFn9h1rbvJoTANwG3ufbOYBjDq7ZA/exec',
   );
 
   static String get defaultAppsScriptUrl => _envAppsScriptUrl;
