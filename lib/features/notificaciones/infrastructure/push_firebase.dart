@@ -159,9 +159,18 @@ class PushFirebase implements PushGateway {
           channelDescription: canalGeneral.description,
           importance: Importance.high,
           priority: Priority.high,
-          // Marca: dorado del logo en el ícono y logo a color a la derecha.
+          // Marca, igual que las que arma el sistema con la app cerrada:
+          // dorado del logo, miniatura cuadrada a la derecha y, al expandir,
+          // el logo apaisado (2:1) que va en el APK (no se descarga).
           color: colorNotificacion,
           largeIcon: const DrawableResourceAndroidBitmap('ic_logo_notificacion'),
+          styleInformation: BigPictureStyleInformation(
+            const DrawableResourceAndroidBitmap('logo_notificacion_2x1'),
+            largeIcon: const DrawableResourceAndroidBitmap('ic_logo_notificacion'),
+            hideExpandedLargeIcon: true,
+            contentTitle: mensaje.titulo,
+            summaryText: mensaje.cuerpo,
+          ),
         ),
       ),
       payload: mensaje.ruta,

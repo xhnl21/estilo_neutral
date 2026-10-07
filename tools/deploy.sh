@@ -195,7 +195,17 @@ if [[ -n "$VARIANTE" ]]; then
 
   if [[ "$INSTALAR" == true ]]; then
     paso "Instalación en el teléfono"
-    ejecutar "$ADB" install -r "$APK"
+    if [[ "$SIMULAR" == true ]]; then
+      ejecutar "$ADB" install -r "$APK"
+    else
+      printf '    $ %s\n' "$ADB install -r $APK"
+      SALIDA_ADB="$("$ADB" install -r "$APK" 2>&1 || true)"
+      echo "    $SALIDA_ADB" | tail -1
+      if grep -q "INSTALL_FAILED_UPDATE_INCOMPATIBLE" <<<"$SALIDA_ADB"; then
+        falla "La app instalada está firmada con otra clave (p. ej. la de debug de 'flutter run'). Sin desinstalar: flutter build apk --flavor $VARIANTE --debug --dart-define-from-file=$ENV_FILE && $ADB install -r build/app/outputs/flutter-apk/app-$VARIANTE-debug.apk. Para el release, desinstalarla primero (se pierden sus datos locales)."
+      fi
+      grep -q "^Success" <<<"$SALIDA_ADB" || falla "No se pudo instalar."
+    fi
     ok "Instalada. Abrila, iniciá sesión y aceptá el permiso de notificaciones."
   fi
 fi
