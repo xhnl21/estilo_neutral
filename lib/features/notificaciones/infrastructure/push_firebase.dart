@@ -73,7 +73,7 @@ class PushFirebase implements PushGateway {
     final push = PushFirebase._(FirebaseMessaging.instance, locales);
     await locales.initialize(
       settings: const InitializationSettings(
-        android: AndroidInitializationSettings('@drawable/ic_notificacion'),
+        android: AndroidInitializationSettings('@drawable/ic_notificacion_en'),
         // El permiso se pide después del login (PushCubit), no al arrancar.
         iOS: DarwinInitializationSettings(
           requestAlertPermission: false,

@@ -38,14 +38,16 @@
         </activity>
         <!-- FCM: canal e ícono de las notificaciones que llegan con la app
              cerrada o en segundo plano (las muestra el sistema). El canal lo
-             crea la app al iniciar (ver PushFirebase). El ícono es monocromo
-             (drawable/ic_notificacion.xml). -->
+             crea la app al iniciar (ver PushFirebase). El ícono es el monograma
+             "EN" monocromo (drawable-*/ic_notificacion_en.png, generado por
+             tools/iconos/generar_monograma.py); la campana
+             drawable/ic_notificacion.xml queda como alternativa. -->
         <meta-data
             android:name="com.google.firebase.messaging.default_notification_channel_id"
             android:value="estilo_neutral_general"/>
         <meta-data
             android:name="com.google.firebase.messaging.default_notification_icon"
-            android:resource="@drawable/ic_notificacion"/>
+            android:resource="@drawable/ic_notificacion_en"/>
         <meta-data
             android:name="com.google.firebase.messaging.default_notification_color"
             android:resource="@color/color_notificacion"/>

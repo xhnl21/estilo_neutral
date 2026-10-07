@@ -66,7 +66,7 @@ Reglas que aplica el servidor (Apps Script):
 | Hojas | `dispositivos` y `notificaciones`, creadas en la hoja de producción, con listas desplegables |
 | Disparador | `alEditarNotificaciones` (envía las filas marcadas `PENDIENTE`) |
 | Marca | Color `#BC976F`; logo apaisado `assets/notificaciones/logo_notificacion_2x1.jpg`, publicado en Drive |
-| Versión de la app | `1.0.0+2012` |
+| Versión de la app | `1.0.0+2013` |
 
 El proyecto de Google Cloud del login (`gmp-demo-project-093718520`, "Maps Platform Demo Project") **no tiene Firebase**. Se mantuvo separado para no activar facturación y para que borrar un proyecto no afecte al otro.
 
@@ -193,7 +193,7 @@ Crea `dispositivos` y `notificaciones` con su encabezado, las listas desplegable
 
 | Elemento | Dónde está | Cómo se ve |
 |---|---|---|
-| Ícono chico | `android/app/src/main/res/drawable/ic_notificacion.xml` (campana vectorial) | Android lo pinta de **un solo color**, por eso no puede ser el logo 3D. |
+| Ícono chico | `android/app/src/main/res/drawable-*/ic_notificacion_en.png` (monograma "EN", 24 a 96 px) | Android lo pinta de **un solo color**: es la silueta del monograma, trazada sobre el logo. La campana `drawable/ic_notificacion.xml` queda como alternativa. |
 | Color | `res/values/colors.xml` → `color_notificacion` (`#BC976F`), meta-data `default_notification_color`, `COLOR_NOTIFICACION` en el script y `colorNotificacion` en `push_firebase.dart` | Ícono y nombre de la app en dorado. |
 | Logo con la app cerrada | `LOGO_NOTIFICACION_URL` en el script (Drive) | Miniatura a la derecha; al expandir, el logo apaisado. Lo descarga el teléfono al recibirla. |
 | Logo con la app abierta | `res/drawable-nodpi/logo_notificacion_2x1.jpg` e `ic_logo_notificacion.png` | Igual que la anterior, pero sin descargar nada. |
@@ -208,7 +208,11 @@ Crea `dispositivos` y `notificaciones` con su encabezado, las listas desplegable
 
 Con la propiedad vacía se envía sin imagen.
 
-**Ícono chico con el monograma "EN":** hace falta el monograma en SVG o en PNG transparente, para convertirlo en un vector monocromo que reemplace `ic_notificacion.xml`.
+**Ícono chico (monograma "EN"):** el logo es un render 3D y no se puede recortar su silueta automáticamente, así que se **trazó a mano** sobre `assets/icons.png` (sin modificarlo), con trazos gruesos para que se lea a 24 px. Lo genera `python3 tools/iconos/generar_monograma.py`:
+- `assets/notificaciones/monograma_en.png`: la fuente, de 1024 px;
+- los `drawable-{mdpi…xxxhdpi}/ic_notificacion_en.png`.
+
+Para ajustarlo, se editan las coordenadas o el `GROSOR` del script y se vuelve a ejecutar. Si algún día hay un SVG oficial del monograma, conviene reemplazar estos PNG por un vector generado desde él.
 
 ### 4.8 Desplegar
 

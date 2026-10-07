@@ -25,8 +25,7 @@ Este documento lista solo lo que **todavía no está resuelto**. Lo terminado se
 | # | Pendiente | Qué hacer |
 |---|---|---|
 | 2.1 | **Probar en la app `prod`.** Todas las pruebas llegaron a la app QA: en `dispositivos` solo está registrado el teléfono desde QA. | Abrir **Estilo Neutral** (sin "QA"), iniciar sesión y aceptar el permiso de notificaciones. Tiene que aparecer una segunda fila en `dispositivos`. Después, enviarse una desde **Comunicación → Notificaciones**. |
-| 2.2 | **Ícono chico con el monograma "EN"** (opcional). Hoy es una campana dorada, porque Android exige un ícono monocromo y el logo es un render 3D. | Conseguir el monograma en **SVG** o en **PNG con fondo transparente** para convertirlo en vector (ver [§4.7 de la guía](docs/notificaciones-fcm.md#47-marca-de-las-notificaciones)). |
-| 2.3 | **iOS sin notificaciones**, por costo: Apple Developer Program, USD 99 por año. | Solo si se decide pagarlo: pasos en [§4.9 de la guía](docs/notificaciones-fcm.md#49-ios-no-configurado). |
+| 2.2 | **iOS sin notificaciones**, por costo: Apple Developer Program, USD 99 por año. | Solo si se decide pagarlo: pasos en [§4.9 de la guía](docs/notificaciones-fcm.md#49-ios-no-configurado). |
 
 ---
 
