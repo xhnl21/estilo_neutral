@@ -1,4 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <color name="ic_launcher_background">#D4C7B4</color>
+    <!-- Dorado del monograma "EN" del logo (assets/icons.png): color del
+         ícono y del nombre de la app en las notificaciones FCM. -->
+    <color name="color_notificacion">#BC976F</color>
 </resources>

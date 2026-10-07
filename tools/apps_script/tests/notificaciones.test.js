@@ -84,6 +84,7 @@ const tokensDe = (e) => e.map((m) => m.token).sort().join(',');
   check(enviados[0].notification.title === '=Hola', 'el título viaja sin sanitizar');
   check(enviados[0].data.ruta === '/ventas' && enviados[0].data.notificacion_id === r.id, 'datos: ruta y notificacion_id');
   check(enviados[0].android.notification.channel_id === 'estilo_neutral_general', 'canal Android');
+  check(enviados[0].android.notification.color === '#BC976F' && /^https:\/\/lh3\.googleusercontent\.com\//.test(enviados[0].android.notification.image), 'marca: color dorado y logo');
   check(!hojas.dispositivos.filas.some((f) => f[3] === 'tok-cami-vencido'), 'el token vencido se da de baja');
   const fila = hojas.notificaciones.filas[1];
   check(fila[0] === 'nt00000001' && fila[9] === 'ENVIADA' && fila[6] === "'=Hola", 'queda registrada en la hoja (título sanitizado) -> ' + fila.slice(0, 10).join('|'));

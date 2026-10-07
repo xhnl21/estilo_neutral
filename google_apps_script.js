@@ -1255,6 +1255,11 @@ const COL_NOTIF = { estado: 10, enviados: 11, fallidos: 12, detalle: 13 };
 const ALCANCES_NOTIFICACION = ["global", "organizaciones", "usuarios"];
 const ESTADOS_NOTIFICACION = ["PENDIENTE", "ENVIADA", "SIN_DESTINATARIOS", "ERROR"];
 const CANAL_ANDROID_NOTIFICACIONES = "estilo_neutral_general";
+// Marca en las notificaciones de Android: dorado del monograma del logo y el
+// logo a color (assets/icons.png, 512 px, en la carpeta de fotos de Drive).
+// La propiedad del script LOGO_NOTIFICACION_URL lo reemplaza; vacía = sin imagen.
+const COLOR_NOTIFICACION = "#BC976F";
+const LOGO_NOTIFICACION_URL = "https://lh3.googleusercontent.com/d/1gSEPbAL-YyoF5oPq5BM2XDqsnSI29xhO";
 
 /** Devuelve la hoja, creándola con su encabezado si no existe. */
 function _hojaConEncabezado(ss, nombre, encabezado) {
@@ -1495,6 +1500,10 @@ function _credencialFcm() {
 /** Envía a cada token. Devuelve { enviados, fallidos, invalidos[], errores[] }. */
 function _enviarFcm(credencial, tokens, solicitud, notificacionId) {
   const url = "https://fcm.googleapis.com/v1/projects/" + credencial.proyecto + "/messages:send";
+  const logoPropiedad = PropertiesService.getScriptProperties().getProperty("LOGO_NOTIFICACION_URL");
+  const logo = logoPropiedad !== null ? logoPropiedad : LOGO_NOTIFICACION_URL;
+  const notificacionAndroid = { channel_id: CANAL_ANDROID_NOTIFICACIONES, color: COLOR_NOTIFICACION };
+  if (logo) notificacionAndroid.image = logo;
   const datos = Object.assign({}, solicitud.datos, { notificacion_id: notificacionId });
   const resultado = { enviados: 0, fallidos: 0, invalidos: [], errores: [] };
   for (let i = 0; i < tokens.length; i += 50) {
@@ -1511,7 +1520,7 @@ function _enviarFcm(credencial, tokens, solicitud, notificacionId) {
             token: token,
             notification: { title: solicitud.titulo, body: solicitud.cuerpo },
             data: datos,
-            android: { priority: "HIGH", notification: { channel_id: CANAL_ANDROID_NOTIFICACIONES } },
+            android: { priority: "HIGH", notification: notificacionAndroid },
             apns: { payload: { aps: { sound: "default" } } }
           }
         })

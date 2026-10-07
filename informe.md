@@ -128,6 +128,7 @@ Solo queda pendiente la verificación de extremo a extremo:
 | Acción `preparar_notificaciones` | Crea las hojas con sus listas desplegables e instala el disparador de envío desde la hoja. Es idempotente y exige un usuario con acceso. Equivale a correr `prepararHojasNotificaciones` y `crearTriggerNotificacionesDesdeHoja` desde el editor. |
 | Ícono de notificación | `android/app/src/main/res/drawable/ic_notificacion.xml` (campana monocroma) y `res/raw/keep.xml`, para que el build release no lo descarte. |
 | URL por defecto del Apps Script | `lib/shared/google_sheets/sheets_config.dart` apuntaba a una implementación vieja. Ahora apunta a la de producción (`AKfycby6Jg1o…`). |
-| Versión | `1.0.0+10`. |
+| Versión | `1.0.0+2011`. El teléfono de pruebas tenía `2009`, de un build viejo con `--split-per-abi`; ver `compile.md` §6.1. |
+| Marca en las notificaciones | Color dorado del logo (`#BC976F`) en el ícono y el nombre de la app, y el **logo a color** (`assets/icons.png`) como imagen de la notificación. Con la app cerrada lo envía FCM desde una URL pública de Drive (`LOGO_NOTIFICACION_URL` en el script); con la app abierta sale del APK (`drawable-nodpi/ic_logo_notificacion.png`). El ícono chico sigue siendo una campana: Android lo exige monocromo, y para usar la silueta del monograma "EN" hace falta el logo en SVG o en PNG transparente. |
 | Tests | 355 de Flutter y 32 del script (`node tools/apps_script/tests/notificaciones.test.js`). |
 

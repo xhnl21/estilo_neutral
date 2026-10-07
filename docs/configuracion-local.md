@@ -237,6 +237,7 @@ Si se rota la clave:
 | Hoja de cálculo | `google_apps_script.js` → `DEFAULT_SPREADSHEET_ID` | La hoja de producción. |
 | Carpeta de fotos | `google_apps_script.js` → `DRIVE_FOLDER_ID` | Carpeta de Drive compartida "cualquiera con el enlace". |
 | **Propiedad del script `FCM_SERVICE_ACCOUNT`** | Editor → Configuración del proyecto → Propiedades del script | JSON completo de la cuenta de servicio `fcm-sender` (campos en §2.11); el script usa `client_email`, `private_key` y `project_id`. **Secreto.** Cargada en producción. Respaldo: `credencial_fcm.js` (§2.11). |
+| Marca de las notificaciones | `google_apps_script.js` → `COLOR_NOTIFICACION`, `LOGO_NOTIFICACION_URL` | `#BC976F` y el logo en Drive (`lh3.googleusercontent.com/d/1gSEPbAL…`, archivo `logo_notificacion_estilo_neutral.jpg` en la carpeta de fotos). La propiedad del script `LOGO_NOTIFICACION_URL` lo reemplaza; si se carga vacía, se envía sin imagen. |
 | Acción `preparar_notificaciones` | `doPost` | Crea las hojas de notificaciones e instala el disparador. Se ejecutó en producción el 2026-10-07. |
 | Disparador diario de tasas | `crearTriggerDiarioTasas()` | Corre `obtenerTasaBCV` todos los días. |
 | Disparador de notificaciones desde la hoja | `crearTriggerNotificacionesDesdeHoja()` | Envía las filas de `notificaciones` marcadas `PENDIENTE`. **Instalado** en producción. |

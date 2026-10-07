@@ -4,6 +4,7 @@ import 'dart:io' show Platform;
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/painting.dart' show Color;
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
 import '../../../core/utils/logger.dart';
@@ -19,6 +20,10 @@ const canalGeneral = AndroidNotificationChannel(
   description: 'Notificaciones enviadas por los usuarios de la organización.',
   importance: Importance.high,
 );
+
+/// Dorado del monograma del logo (mismo valor que `color_notificacion` en
+/// android/app/src/main/res/values/colors.xml y que el Apps Script).
+const colorNotificacion = Color(0xFFBC976F);
 
 /// Mensajes que llegan con la app cerrada o en segundo plano: el sistema ya
 /// muestra la notificación; acá no hace falta hacer nada más. Tiene que ser
@@ -154,6 +159,9 @@ class PushFirebase implements PushGateway {
           channelDescription: canalGeneral.description,
           importance: Importance.high,
           priority: Priority.high,
+          // Marca: dorado del logo en el ícono y logo a color a la derecha.
+          color: colorNotificacion,
+          largeIcon: const DrawableResourceAndroidBitmap('ic_logo_notificacion'),
         ),
       ),
       payload: mensaje.ruta,
