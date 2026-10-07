@@ -1256,10 +1256,12 @@ const ALCANCES_NOTIFICACION = ["global", "organizaciones", "usuarios"];
 const ESTADOS_NOTIFICACION = ["PENDIENTE", "ENVIADA", "SIN_DESTINATARIOS", "ERROR"];
 const CANAL_ANDROID_NOTIFICACIONES = "estilo_neutral_general";
 // Marca en las notificaciones de Android: dorado del monograma del logo y el
-// logo a color (assets/icons.png, 512 px, en la carpeta de fotos de Drive).
+// logo a color en formato 2:1 (assets/notificaciones/logo_notificacion_2x1.jpg,
+// generado desde assets/icons.png), en la carpeta de fotos de Drive. Android
+// muestra la imagen apaisada: con el logo cuadrado recortaba arriba y abajo.
 // La propiedad del script LOGO_NOTIFICACION_URL lo reemplaza; vacía = sin imagen.
 const COLOR_NOTIFICACION = "#BC976F";
-const LOGO_NOTIFICACION_URL = "https://lh3.googleusercontent.com/d/1gSEPbAL-YyoF5oPq5BM2XDqsnSI29xhO";
+const LOGO_NOTIFICACION_URL = "https://lh3.googleusercontent.com/d/1jNICNjXmmthS4f7jSyE5p5g_jAktB30p";
 
 /** Devuelve la hoja, creándola con su encabezado si no existe. */
 function _hojaConEncabezado(ss, nombre, encabezado) {
