@@ -31,7 +31,7 @@ lib/
 ├── app/di/              # ServiceLocator: arma e inyecta todas las dependencias (composition root)
 ├── config/               # AuthConfig (no usado actualmente, ver nota abajo)
 ├── core/
-│   ├── config/           # EnvironmentConfig, AccessControlConfig
+│   ├── config/           # EnvironmentConfig
 │   ├── design_system/    # Tokens (colores, tipografía, spacing) y widgets base (AppButton, AppCard, ...)
 │   ├── router/            # go_router: AppRouter, RoutePaths, RouteNames, guards (auth, onboarding)
 │   └── utils/             # Logger (con sanitización de PII)
@@ -62,7 +62,7 @@ lib/
 | `.env.test` | flavor `qa` |
 | `.env.example` | plantilla, sin datos reales |
 
-Variables clave: `SPREADSHEET_ID`, `APPS_SCRIPT_URL`, `ALLOWED_EMAILS`, `ENVIRONMENT`, `SHOW_TECHNICAL_INFO`, `DEBUG_MODE`/`ENABLE_LOGS`.
+Variables clave: `SPREADSHEET_ID`, `APPS_SCRIPT_URL`, `ENVIRONMENT`, `SHOW_TECHNICAL_INFO`, `DEBUG_MODE`/`ENABLE_LOGS` (detalle en [Archivos ignorados y configuración](configuracion-local.md) §2.1).
 
 Se inyectan con `--dart-define-from-file`:
 
@@ -100,4 +100,4 @@ flutter test
 
 - **Agregar una hoja/vista nueva:** modelo en `lib/models/` (`fromRow`/`toMap`) → registrar el fetch/parser en `SheetsDataService` → página en `lib/presentation/pages/` → ruta en `route_paths.dart`/`route_names.dart`/una `*Routes` existente → rama nueva en `AppRouter` (`StatefulShellBranch`) → entrada en `MainShell` (`_vistasInfo`, `_pages`, drawer). Si la hoja es multi-organización, agregar la columna `organizacion_id` y filtrar el getter (ver [Multi-organización](google/multi-organizacion.md)).
 - **Agregar una acción de escritura real (Apps Script):** agregar el `case` correspondiente en `google_apps_script.js`, y desplegar con `tools/apps_script` (ver [Automatización](google/automatizacion.md)).
-- **Agregar un usuario autorizado:** editar `ALLOWED_EMAILS` en el `.env` correspondiente, y crearlo desde el módulo **Usuarios** de la app (crea a la vez la fila en `usuarios` y su membresía en `usuario_organizacion`) — ya no hace falta editar el Sheet a mano.
+- **Agregar un usuario autorizado:** crearlo desde el módulo **Usuarios** de la app, que crea a la vez la fila en `usuarios` y su membresía en `usuario_organizacion`. El acceso lo decide esa hoja; `ALLOWED_EMAILS` ya no existe.

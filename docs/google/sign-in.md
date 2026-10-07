@@ -67,18 +67,19 @@ Si no querés mantener una lista de test users a mano, podés cambiar el estado 
 
 ⚠️ Esto **no reemplaza el control de acceso real** — ver la sección siguiente.
 
-## 4. Control de acceso real: `AccessControlConfig`
+## 4. Control de acceso real: la hoja `usuarios`
 
-El login de Google por sí solo solo prueba que la persona tiene *una* cuenta de Google válida — no que esté autorizada a operar los datos del negocio. La lista real de quién puede usar la app vive en código, en [`lib/core/config/access_control_config.dart`](../../lib/core/config/access_control_config.dart), configurable vía la variable de entorno `ALLOWED_EMAILS` (separada por comas) en `.env` / `.env.dev` / `.env.test`:
+El login de Google por sí solo solo prueba que la persona tiene *una* cuenta de Google válida, no que esté autorizada a operar los datos del negocio. Desde el 2026-10-06, quién puede usar la app lo decide **la hoja `usuarios`** (antes era la lista `ALLOWED_EMAILS` del `.env`, que se eliminó):
 
-```env
-ALLOWED_EMAILS=neidapulgar1989@gmail.com,xhnl21@gmail.com
-```
+- **Al iniciar sesión** (`LoginCubit` → `SheetsDataService.resolverAcceso`), la cuenta entra solo si:
+  - está en `usuarios`;
+  - tiene membresía en `usuario_organizacion`;
+  - esa organización existe.
 
-Flujo en `login_page.dart`:
+  Si no cumple, se cierra la sesión de Google y se muestra el motivo.
+- **Con la app abierta** (`ControlAccesoSesion`), si a la cuenta le quitan el acceso, se cierra su sesión:
+  - al intentar guardar algo, porque el Apps Script rechaza la escritura con `acceso_revocado`;
+  - al volver a la app desde segundo plano;
+  - con cualquier recarga de datos.
 
-1. El usuario completa el login con Google (`sheetsAuth.signIn()`).
-2. Si el email **no** está en `ALLOWED_EMAILS` → se cierra esa sesión de Google inmediatamente (`sheetsAuth.signOut()`) y se muestra un error. Nunca llega a entrar a la app.
-3. Si está permitido, se resuelve a qué organización pertenece (ver [Multi-organización](multi-organizacion.md)) y recién ahí se llama `authNotifier.login(...)`.
-
-Para agregar o sacar un usuario autorizado: solo hay que editar `ALLOWED_EMAILS` en el `.env` correspondiente — no requiere tocar código ni Cloud Console.
+**Para dar o quitar acceso:** usar el módulo **Usuarios** de la app, que crea o borra la fila en `usuarios` y su membresía. No requiere tocar código, `.env` ni Cloud Console.

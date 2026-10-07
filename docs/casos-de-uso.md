@@ -1,12 +1,12 @@
 # Casos de Uso
 
-Actor único: **Usuario autenticado** (una de las cuentas de Google en `ALLOWED_EMAILS`, ver [Google Sign-In](google/sign-in.md)). No hay roles distintos dentro de la app — cualquier usuario autenticado puede operar cualquier vista.
+Actor único: **Usuario autenticado**: una cuenta de Google que está en la hoja `usuarios` y tiene membresía en una organización existente (ver [Google Sign-In](google/sign-in.md)). No hay roles distintos dentro de la app — cualquier usuario autenticado puede operar cualquier vista.
 
 ## Autenticación y sesión
 
 ### UC-01 — Iniciar sesión con Google (primera vez o después de cerrar sesión)
 
-- **Precondición:** el usuario tiene una cuenta de Google autorizada (`ALLOWED_EMAILS`) y una credencial Android registrada para su combinación de app instalada (ver [Troubleshooting](google/troubleshooting.md)).
+- **Precondición:** el usuario tiene una cuenta de Google autorizada (está en la hoja `usuarios`, con membresía) y una credencial Android registrada para su combinación de app instalada (ver [Troubleshooting](google/troubleshooting.md)).
 - **Flujo principal:**
   1. La app muestra el video de splash y navega a la pantalla de login.
   2. El botón dice **"Continuar con Google"** con un ícono de globo, y debajo un texto aclara qué va a pasar: *"La primera vez, ingresá con tu cuenta de Google. Las próximas veces vas a poder confirmar con Biométrico, Face ID o 2FA si tu organización lo activó en Seguridad."*
@@ -135,11 +135,11 @@ Una venta es una **factura**: un cliente, uno o más productos, y un solo pago/a
 ### UC-70 — Dar de alta un usuario autorizado
 - **Flujo principal:** vista **Usuarios** → **"Nuevo Usuario"** → completar email (cuenta de Google), nombre (opcional) y elegir la **Organización** a la que pertenece → guardar.
 - **Regla de negocio:** crea a la vez la fila en `usuarios` y su membresía en `usuario_organizacion` (relación 1:N organización→usuarios, ver [Multi-organización](google/multi-organizacion.md)). El `id` se autogenera (`u0000000X`).
-- **Postcondición:** ese email queda habilitado para iniciar sesión (siempre que también esté en `ALLOWED_EMAILS`, ver [Google Sign-In](google/sign-in.md)) y resuelve automáticamente a la organización elegida.
+- **Postcondición:** ese email queda habilitado para iniciar sesión (ver [Google Sign-In](google/sign-in.md) §4) y resuelve automáticamente a la organización elegida.
 
 ### UC-71 — Editar o eliminar un usuario
 - **Editar:** ícono de lápiz → se puede cambiar el nombre y reasignar la organización. El **email no se puede editar** (es la clave que usan `seguridad` y el login) — para cambiarlo hay que eliminar el usuario y crear uno nuevo.
-- **Eliminar:** ícono de papelera → confirmar. Borra la fila de `usuarios` y su membresía en `usuario_organizacion`; ese email deja de poder iniciar sesión aunque siga en `ALLOWED_EMAILS`. Su fila de `seguridad` (si tenía un método configurado) queda huérfana pero inofensiva.
+- **Eliminar:** ícono de papelera → confirmar. Borra la fila de `usuarios` y su membresía en `usuario_organizacion`; ese email deja de poder iniciar sesión, y si tenía la app abierta se le cierra la sesión. Su fila de `seguridad` (si tenía un método configurado) queda huérfana pero inofensiva.
 
 ### UC-72 — Crear, editar o eliminar una organización
 - **Crear:** vista **Organizaciones** → **"Nueva Organización"** → nombre → guardar. El `id` se autogenera como UUID v4.

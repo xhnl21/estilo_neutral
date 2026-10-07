@@ -57,10 +57,10 @@ Variables de compilación (`--dart-define-from-file`). El modelo versionado es *
 | `DEBUG_MODE` | Sí (`Logger`) | Activa el modo depuración del log. | `false` | `true` |
 | `ENABLE_LOGS` | Sí (`Logger`) | Escribe logs en consola. | `false` | `true` |
 | `SHOW_TECHNICAL_INFO` | Sí (`EnvironmentConfig`) | Muestra nombres de hojas y metadatos técnicos en pantalla. | `false` | `false` |
-| `APP_NAME` | No | Informativo. El nombre visible sale de cada variante en `build.gradle.kts`. | — | `Estilo Neutral` |
-| `API_BASE_URL` | No | Sin uso actual. | — | — |
-| `APP_PACKAGE_NAME` | No | Informativo. El paquete real lo fija cada variante. | — | `com.estiloneutral.es` |
-| `ALLOWED_EMAILS` | **No (obsoleto)** | Antes era la lista blanca de acceso. Desde el 2026-10-06 el acceso lo decide la hoja `usuarios`. Se puede borrar. | — | — |
+| `APP_NAME` | No | Informativo; coincide con el nombre de cada variante en `build.gradle.kts`. | — | `Estilo Neutral (Dev)` |
+| `APP_PACKAGE_NAME` | No | Informativo; coincide con el paquete de cada variante. | — | `com.estiloneutral.es.dev` |
+
+`API_BASE_URL` (sin uso, con un valor de ejemplo) y `ALLOWED_EMAILS` (obsoleto: desde el 2026-10-06 el acceso lo decide la hoja `usuarios`) se quitaron el 2026-10-07. Los originales quedaron en `respaldos/env_2026-10-07/`.
 
 > **Atención:** hoy los tres `.env*` apuntan a la **misma hoja y al mismo Apps Script de producción**. Las variantes `dev` y `qa` escriben datos reales. Para aislarlas, `.env.dev` y `.env.test` tendrían que apuntar a una copia de la hoja y a la implementación de test (`AKfycbx6GOO7…`, ver §3.2).
 
@@ -307,7 +307,7 @@ No hace falta crearlos. Si faltan o se rompen, se regeneran.
 | # | Qué | Impacto | Sugerencia |
 |---|---|---|---|
 | 1 | ~~El valor por defecto de `APPS_SCRIPT_URL` apuntaba a una implementación vieja (`AKfycbyDwgo8…`).~~ | **Corregido el 2026-10-07:** ahora apunta a la de producción (`AKfycby6Jg1o…`). | — |
-| 2 | `ALLOWED_EMAILS` sigue en los tres `.env*`. | Ninguno (se ignora). Puede confundir. | Borrarlo de los `.env*` y de `.env.example`. |
-| 3 | `APP_NAME`, `API_BASE_URL` y `APP_PACKAGE_NAME` no los lee la app. | Ninguno. | Dejarlos como informativos o borrarlos. |
+| 2 | ~~`ALLOWED_EMAILS` en los `.env*`.~~ | **Resuelto el 2026-10-07.** | — |
+| 3 | ~~Variables que la app no lee.~~ | **Resuelto el 2026-10-07:** se quitó `API_BASE_URL`; `APP_NAME` y `APP_PACKAGE_NAME` quedan como informativas y ahora coinciden con cada variante. | — |
 | 4 | `dev` y `qa` usan la hoja y el script de producción. | Las pruebas escriben datos reales. | Una copia de la hoja para test y `.env.dev` / `.env.test` apuntando a ella y a la implementación de test. |
 | 5 | `ios/Runner/Info.plist` no tiene `GIDClientID` ni el URL scheme de Google. | Google Sign-In en iOS no está configurado (en Android no hace falta). | Si se va a publicar en iOS, crear un cliente OAuth de iOS en Google Cloud y agregar `GIDClientID` y su URL scheme invertido a `Info.plist`. Hoy no está documentado en `docs/google/sign-in.md`. |

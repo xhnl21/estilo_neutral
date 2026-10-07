@@ -54,7 +54,7 @@ La primera versión usaba el string `estilo-neutral` como id. Se cambió a un UU
 
 ## Cómo se resuelve en runtime
 
-1. Al hacer login (`login_page.dart`), después de que `AccessControlConfig` valida el email, se llama `SheetsDataService.organizacionIdForUsuario(email)`, que busca ese email en la hoja de relación `usuario_organizacion` (ya cargada) y devuelve su `organizacion_id`. Si el email no aparece ahí (por ejemplo, la hoja no se sincronizó todavía, o es un usuario nuevo sin membresía registrada), se usa un fallback seguro.
+1. Al hacer login (`login_page.dart`), después de que `SheetsDataService.resolverAcceso` valida que el email esté en `usuarios` con membresía, se llama `SheetsDataService.organizacionIdForUsuario(email)`, que busca ese email en la hoja de relación `usuario_organizacion` (ya cargada) y devuelve su `organizacion_id`. Si el email no tiene membresía, o su organización ya no existe, **no entra**: se cierra la sesión de Google y se muestra el motivo (no hay organización por defecto).
 2. Se llama `dataService.setCurrentOrganizacion(organizacionId)` **y** `dataService.setCurrentUsuario(email)` — ambos quedan guardados en `SheetsDataService` y disparan `notifyListeners()`.
 3. Todos los getters de las 9 hojas de negocio (`clientes`, `productos`, `ventas`, etc.) filtran automáticamente por `currentOrganizacionId` — ninguna pantalla necesita saber que existe el concepto de organización. El getter `seguridad`, en cambio, filtra por `currentUsuarioEmail` (ver más abajo).
 4. Al cerrar sesión (`MainShell._handleLogout`), se limpia con `setCurrentOrganizacion(null)` y `setCurrentUsuario(null)` para que el próximo login resuelva de cero.

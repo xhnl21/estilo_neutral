@@ -37,42 +37,50 @@ en este equipo, apuntando a la hoja de Google Sheets de prueba):
 
 ### `.env.dev`
 ```env
+# --- Las lee la app ---
 ENVIRONMENT=dev
-APP_NAME=Estilo Neutral DEV
 SPREADSHEET_ID=1V8xBnRVtZUyz4liGW59BU6mkgCjjreEOEWzySjcZLvI
 APPS_SCRIPT_URL=https://script.google.com/macros/s/AKfycby6Jg1oaFa2yJAlEuDThxZhmDvI-LPu80KDedz-qMFn9h1rbvJoTANwG3ufbOYBjDq7ZA/exec
-API_BASE_URL=https://dev.api.example.com
 DEBUG_MODE=true
 ENABLE_LOGS=true
 SHOW_TECHNICAL_INFO=true
-APP_PACKAGE_NAME=com.estiloneutral.es
+
+# --- Informativas (la app no las lee) ---
+APP_NAME=Estilo Neutral (Dev)
+APP_PACKAGE_NAME=com.estiloneutral.es.dev
 ```
 
 ### `.env.test` (flavor QA)
 ```env
+# --- Las lee la app ---
 ENVIRONMENT=qa
-APP_NAME=Estilo Neutral QA
 SPREADSHEET_ID=1V8xBnRVtZUyz4liGW59BU6mkgCjjreEOEWzySjcZLvI
 APPS_SCRIPT_URL=https://script.google.com/macros/s/AKfycby6Jg1oaFa2yJAlEuDThxZhmDvI-LPu80KDedz-qMFn9h1rbvJoTANwG3ufbOYBjDq7ZA/exec
-API_BASE_URL=https://qa.api.example.com
 DEBUG_MODE=true
 ENABLE_LOGS=true
 SHOW_TECHNICAL_INFO=true
-APP_PACKAGE_NAME=com.estiloneutral.es
+
+# --- Informativas (la app no las lee) ---
+APP_NAME=Estilo Neutral (QA)
+APP_PACKAGE_NAME=com.estiloneutral.es.qa
 ```
 
 ### `.env` (flavor prod)
 ```env
+# --- Las lee la app ---
 ENVIRONMENT=prod
-APP_NAME=Estilo Neutral
 SPREADSHEET_ID=1V8xBnRVtZUyz4liGW59BU6mkgCjjreEOEWzySjcZLvI
 APPS_SCRIPT_URL=https://script.google.com/macros/s/AKfycby6Jg1oaFa2yJAlEuDThxZhmDvI-LPu80KDedz-qMFn9h1rbvJoTANwG3ufbOYBjDq7ZA/exec
-API_BASE_URL=https://api.example.com
 DEBUG_MODE=false
 ENABLE_LOGS=false
 SHOW_TECHNICAL_INFO=false
+
+# --- Informativas (la app no las lee) ---
+APP_NAME=Estilo Neutral
 APP_PACKAGE_NAME=com.estiloneutral.es
 ```
+
+Los archivos reales llevan además comentarios con el uso y una advertencia en `dev` y `qa`. El modelo versionado es `.env.example`. El detalle de cada variable está en [docs/configuracion-local.md](docs/configuracion-local.md) §2.1.
 
 **Importante — acceso a la app:** después del login con Google, la app
 solo deja entrar a cuentas que estén en la hoja `usuarios` **y** tengan
@@ -80,11 +88,12 @@ membresía en `usuario_organizacion` apuntando a una organización existente
 (`SheetsDataService.resolverAcceso`). Si tu cuenta no está, el login con
 Google funciona pero la app te rechaza con el motivo. Pedile a alguien con
 acceso que te dé de alta en Usuarios, o agregá las filas a mano en la hoja.
-(`ALLOWED_EMAILS` ya no se usa; si está en tu `.env` se ignora.)
+(`ALLOWED_EMAILS` ya no se usa y se quitó de los `.env*` el 2026-10-07; si aparece en un `.env` viejo, se ignora.)
 
-Los tres `.env*` apuntan a la **misma hoja de Google Sheets real de
-prueba** (`SPREADSHEET_ID`) y al mismo Apps Script Web App
-(`APPS_SCRIPT_URL`) — no hay hojas separadas por ambiente todavía.
+Los tres `.env*` apuntan a la **misma hoja de PRODUCCIÓN** (`SPREADSHEET_ID`)
+y al mismo Apps Script de producción (`APPS_SCRIPT_URL`): lo que se guarda
+desde `dev` o `qa` es real. Todavía no hay un entorno de pruebas accesible
+para la app (ver `informe.md` §3.1).
 
 ## 4. Android — firma y Google Sign-In (la parte que más rompe en máquina nueva)
 
