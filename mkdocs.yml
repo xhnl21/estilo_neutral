@@ -40,6 +40,7 @@ nav:
   - Casos de Uso: casos-de-uso.md
   - Cumplimiento Normativo: cumplimiento-normativo.md
   - Optimización de Build (APK): build-optimizacion-apk.md
+  - Notificaciones push (FCM): notificaciones-fcm.md
   - Archivos ignorados y configuración: configuracion-local.md
   - Estándar de hojas y escrituras: estandar-hojas.md
   - Deuda técnica: deuda-tecnica.md

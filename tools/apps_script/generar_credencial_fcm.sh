@@ -5,7 +5,7 @@
 #
 # Clave: $FCM_CLAVE, o el primer fcm-clave-*.json de la raíz del repo.
 # Sin clave, genera FCM_SERVICE_ACCOUNT_EMBEBIDA = null y el script usa la
-# propiedad del script FCM_SERVICE_ACCOUNT (ver informe.md §2.3, paso 5).
+# propiedad del script FCM_SERVICE_ACCOUNT (ver docs/notificaciones-fcm.md §4.5).
 set -euo pipefail
 
 SALIDA="$1"

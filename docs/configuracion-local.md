@@ -95,7 +95,7 @@ Lo genera Flutter (`flutter pub get` / `flutter build`). No se edita a mano.
 
 ### 2.4 `android/app/google-services.json` (Firebase, Android)
 
-Se descarga de la consola de Firebase (paso a paso en `informe.md` §2.3, paso 2). Un solo archivo trae las tres apps: `com.estiloneutral.es`, `.dev` y `.qa`.
+Se descarga de la consola de Firebase (paso a paso en `docs/notificaciones-fcm.md` §4.3). Un solo archivo trae las tres apps: `com.estiloneutral.es`, `.dev` y `.qa`.
 
 | Campo | Qué es |
 |---|---|
@@ -112,7 +112,7 @@ Se descarga de la consola de Firebase (paso a paso en `informe.md` §2.3, paso 2
 
 ### 2.5 `ios/Runner/GoogleService-Info.plist` (Firebase, iOS)
 
-Se descarga de la consola de Firebase y se agrega al target `Runner` en Xcode (`informe.md` §2.3, paso 3).
+Se descarga de la consola de Firebase y se agrega al target `Runner` en Xcode (`docs/notificaciones-fcm.md` §4.9).
 
 | Clave | Qué es |
 |---|---|
@@ -267,7 +267,7 @@ Hay **dos proyectos** de Google Cloud, con funciones separadas:
 
 ### 3.3 Hojas de Google Sheets que crea o espera el sistema
 
-Las columnas de cada hoja están en `docs/estandar-hojas.md` y en el modelo correspondiente de `lib/models/`. Las hojas de notificaciones (`dispositivos`, `notificaciones`) están en `informe.md` §2.2.
+Las columnas de cada hoja están en `docs/estandar-hojas.md` y en el modelo correspondiente de `lib/models/`. Las hojas de notificaciones (`dispositivos`, `notificaciones`) están en `docs/notificaciones-fcm.md` §6.
 
 ---
 

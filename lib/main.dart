@@ -13,7 +13,7 @@ Future<void> main() async {
   // Flutter, que también corre en modo inmersivo.
   SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
   // Notificaciones FCM: si Firebase no está configurado, la app arranca igual
-  // sin ellas (ver informe.md, "Notificaciones FCM").
+  // sin ellas (ver docs/notificaciones-fcm.md).
   final push = await PushFirebase.inicializar();
   ServiceLocator().init(push: push);
   runApp(const EstiloNeutralApp());
