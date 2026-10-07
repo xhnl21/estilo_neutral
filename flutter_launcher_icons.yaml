@@ -2,9 +2,9 @@
 # modificarlo) con:  python3 tools/iconos/generar_icono_app.py
 # y después:         dart run flutter_launcher_icons
 #
-# El logo va recortado con la forma de su marco y reducido para entrar en la
-# zona segura del ícono adaptativo: así el marco se ve completo con cualquier
-# máscara (círculo, cuadrado redondeado, la de MIUI, gota) y en iOS.
+# El logo ocupa el 95 % de la zona visible, sobre un fondo dorado como el
+# bisel: el borde dorado queda justo en el borde del ícono y se leen el
+# monograma y el texto (ver tools/iconos/generar_icono_app.py).
 flutter_launcher_icons:
   android: true
   ios: true

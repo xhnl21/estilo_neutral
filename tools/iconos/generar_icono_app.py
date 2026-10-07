@@ -1,31 +1,40 @@
 #!/usr/bin/env python3
 """Genera las imágenes del ícono de la app a partir de assets/icons.png, sin
-modificarlo, para que el marco dorado del logo se vea completo en cualquier
-teléfono.
+modificarlo. El logo ocupa casi todo el ícono, con el borde dorado justo en
+el borde, para que se lean el monograma y el texto.
 
-Android usa íconos adaptativos: fondo + frente de 108 dp, recortados con la
-forma que elija cada fabricante (círculo, cuadrado redondeado, gota…). Solo
-el círculo central de 66 dp es visible siempre. flutter_launcher_icons además
-agrega un margen (inset) del 16 % al frente. Por eso el logo (recortado con la
-forma de su marco) va reducido al ~68 % del frente: ≈ 50 dp, que entra
-completo incluso en la máscara circular.
+Android usa íconos adaptativos: fondo + frente de 108 dp, de los que el
+teléfono muestra los 72 dp centrales, recortados con su máscara (cuadrado
+redondeado, la de MIUI, círculo…). flutter_launcher_icons agrega un margen
+(inset) del 16 % al frente, que así cubre 73,44 dp: la zona visible es el
+98 % central de frente.png.
+
+El logo va al 95 % de la zona visible y el fondo es un degradado dorado como
+el bisel del marco (claro arriba a la izquierda, oscuro abajo a la derecha):
+en las esquinas, donde la máscara redondea más que el logo, lo que se ve es
+ese dorado, y el borde del ícono queda dorado de punta a punta. Con 95 %, la
+línea dorada interior del marco entra completa en máscaras con esquinas de
+hasta el 25 % del lado (MIUI, Pixel, iOS). En una máscara circular se
+recortan las esquinas del marco, pero el monograma y el texto entran.
 
 Salida (assets/iconos_app/):
-  fondo.png       fondo del ícono adaptativo (tela del logo, desenfocada)
+  fondo.png       fondo del ícono adaptativo (degradado dorado del bisel)
   frente.png      logo con marco, centrado, con transparencia
   monocromo.png   monograma "EN" para los íconos temáticos (Android 13+)
-  completo.png    ícono cuadrado opaco para iOS (logo al 82 % sobre la tela)
+  completo.png    ícono cuadrado opaco para iOS (logo sobre el mismo dorado)
 
 Uso:
   python3 tools/iconos/generar_icono_app.py
   dart run flutter_launcher_icons
 """
 import os
-from PIL import Image, ImageDraw, ImageEnhance, ImageFilter
+from PIL import Image, ImageDraw
 
 RADIO = 112             # radio de las esquinas del marco del logo (px sobre 1024)
-ESCALA_FRENTE = 0.68    # logo dentro del frente adaptativo (con el inset del 16 %)
-ESCALA_IOS = 0.82       # logo dentro del ícono de iOS
+ESCALA_VISIBLE = 0.95   # logo dentro de la zona visible del ícono
+ZONA_VISIBLE = 72 / 73.44  # zona visible dentro del frente (inset del 16 %)
+ESCALA_FRENTE = ESCALA_VISIBLE * ZONA_VISIBLE
+ESCALA_IOS = ESCALA_VISIBLE  # en iOS la imagen entera es la zona visible
 ESCALA_MONOCROMO = 0.62 # monograma dentro del frente monocromo
 LADO = 1024
 
@@ -42,18 +51,24 @@ def logo_recortado(src, lado):
     return logo
 
 
-def tela(src, lado):
-    t = src.crop((70, 70, 860, 220)).resize((lado, lado), Image.LANCZOS).filter(ImageFilter.GaussianBlur(26))
-    return ImageEnhance.Brightness(t).enhance(1.02)
+def dorado(src, lado):
+    """Degradado diagonal con los colores del bisel del marco."""
+    claro = src.getpixel((8, 512))        # bisel izquierdo (iluminado)
+    oscuro = src.getpixel((512, 1016))    # bisel inferior (en sombra)
+    paso = 256
+    grad = Image.new("RGB", (paso, paso))
+    px = grad.load()
+    for y in range(paso):
+        for x in range(paso):
+            t = (x + y) / (2 * (paso - 1))
+            px[x, y] = tuple(round(a + (b - a) * t) for a, b in zip(claro, oscuro))
+    return grad.resize((lado, lado), Image.BICUBIC)
 
 
-def con_sombra(base, logo, x, y):
-    sombra = Image.new("L", base.size, 0)
-    sombra.paste(logo.getchannel("A"), (x + 6, y + 10))
-    sombra = sombra.filter(ImageFilter.GaussianBlur(16)).point(lambda v: int(v * 0.35))
+def centrado(base, logo):
     base = base.convert("RGBA")
-    base.paste(Image.new("RGBA", base.size, (90, 70, 50, 255)), (0, 0), sombra)
-    base.paste(logo, (x, y), logo)
+    x = (base.width - logo.width) // 2
+    base.paste(logo, (x, x), logo)
     return base
 
 
@@ -62,15 +77,12 @@ def generar(raiz="."):
     salida = os.path.join(raiz, "assets/iconos_app")
     os.makedirs(salida, exist_ok=True)
 
-    tela(src, LADO).save(os.path.join(salida, "fondo.png"))
+    dorado(src, LADO).save(os.path.join(salida, "fondo.png"))
 
-    lado = int(LADO * ESCALA_FRENTE)
-    frente = con_sombra(Image.new("RGBA", (LADO, LADO), (0, 0, 0, 0)), logo_recortado(src, lado),
-                        (LADO - lado) // 2, (LADO - lado) // 2)
+    frente = centrado(Image.new("RGBA", (LADO, LADO), (0, 0, 0, 0)), logo_recortado(src, int(LADO * ESCALA_FRENTE)))
     frente.save(os.path.join(salida, "frente.png"))
 
-    lado = int(LADO * ESCALA_IOS)
-    completo = con_sombra(tela(src, LADO), logo_recortado(src, lado), (LADO - lado) // 2, (LADO - lado) // 2)
+    completo = centrado(dorado(src, LADO), logo_recortado(src, int(LADO * ESCALA_IOS)))
     completo.convert("RGB").save(os.path.join(salida, "completo.png"))
 
     mono_src = os.path.join(raiz, "assets/notificaciones/monograma_en.png")
