@@ -129,16 +129,31 @@ fi
 
 # -----------------------------------------------------------------------------
 if [[ -n "$VERSION" ]]; then
-  paso "Versión"
   [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+\+[0-9]+$ ]] || falla "Versión inválida: '$VERSION' (formato X.Y.Z+N)."
-  ACTUAL="$(grep -E '^version:' pubspec.yaml | awk '{print $2}')"
-  printf '    %s → %s\n' "$ACTUAL" "$VERSION"
+fi
+VERSION_ANTERIOR="$(grep -E '^version:' pubspec.yaml | awk '{print $2}')"
+VERSION_ACTUAL="${VERSION:-$VERSION_ANTERIOR}"
+
+# Android no instala encima una versión con versionCode menor
+# (INSTALL_FAILED_VERSION_DOWNGRADE). Builds viejos con --split-per-abi
+# suman 1000 × ABI al código (p. ej. 2009 en arm64). Se comprueba ANTES de
+# tocar pubspec.yaml.
+if [[ "$INSTALAR" == true && "$SIMULAR" == false ]]; then
+  case "$VARIANTE" in prod) PAQUETE="com.estiloneutral.es" ;; *) PAQUETE="com.estiloneutral.es.$VARIANTE" ;; esac
+  INSTALADA="$("$ADB" shell dumpsys package "$PAQUETE" 2>/dev/null | grep -m1 -oE 'versionCode=[0-9]+' | cut -d= -f2 || true)"
+  NUEVA="${VERSION_ACTUAL##*+}"
+  if [[ -n "$INSTALADA" && "$NUEVA" -lt "$INSTALADA" ]]; then
+    falla "El teléfono tiene $PAQUETE con versionCode $INSTALADA y el nuevo es $NUEVA. Usá --version X.Y.Z+$((INSTALADA + 1)) o mayor."
+  fi
+fi
+
+if [[ -n "$VERSION" ]]; then
+  paso "Versión"
+  printf '    %s → %s\n' "$VERSION_ANTERIOR" "$VERSION"
   if [[ "$SIMULAR" == false ]]; then
     sed -i.bak -E "s/^version: .*/version: $VERSION/" pubspec.yaml && rm -f pubspec.yaml.bak
   fi
 fi
-VERSION_ACTUAL="$(grep -E '^version:' pubspec.yaml | awk '{print $2}')"
-[[ -n "$VERSION" && "$SIMULAR" == true ]] && VERSION_ACTUAL="$VERSION"
 
 # -----------------------------------------------------------------------------
 if [[ "$TESTS" == true ]]; then

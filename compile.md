@@ -199,7 +199,8 @@ Paso a paso para publicar una versión nueva:
 
 1. Commitear los cambios. El script avisa si hay cambios sin commitear, porque usa el código tal como está en disco.
 2. Para instalar en un teléfono: activar **Opciones de desarrollador → Depuración por USB**, conectarlo y aceptar el aviso de la huella de la computadora. Comprobar con `adb devices`.
-3. Correr `bash tools/deploy.sh --todo --version X.Y.Z+N`. El número después de `+` tiene que ser **mayor** que el de la última versión publicada.
+3. Correr `bash tools/deploy.sh --todo --version X.Y.Z+N`. El número después de `+` (`versionCode`) tiene que ser **mayor** que el de la última versión publicada y que el instalado en el teléfono. Si no, Android rechaza la instalación (`INSTALL_FAILED_VERSION_DOWNGRADE`); el script lo detecta antes de compilar y sugiere el número.
+   - Antes se compilaba con `--split-per-abi`, que suma 1000 × ABI al código: por eso el Redmi Note 8 de pruebas tenía `2009`. Desde el 2026-10-07 la versión es **`1.0.0+2010`** y los próximos números parten de ahí (`+2011`, `+2012`…).
 4. Probar en el teléfono: iniciar sesión, aceptar el permiso de notificaciones y enviarse una desde **Comunicación → Notificaciones**.
 5. Subir el `.aab` de `dist/<versión>/` a Google Play Console, en la pista que corresponda.
 6. Commitear el cambio de versión de `pubspec.yaml`.
