@@ -124,3 +124,24 @@ Queda estrictamente prohibido el uso de iconos del paquete Material en toda la i
 ## 8. Declaración Explícita de Cumplimiento
 
 > **"Sistema visual minimalista aplicado. CupertinoIcons únicamente. NO polling."**
+
+---
+
+## Ícono de la app y de las notificaciones
+
+Todo se genera desde el logo **`assets/icons.png`, que no se modifica**. El logo es un cuadrado con un marco dorado de esquinas redondeadas (~110 px de radio sobre 1024). Por fuera del marco tiene un fondo gris beige, así que siempre se usa **recortado con la forma del marco**.
+
+| Qué | Script | Archivos generados |
+|---|---|---|
+| Ícono de la app (Android e iOS) | `python3 tools/iconos/generar_icono_app.py` y después `dart run flutter_launcher_icons` | `assets/iconos_app/{fondo,frente,monocromo,completo}.png` → mipmaps de Android y `AppIcon.appiconset` de iOS |
+| Imagen y miniatura de las notificaciones | `python3 tools/iconos/generar_logo_notificacion.py` | `assets/notificaciones/logo_notificacion_2x1.jpg`, `res/drawable-nodpi/{logo_notificacion_2x1.jpg, ic_logo_notificacion.png}` |
+| Ícono chico de las notificaciones (monograma "EN") | `python3 tools/iconos/generar_monograma.py` | `assets/notificaciones/monograma_en.png`, `res/drawable-*/ic_notificacion_en.png` |
+
+**Ícono de la app en Android (adaptativo).** Fondo y frente de 108 dp, que cada fabricante recorta con su propia forma (círculo, cuadrado redondeado, la de MIUI, gota). Solo el círculo central de 66 dp es visible en todos. Para que el marco se vea completo en cualquier teléfono:
+- el frente lleva el logo recortado al **68 %**, que con el margen del 16 % de `flutter_launcher_icons` da unos 50 dp y entra incluso en la máscara circular;
+- el fondo es la tela del logo, desenfocada;
+- Android 13+ usa `monocromo.png` (el monograma) cuando el usuario activa los íconos temáticos.
+
+**En iOS:** ícono opaco con el logo al 82 % sobre la tela. iOS siempre usa el mismo cuadrado redondeado.
+
+Si cambia el logo, hay que correr los tres scripts y `dart run flutter_launcher_icons`, y compilar.
