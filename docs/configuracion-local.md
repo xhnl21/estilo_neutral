@@ -283,6 +283,7 @@ No hace falta crearlos. Si faltan o se rompen, se regeneran.
 | `tools/apps_script*/node_modules/` | npm | `cd tools/apps_script && npm install` (y lo mismo en `apps_script_test`) |
 | `doc/api/` | `dart doc` | `dart doc` |
 | `site/` | MkDocs | `mkdocs build` |
+| `dist/<versión>/` | `tools/deploy.sh` (copias del APK y AAB de release) | `bash tools/deploy.sh --app <variante>` |
 | `*.iml`, `.idea/`, `.widget_preview/` | IDE | El IDE los recrea |
 
 ---

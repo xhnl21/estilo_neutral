@@ -87,3 +87,6 @@ ios/Runner/GoogleService-Info.plist
 # Credencial FCM generada por deploy.sh (contiene la clave privada)
 /credencial_fcm.js
 tools/apps_script_test/credencial_fcm.js
+
+# Builds de release copiados por tools/deploy.sh
+/dist/

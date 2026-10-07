@@ -181,6 +181,39 @@ flutter run --flavor qa --dart-define-from-file=.env.test
 flutter run --flavor prod --dart-define-from-file=.env
 ```
 
+## 6.1 Deploy (`tools/deploy.sh`)
+
+Un solo comando para publicar. En orden: chequeos previos, tests, Apps Script (test → producción), build de release (APK + AAB), copia a `dist/<versión>/` e instalación por USB.
+
+| Qué querés hacer | Comando |
+|---|---|
+| Todo: script + app prod + instalar en el teléfono | `bash tools/deploy.sh --todo` |
+| Solo el Apps Script | `bash tools/deploy.sh --script` |
+| Release de una variante | `bash tools/deploy.sh --app prod` (o `qa`, `dev`) |
+| Release e instalar por USB | `bash tools/deploy.sh --app qa --instalar` |
+| Subir la versión antes de compilar | `bash tools/deploy.sh --app prod --version 1.0.1+11` |
+| Ver qué haría, sin ejecutar nada | `bash tools/deploy.sh --todo --simular` |
+| Omitir los tests | agregar `--sin-tests` |
+
+Paso a paso para publicar una versión nueva:
+
+1. Commitear los cambios. El script avisa si hay cambios sin commitear, porque usa el código tal como está en disco.
+2. Para instalar en un teléfono: activar **Opciones de desarrollador → Depuración por USB**, conectarlo y aceptar el aviso de la huella de la computadora. Comprobar con `adb devices`.
+3. Correr `bash tools/deploy.sh --todo --version X.Y.Z+N`. El número después de `+` tiene que ser **mayor** que el de la última versión publicada.
+4. Probar en el teléfono: iniciar sesión, aceptar el permiso de notificaciones y enviarse una desde **Comunicación → Notificaciones**.
+5. Subir el `.aab` de `dist/<versión>/` a Google Play Console, en la pista que corresponda.
+6. Commitear el cambio de versión de `pubspec.yaml`.
+
+Requisitos que verifica el script:
+- `.env*` de la variante;
+- `android/key.properties`, para la firma;
+- `android/app/google-services.json`, para Firebase;
+- `clasp`, con `npm install` en `tools/apps_script*` y la sesión `~/.clasprc.json`;
+- la clave de FCM local (opcional);
+- `adb`, si se pidió `--instalar`.
+
+Detalle de cada archivo: [docs/configuracion-local.md](docs/configuracion-local.md).
+
 ## 7. La hoja de Google Sheets y el backend (Apps Script)
 
 - **Spreadsheet (datos):** https://docs.google.com/spreadsheets/d/1V8xBnRVtZUyz4liGW59BU6mkgCjjreEOEWzySjcZLvI/edit
