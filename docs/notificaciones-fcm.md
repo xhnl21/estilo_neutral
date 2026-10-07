@@ -67,7 +67,7 @@ Reglas que aplica el servidor (Apps Script):
 | Disparador | `alEditarNotificaciones` (envía las filas marcadas `PENDIENTE`) |
 | Marca | Monograma "EN", color `#BC976F` y logo apaisado (`assets/notificaciones/logo_notificacion_2x1.jpg`), incluidos en el APK |
 | Formato del envío | Mensajes **solo de datos** en Android (`titulo`, `cuerpo`, `ruta`…); la app arma la notificación |
-| Versión de la app | `1.0.0+2014` (las anteriores a esta no muestran los mensajes solo de datos) |
+| Versión de la app | `1.0.0+2015` (las anteriores a `1.0.0+2014` no muestran los mensajes solo de datos) |
 
 El proyecto de Google Cloud del login (`gmp-demo-project-093718520`, "Maps Platform Demo Project") **no tiene Firebase**. Se mantuvo separado para no activar facturación y para que borrar un proyecto no afecte al otro.
 
@@ -202,9 +202,12 @@ Crea `dispositivos` y `notificaciones` con su encabezado, las listas desplegable
 
 Con la app **cerrada**, Android primero tiene que arrancar la app en segundo plano: en el build debug de QA tardó unos 23 s; en release es más rápido. La imagen sale siempre.
 
-`assets/notificaciones/logo_notificacion_2x1.jpg` (1024×512) se generó desde `assets/icons.png` **sin modificar el original**: el logo completo sobre la tela del fondo. Android muestra la imagen en proporción 2:1, y el logo cuadrado salía recortado.
+`assets/notificaciones/logo_notificacion_2x1.jpg` (1024×512) y la miniatura `ic_logo_notificacion.png` se generan desde `assets/icons.png` **sin modificar el original**, con `python3 tools/iconos/generar_logo_notificacion.py`:
+- **Apaisada:** el logo completo sobre la tela del fondo, porque Android muestra la imagen en proporción 2:1 y el logo cuadrado salía recortado.
+- **Recorte redondeado:** el logo se recorta con la forma de su marco (esquinas de ~110 px sobre 1024). Por fuera del marco, el original tiene un fondo gris beige liso que se veía como un recuadro detrás del marco.
+- **Miniatura:** queda con las esquinas transparentes.
 
-**Cambiar el logo:** generar la versión 2:1 desde el logo, reemplazar los archivos de `android/app/src/main/res/drawable-nodpi/` y compilar la app. El script ya no envía imágenes; el logo publicado en Drive (`logo_notificacion_2x1_estilo_neutral.jpg`) quedó sin uso.
+**Cambiar el logo:** reemplazar `assets/icons.png`, correr `python3 tools/iconos/generar_logo_notificacion.py` (y `generar_monograma.py`, si cambia el monograma) y compilar la app. Si el nuevo logo tiene otro radio de esquinas, ajustar `RADIO` en el script. El script ya no envía imágenes; el logo publicado en Drive (`logo_notificacion_2x1_estilo_neutral.jpg`) quedó sin uso.
 
 **Ícono chico (monograma "EN"):** el logo es un render 3D y no se puede recortar su silueta automáticamente, así que se **trazó a mano** sobre `assets/icons.png` (sin modificarlo), con trazos gruesos para que se lea a 24 px. Lo genera `python3 tools/iconos/generar_monograma.py`:
 - `assets/notificaciones/monograma_en.png`: la fuente, de 1024 px;
