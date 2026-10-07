@@ -660,8 +660,10 @@ function _handleCreate(ss, sheet, sheetName, data, skipAudit) {
       data.fecha_registro || Utilities.formatDate(new Date(), "GMT-4", "yyyy-MM-dd"),
       data.organizacion_id || ORGANIZACION_ID_DEFAULT,
       data.tipo_documento || "V",
-      _comoTexto(data.cedula)
+      _comoTexto(data.cedula),
+      _textoEstado(data.status)
     ];
+    _asegurarColumnaEstado(sheet, COL_ESTADO.clientes);
   } else if (sheetName === "inventario") {
     // foto_id es una FK a "galeria".id (nunca la URL directa) — la columna
     // de imagen se resuelve con un VLOOKUP contra esa hoja, así la URL real
@@ -782,8 +784,10 @@ function _handleCreate(ss, sheet, sheetName, data, skipAudit) {
       (data.email || "").toString().trim().toLowerCase(),
       data.nombre || "",
       data.tipo_documento || "V",
-      _comoTexto(data.cedula)
+      _comoTexto(data.cedula),
+      _textoEstado(data.status)
     ];
+    _asegurarColumnaEstado(sheet, COL_ESTADO.usuarios);
   } else if (sheetName === "organizaciones") {
     rowValues = [
       data.id,
@@ -943,6 +947,10 @@ function _handleUpdate(ss, sheet, sheetName, id, data, skipAudit) {
     if (data.saldo_deuda_usd !== undefined) sheet.getRange(rowIndex, 5).setValue(data.saldo_deuda_usd);
     if (data.tipo_documento !== undefined) sheet.getRange(rowIndex, 8).setValue(data.tipo_documento);
     if (data.cedula !== undefined) sheet.getRange(rowIndex, 9).setValue(_comoTexto(data.cedula));
+    if (data.status !== undefined) {
+      _asegurarColumnaEstado(sheet, COL_ESTADO.clientes);
+      sheet.getRange(rowIndex, COL_ESTADO.clientes).setValue(_textoEstado(data.status));
+    }
   } else if (sheetName === "inventario") {
     if (data.cantidad !== undefined) sheet.getRange(rowIndex, 2).setValue(data.cantidad);
     if (data.nombre !== undefined) sheet.getRange(rowIndex, 3).setValue(data.nombre);
@@ -985,6 +993,15 @@ function _handleUpdate(ss, sheet, sheetName, id, data, skipAudit) {
     if (data.nombre !== undefined) sheet.getRange(rowIndex, 3).setValue(data.nombre);
     if (data.tipo_documento !== undefined) sheet.getRange(rowIndex, 4).setValue(data.tipo_documento);
     if (data.cedula !== undefined) sheet.getRange(rowIndex, 5).setValue(_comoTexto(data.cedula));
+    if (data.status !== undefined) {
+      _asegurarColumnaEstado(sheet, COL_ESTADO.usuarios);
+      const estado = _textoEstado(data.status);
+      sheet.getRange(rowIndex, COL_ESTADO.usuarios).setValue(estado);
+      // Inactivado: se le cierra la sesión abierta en sus teléfonos.
+      if (estado === "inactivo") {
+        _expulsarUsuario(ss, sheet.getRange(rowIndex, 2).getValue(), "La cuenta fue inactivada.");
+      }
+    }
   } else if (sheetName === "organizaciones") {
     if (data.nombre !== undefined) sheet.getRange(rowIndex, 2).setValue(data.nombre);
   } else if (sheetName === "moneda_organizacion") {
@@ -1074,7 +1091,11 @@ function _handleDelete(ss, sheet, sheetName, id, data) {
     if (errOrg) return errOrg;
   }
 
+  const emailEliminado = sheetName === "usuarios" ? sheet.getRange(rowIndex, 2).getValue() : "";
+
   sheet.deleteRow(rowIndex);
+
+  if (emailEliminado) _expulsarUsuario(ss, emailEliminado, "La cuenta fue eliminada.");
 
   _appendAuditLog(ss, {
     hoja: sheetName,
@@ -1206,9 +1227,10 @@ function _motivoSinAcceso(ss, email) {
   if (cEmail < 0 || cMiembro < 0 || cOrg < 0 || cIdOrg < 0) return null;
 
   const igual = function (v) { return String(v).trim().toLowerCase() === email; };
-  if (!usuarios.slice(1).some(function (f) { return igual(f[cEmail]); })) {
-    return "La cuenta " + email + " ya no está autorizada.";
-  }
+  const usuario = usuarios.slice(1).filter(function (f) { return igual(f[cEmail]); })[0];
+  if (!usuario) return "La cuenta " + email + " ya no está autorizada.";
+  const cEstado = columna(usuarios, "status");
+  if (cEstado >= 0 && !_estadoActivo(usuario[cEstado])) return "La cuenta " + email + " está inactiva.";
   const membresia = membresias.slice(1).filter(function (f) { return igual(f[cMiembro]); })[0];
   if (!membresia) return "La cuenta " + email + " ya no pertenece a ninguna organización.";
   const orgId = String(membresia[cOrg]).trim();
@@ -1216,6 +1238,29 @@ function _motivoSinAcceso(ss, email) {
     return "La organización de la cuenta " + email + " ya no existe.";
   }
   return null;
+}
+
+// -----------------------------------------------------------------------------
+// Estado (activo / inactivo) de usuarios y clientes. Nunca se borra el
+// registro: inactivo no inicia sesión (usuarios) o no recibe ventas nuevas
+// (clientes). Vacío cuenta como activo (filas anteriores a la columna).
+// -----------------------------------------------------------------------------
+const COL_ESTADO = { clientes: 10, usuarios: 6 };
+
+/** Mismo criterio que estadoActivo() de la app (lib/models/fila_hoja.dart). */
+function _estadoActivo(valor) {
+  const v = String(valor === undefined || valor === null ? "" : valor).trim().toLowerCase();
+  return ["false", "0", "inactivo", "no"].indexOf(v) === -1;
+}
+
+function _textoEstado(valor) {
+  return _estadoActivo(valor) ? "activo" : "inactivo";
+}
+
+/** Escribe el encabezado "status" si la hoja todavía no tiene esa columna. */
+function _asegurarColumnaEstado(sheet, columna) {
+  const celda = sheet.getRange(1, columna);
+  if (String(celda.getValue()).trim() === "") celda.setValue("status");
 }
 
 // =============================================================================
@@ -1312,6 +1357,7 @@ function _mapaAcceso(ss) {
   const membresias = tabla("usuario_organizacion");
   const organizaciones = tabla("organizaciones");
   const cEmail = col(usuarios, "email");
+  const cEstado = col(usuarios, "status");
   const cMiembro = col(membresias, "usuario_email");
   const cOrg = col(membresias, "organizacion_id");
   const cIdOrg = col(organizaciones, "id");
@@ -1323,7 +1369,9 @@ function _mapaAcceso(ss) {
   });
   const enUsuarios = {};
   usuarios.slice(1).forEach(function (f) {
-    if (cEmail >= 0 && f[cEmail]) enUsuarios[String(f[cEmail]).trim().toLowerCase()] = true;
+    if (cEmail >= 0 && f[cEmail] && (cEstado < 0 || _estadoActivo(f[cEstado]))) {
+      enUsuarios[String(f[cEmail]).trim().toLowerCase()] = true;
+    }
   });
   const orgDe = {};
   membresias.slice(1).forEach(function (f) {
@@ -1497,15 +1545,30 @@ function _credencialFcm() {
   return { token: token, proyecto: cuenta.project_id };
 }
 
-/** Envía a cada token. Devuelve { enviados, fallidos, invalidos[], errores[] }. */
+/** Envía una notificación visible a cada token. */
 function _enviarFcm(credencial, tokens, solicitud, notificacionId) {
-  const url = "https://fcm.googleapis.com/v1/projects/" + credencial.proyecto + "/messages:send";
   const datos = Object.assign({}, solicitud.datos, {
     notificacion_id: notificacionId,
     titulo: solicitud.titulo,
     cuerpo: solicitud.cuerpo,
     canal: CANAL_ANDROID_NOTIFICACIONES
   });
+  return _enviarMensajesFcm(credencial, tokens, function (token) {
+    return {
+      token: token,
+      data: datos,
+      android: { priority: "HIGH" },
+      apns: { payload: { aps: { alert: { title: solicitud.titulo, body: solicitud.cuerpo }, sound: "default" } } }
+    };
+  });
+}
+
+/**
+ * Envía el mensaje que arma [mensajeDe](token) a cada token.
+ * Devuelve { enviados, fallidos, invalidos[], errores[] }.
+ */
+function _enviarMensajesFcm(credencial, tokens, mensajeDe) {
+  const url = "https://fcm.googleapis.com/v1/projects/" + credencial.proyecto + "/messages:send";
   const resultado = { enviados: 0, fallidos: 0, invalidos: [], errores: [] };
   for (let i = 0; i < tokens.length; i += 50) {
     const lote = tokens.slice(i, i + 50);
@@ -1516,14 +1579,7 @@ function _enviarFcm(credencial, tokens, solicitud, notificacionId) {
         contentType: "application/json",
         headers: { Authorization: "Bearer " + credencial.token },
         muteHttpExceptions: true,
-        payload: JSON.stringify({
-          message: {
-            token: token,
-            data: datos,
-            android: { priority: "HIGH" },
-            apns: { payload: { aps: { alert: { title: solicitud.titulo, body: solicitud.cuerpo }, sound: "default" } } }
-          }
-        })
+        payload: JSON.stringify({ message: mensajeDe(token) })
       };
     });
     UrlFetchApp.fetchAll(pedidos).forEach(function (res, j) {
@@ -1540,6 +1596,46 @@ function _enviarFcm(credencial, tokens, solicitud, notificacionId) {
     });
   }
   return resultado;
+}
+
+/**
+ * Cierra la sesión de [email] en todos sus teléfonos: les manda un push
+ * SILENCIOSO (solo datos, tipo "sesion_revocada"; la app no muestra nada y
+ * cierra la sesión) y borra sus filas de "dispositivos". Nunca lanza: si FCM
+ * falla, la app igual cierra la sesión en la próxima lectura al servidor.
+ */
+function _expulsarUsuario(ss, email, motivo) {
+  const normalizado = String(email || "").trim().toLowerCase();
+  if (!normalizado) return { enviados: 0 };
+  try {
+    const sh = ss.getSheetByName(HOJA_DISPOSITIVOS);
+    if (!sh || sh.getLastRow() < 2) return { enviados: 0 };
+    const tokens = [];
+    sh.getDataRange().getValues().slice(1).forEach(function (f) {
+      const token = String(f[3]).replace(/^'/, "").trim();
+      if (String(f[1]).trim().toLowerCase() === normalizado && token && tokens.indexOf(token) === -1) tokens.push(token);
+    });
+    if (!tokens.length) return { enviados: 0 };
+    const credencial = _credencialFcm();
+    let resultado = { enviados: 0 };
+    if (!credencial.error) {
+      const datos = { tipo: "sesion_revocada", motivo: String(motivo || "") };
+      resultado = _enviarMensajesFcm(credencial, tokens, function (token) {
+        return {
+          token: token,
+          data: datos,
+          android: { priority: "HIGH" },
+          // iOS: aviso en segundo plano, sin alerta ni sonido.
+          apns: { headers: { "apns-priority": "5", "apns-push-type": "background" }, payload: { aps: { "content-available": 1 } } }
+        };
+      });
+    }
+    _borrarTokens(ss, tokens);
+    return resultado;
+  } catch (e) {
+    console.error("No se pudo expulsar a " + normalizado + ": " + e);
+    return { enviados: 0, error: String(e) };
+  }
 }
 
 function _borrarTokens(ss, tokens) {
@@ -1655,9 +1751,25 @@ function enviarNotificacionesPendientes() {
 function alEditarNotificaciones(e) {
   if (!e || !e.range) return;
   const sh = e.range.getSheet();
+  if (sh.getName() === "usuarios") return _alEditarEstadoUsuarios(e.range);
   if (sh.getName() !== HOJA_NOTIFICACIONES) return;
   if (e.range.getColumn() > COL_NOTIF.estado || e.range.getLastColumn() < COL_NOTIF.estado) return;
   enviarNotificacionesPendientes();
+}
+
+/**
+ * Inactivar a mano en la hoja (columna "status" de usuarios) también cierra
+ * la sesión abierta de esa cuenta, como desde la app.
+ */
+function _alEditarEstadoUsuarios(rango) {
+  const col = COL_ESTADO.usuarios;
+  if (rango.getColumn() > col || rango.getLastColumn() < col || rango.getRow() < 2) return;
+  const sh = rango.getSheet();
+  const filas = sh.getRange(rango.getRow(), 1, rango.getNumRows(), col).getValues();
+  const ss = getSpreadsheet();
+  filas.forEach(function (f) {
+    if (!_estadoActivo(f[col - 1])) _expulsarUsuario(ss, f[1], "La cuenta fue inactivada.");
+  });
 }
 
 /** Instala (una vez) el disparador que envía al marcar una fila PENDIENTE. */
