@@ -9,6 +9,7 @@ import '../../features/credits/domain/entities/credit_status.dart';
 import '../../features/credits/domain/value_objects/credit_amount.dart';
 import '../../features/credits/domain/value_objects/credit_id.dart';
 import '../../features/credits/infrastructure/models/client_credit_model.dart';
+import '../../features/notificaciones/domain/destino_notificacion.dart';
 import '../../models/models.dart';
 import '../storage/secure_token_storage.dart';
 import 'batch/sheets_batch_executor.dart';
@@ -1485,6 +1486,93 @@ class SheetsDataService extends ChangeNotifier {
     await _sincronizarConRollback(
       {'action': 'delete', 'sheet': 'inventario', 'id': id},
       revertir: () => _productos.insert(index.clamp(0, _productos.length), old),
+    );
+  }
+
+  // ===========================================================================
+  // NOTIFICACIONES FCM (hojas dispositivos y notificaciones)
+  // ===========================================================================
+
+  /// Acción del servidor que no modifica datos de este teléfono (no hay nada
+  /// que revertir): exige `{status: "success"}` y devuelve la respuesta, o
+  /// lanza [StateError] con el mensaje del servidor.
+  Future<Map<String, dynamic>> _accionEnServidor(Map<String, dynamic> payload) async {
+    final url = appsScriptUrl;
+    if (url == null || url.trim().isEmpty) {
+      throw StateError('No hay conexión con Google Sheets configurada.');
+    }
+    final respuesta = await _postAppsScriptJson(payload);
+    final data = respuesta.data;
+    if (data == null) {
+      throw StateError('No se pudo confirmar la respuesta del servidor (${payload['action']}).');
+    }
+    if (data['status'] != 'success') {
+      throw StateError(data['message']?.toString() ?? 'El servidor rechazó la acción ${payload['action']}.');
+    }
+    return data;
+  }
+
+  /// Registra (o actualiza) el token FCM de este dispositivo para el usuario
+  /// de la sesión. El servidor toma la organización de la membresía actual,
+  /// no la que mande la app. Lanza [StateError] si falla.
+  Future<void> registrarDispositivo({required String token, required String plataforma}) async {
+    if (_currentUsuarioEmail == null) throw StateError('No hay usuario en la sesión.');
+    await _accionEnServidor({
+      'action': 'registrar_dispositivo',
+      'sheet': 'dispositivos',
+      'data': {'token': token, 'plataforma': plataforma},
+    });
+  }
+
+  /// Borra el token de este dispositivo (al cerrar sesión). [usuarioEmail]
+  /// se pasa explícito porque al cerrar sesión el usuario actual ya puede
+  /// estar en null.
+  Future<void> eliminarDispositivo({required String token, required String usuarioEmail}) async {
+    await _accionEnServidor({
+      'action': 'eliminar_dispositivo',
+      'sheet': 'dispositivos',
+      'usuario_sesion': usuarioEmail.trim().toLowerCase(),
+      'data': {'token': token},
+    });
+  }
+
+  /// Envía una notificación FCM. Cualquier usuario con acceso puede enviar a
+  /// cualquier destino ([DestinoNotificacion]); el servidor valida el
+  /// remitente, resuelve los dispositivos, envía y deja el registro en la
+  /// hoja "notificaciones". Lanza [ArgumentError] si los datos no son
+  /// válidos y [StateError] si el servidor la rechaza.
+  Future<ResultadoEnvioNotificacion> enviarNotificacion({
+    required DestinoNotificacion destino,
+    required String titulo,
+    required String cuerpo,
+    Map<String, String> datos = const {},
+  }) async {
+    final t = titulo.trim();
+    final c = cuerpo.trim();
+    if (t.isEmpty || t.length > 100) throw ArgumentError('El título es obligatorio (hasta 100 caracteres).');
+    if (c.isEmpty || c.length > 500) throw ArgumentError('El mensaje es obligatorio (hasta 500 caracteres).');
+    final errorDestino = destino.error;
+    if (errorDestino != null) throw ArgumentError(errorDestino);
+    if (_currentUsuarioEmail == null) throw StateError('No hay usuario en la sesión.');
+
+    final r = await _accionEnServidor({
+      'action': 'enviar_notificacion',
+      'sheet': 'notificaciones',
+      'data': {...destino.toMap(), 'titulo': t, 'cuerpo': c, 'datos': datos},
+    });
+    _logAudit(
+      hoja: 'notificaciones',
+      celda: 'A',
+      valorAnterior: 'null',
+      valorNuevo: '${r['id']}: $t',
+      accion: 'envio_notificacion',
+      norma: 'ISO/IEC 27001 §5.14',
+      observaciones: 'Notificación ${destino.alcance.name}: ${r['enviados']} enviadas, ${r['fallidos']} fallidas',
+    );
+    return ResultadoEnvioNotificacion(
+      id: r['id']?.toString() ?? '',
+      enviados: (r['enviados'] as num?)?.toInt() ?? 0,
+      fallidos: (r['fallidos'] as num?)?.toInt() ?? 0,
     );
   }
 

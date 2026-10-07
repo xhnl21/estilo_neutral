@@ -2,6 +2,8 @@ import 'package:dio/dio.dart';
 import '../../core/router/router.dart';
 import '../../features/auth/auth.dart';
 import '../../features/credits/credits.dart';
+import '../../features/notificaciones/infrastructure/push_gateway.dart';
+import '../../features/notificaciones/presentation/cubit/push_cubit.dart';
 import '../../shared/shared.dart';
 
 class ServiceLocator {
@@ -43,6 +45,9 @@ class ServiceLocator {
   late final ControlAccesoSesion controlAccesoSesion;
   late final AppRouter appRouter;
 
+  /// Notificaciones push (FCM). Con [PushNoDisponible] queda inactivo.
+  late final PushCubit pushCubit;
+
   bool _initialized = false;
   bool get isInitialized => _initialized;
 
@@ -51,7 +56,9 @@ class ServiceLocator {
   /// tests de widgets) para no depender de la red real dentro de
   /// `testWidgets()` — ahí Flutter intercepta el `HttpClient` y una llamada
   /// real puede volverse lenta/errática en vez de fallar rápido.
-  void init({Dio? dio}) {
+  /// [push] es el canal de notificaciones ya inicializado (ver main.dart);
+  /// sin él, la app funciona sin notificaciones.
+  void init({Dio? dio, PushGateway push = const PushNoDisponible('Sin inicializar.')}) {
     if (_initialized) return;
     _initialized = true;
     tokenStorage = SecureTokenStorage();
@@ -80,6 +87,12 @@ class ServiceLocator {
       authCubit: authCubit,
       dataService: sheetsDataService,
       sheetsAuth: sheetsAuth,
+    );
+    pushCubit = PushCubit(
+      gateway: push,
+      dataService: sheetsDataService,
+      authCubit: authCubit,
+      navegar: (ruta) => appRouter.router.go(ruta),
     );
   }
 }

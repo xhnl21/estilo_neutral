@@ -33,7 +33,7 @@ Toda hoja nueva, y todo código que lea o escriba una hoja, cumple [`docs/estand
 1. **Columna `id` en A, generada por el servidor** (prefijo en `ID_PREFIXES` de `google_apps_script.js`). Editar y eliminar se hace por ID, nunca por la posición en una lista ni por otro campo.
 2. **Rama explícita por hoja** en `_handleCreate` / `_handleUpdate` del script (o un manejador propio). Nada de `Object.values(data)`.
 3. **Textos que parecen números o fechas** (códigos, cédulas, teléfonos, fechas, números de orden) se escriben como texto (`_comoTexto` o formato `@`).
-4. **En `SheetsDataService`, solo `_crearConRollback`, `_sincronizarConRollback` y `executeBatchTransaction` hablan con el servidor**: se espera la confirmación y se revierte el cambio local si falla. Nunca `_postToAppsScript` / `_crearEnServidor` directo ni sin `await`.
+4. **En `SheetsDataService`, solo `_crearConRollback`, `_sincronizarConRollback` y `executeBatchTransaction` hablan con el servidor** (y `_accionEnServidor` para acciones que no tocan datos locales, como las notificaciones): se espera la confirmación y se revierte el cambio local si falla. Nunca `_postToAppsScript` / `_crearEnServidor` directo ni sin `await`.
 5. **Editar con `copyWith`**, conservando ID y organización.
 6. **Sin valores inventados** (usuarios de auditoría ficticios, `?? 474`, `?? 0` para montos mal escritos).
 

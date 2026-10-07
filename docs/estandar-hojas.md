@@ -48,6 +48,7 @@ En `SheetsDataService` **solo** estos helpers hablan con el servidor:
 | `_crearConRollback(hoja, data, revertir:)` | Crear. Devuelve el ID real; si falla, revierte y lanza `StateError`. |
 | `_sincronizarConRollback(payload, revertir:)` | Editar y eliminar. Exige `{status: "success"}`; si no, revierte y lanza `StateError`. |
 | `executeBatchTransaction(tx)` | Operaciones atómicas de varias hojas. El que lo llama revierte si falla (ver `registrarAbono`). |
+| `_accionEnServidor(payload)` | Acciones que no cambian datos de este teléfono (no hay nada que revertir): registrar o borrar el dispositivo, enviar una notificación. Exige `{status: "success"}`; si no, lanza `StateError`. |
 
 Patrón obligatorio para un método público de escritura:
 

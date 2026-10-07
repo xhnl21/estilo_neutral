@@ -40,6 +40,9 @@ nav:
   - Casos de Uso: casos-de-uso.md
   - Cumplimiento Normativo: cumplimiento-normativo.md
   - Optimización de Build (APK): build-optimizacion-apk.md
+  - Archivos ignorados y configuración: configuracion-local.md
+  - Estándar de hojas y escrituras: estandar-hojas.md
+  - Deuda técnica: deuda-tecnica.md
   - Integraciones con Google:
       - Resumen: google/index.md
       - Google Sign-In: google/sign-in.md

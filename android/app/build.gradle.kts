@@ -19,6 +19,9 @@ android {
     ndkVersion = flutter.ndkVersion
 
     compileOptions {
+        // flutter_local_notifications (notificaciones FCM con la app abierta)
+        // usa APIs de java.time: requiere desugaring.
+        isCoreLibraryDesugaringEnabled = true
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
@@ -99,4 +102,16 @@ kotlin {
 
 flutter {
     source = "../.."
+}
+
+dependencies {
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
+}
+
+// Firebase (FCM): el plugin lee app/google-services.json. Mientras no exista
+// (Firebase sin configurar), la app compila igual y las notificaciones
+// quedan desactivadas. Un solo google-services.json bajado de la consola
+// trae las tres apps (prod, .dev y .qa).
+if (file("google-services.json").exists()) {
+    apply(plugin = "com.google.gms.google-services")
 }

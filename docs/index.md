@@ -10,6 +10,7 @@ Conector Flutter para Google Sheets con arquitectura ORM bajo demanda y cero pol
 - **¿Necesitás saber qué normas se cumplen realmente?** → [Cumplimiento Normativo](cumplimiento-normativo.md)
 - **¿Qué problemas conocidos quedan pendientes?** → [Deuda Técnica](deuda-tecnica.md)
 - **¿Vas a agregar o tocar una hoja de Sheets?** → [Estándar de hojas y escrituras](estandar-hojas.md)
+- **¿Configurás una máquina nueva o buscás un archivo que no está en git?** → [Archivos ignorados y configuración](configuracion-local.md)
 
 ## Integraciones con Google
 

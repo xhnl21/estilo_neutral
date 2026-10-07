@@ -30,4 +30,5 @@ abstract class RouteNames {
   static const String tasas = 'tasas';
   static const String codigosTelefono = 'codigosTelefono';
   static const String tiposDocumento = 'tiposDocumento';
+  static const String notificaciones = 'notificaciones';
 }

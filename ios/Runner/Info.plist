@@ -78,5 +78,13 @@
 		<string>Se accede a tus fotos para elegir una imagen de producto desde la galería.</string>
 		<key>NSPhotoLibraryAddUsageDescription</key>
 		<string>Se guarda la foto del producto en tu galería cuando la descargás.</string>
-	</dict>
+		<!-- FCM: recibir notificaciones push con la app en segundo plano. -->
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>remote-notification</string>
+	</array>
+	<!-- FCM: la app inicializa Firebase en Dart (firebase_options.dart). -->
+	<key>FirebaseAppDelegateProxyEnabled</key>
+	<true/>
+</dict>
 </plist>

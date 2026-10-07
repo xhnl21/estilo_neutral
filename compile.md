@@ -23,6 +23,8 @@ flutter pub get
 
 ## 3. Variables de entorno (`.env*`)
 
+> Detalle campo por campo de los `.env*` y del resto de archivos que no están en git: [docs/configuracion-local.md](docs/configuracion-local.md).
+
 Estos archivos **no están en git** (`.gitignore` los excluye, salvo
 `.env.example`) — hay que crearlos a mano. Son constantes de compilación
 (`String.fromEnvironment`), no se leen en runtime: si no los pasás con

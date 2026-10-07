@@ -6,6 +6,7 @@ import '../../core/router/route_paths.dart';
 import '../../core/utils/logger.dart';
 import '../../features/auth/application/auth_cubit.dart';
 import '../../features/reporting/reporting.dart';
+import '../../features/notificaciones/presentation/pages/enviar_notificacion_page.dart';
 import '../../features/treasury/treasury.dart';
 import '../../shared/shared.dart';
 import '../pages/pages.dart';
@@ -57,6 +58,7 @@ class _MainShellState extends State<MainShell> {
     (title: 'Tasas', sheet: 'tasas', icon: CupertinoIcons.money_dollar, category: 'Administración'),
     (title: 'Códigos Teléfono', sheet: 'codigo de telefonos', icon: CupertinoIcons.phone_fill, category: 'Administración'),
     (title: 'Tipos Documento', sheet: 'tipo de documento', icon: CupertinoIcons.doc_text_fill, category: 'Administración'),
+    (title: 'Notificaciones', sheet: 'notificaciones', icon: CupertinoIcons.bell_fill, category: 'Comunicación'),
   ];
 
   @override
@@ -79,6 +81,7 @@ class _MainShellState extends State<MainShell> {
       TasasPage(dataService: widget.dataService),
       CodigosTelefonoPage(dataService: widget.dataService),
       TiposDocumentoPage(dataService: widget.dataService),
+      EnviarNotificacionPage(dataService: widget.dataService),
     ];
   }
 
@@ -370,6 +373,10 @@ class _MainShellState extends State<MainShell> {
                   _buildDrawerItem(13, _vistasInfo[13]),
                   _buildDrawerItem(14, _vistasInfo[14]),
                   _buildDrawerItem(15, _vistasInfo[15]),
+
+                  const Divider(height: 24, thickness: 1, color: AppPalette.divider),
+                  _buildCategoryHeader('COMUNICACIÓN'),
+                  _buildDrawerItem(16, _vistasInfo[16]),
                 ],
               ),
             ),

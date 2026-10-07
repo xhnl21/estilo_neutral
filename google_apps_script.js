@@ -46,7 +46,9 @@ const ID_PREFIXES = {
   checklist_iso: "ck",
   cuarentena: "cq",
   audit_log: "al",
-  reporte_migracion: "rm"
+  reporte_migracion: "rm",
+  dispositivos: "dv",
+  notificaciones: "nt"
 };
 
 /** Hojas que originalmente no tenían columna id (ver migrarEsquema). */
@@ -130,6 +132,32 @@ function doPost(e) {
       if (motivo) {
         return respond({ status: "error", code: "acceso_revocado", message: motivo }, 403);
       }
+    }
+
+    // =========================================================================
+    // NOTIFICACIONES FCM (ver módulo NOTIFICACIONES más abajo)
+    // =========================================================================
+    if (action === "configurar_fcm_service_account") {
+      if (!payload.fcm_service_account) {
+        return respond({ status: "error", message: "Falta fcm_service_account en payload." }, 400);
+      }
+      PropertiesService.getScriptProperties().setProperty("FCM_SERVICE_ACCOUNT", payload.fcm_service_account);
+      return respond({ status: "success", message: "Propiedad FCM_SERVICE_ACCOUNT guardada correctamente." });
+    }
+
+    if (action === "preparar_hojas_notificaciones") {
+      return respond(prepararHojasNotificaciones());
+    }
+
+    if (action === "registrar_dispositivo" || action === "eliminar_dispositivo" || action === "enviar_notificacion") {
+      if (!usuarioSesion) {
+        return respond({ status: "error", message: "Falta el usuario de la sesión." }, 401);
+      }
+      if (action === "registrar_dispositivo") return respond(_registrarDispositivo(ss, usuarioSesion, data));
+      if (action === "eliminar_dispositivo") return respond(_eliminarDispositivo(ss, usuarioSesion, data));
+      // Título y mensaje sin sanitizar: viajan como texto de la notificación;
+      // se sanitizan al escribirlos en la hoja.
+      return respond(_enviarNotificacion(ss, usuarioSesion, payload.data || {}));
     }
 
     // =========================================================================
@@ -1179,6 +1207,440 @@ function _motivoSinAcceso(ss, email) {
     return "La organización de la cuenta " + email + " ya no existe.";
   }
   return null;
+}
+
+// =============================================================================
+// MÓDULO NOTIFICACIONES — Firebase Cloud Messaging (HTTP v1)
+// =============================================================================
+// Hojas:
+//   dispositivos:   id | usuario_email | organizacion_id | token | plataforma | actualizado
+//   notificaciones: id | fecha | remitente_email | alcance | organizacion_ids |
+//                   usuarios | titulo | cuerpo | ruta | estado | enviados |
+//                   fallidos | detalle
+//
+// Cualquier usuario con acceso (está en "usuarios", tiene membresía y su
+// organización existe) puede enviar a: todos ("global"), una o varias
+// organizaciones ("organizaciones") o usuarios puntuales de cualquier
+// organización ("usuarios"). Solo reciben los dispositivos de usuarios que
+// siguen teniendo acceso, según la organización a la que pertenecen HOY.
+//
+// Formas de enviar:
+//   1. Desde la app (acción "enviar_notificacion").
+//   2. Desde la hoja: escribir una fila en "notificaciones" con estado
+//      PENDIENTE y correr enviarNotificacionesPendientes() (o instalar el
+//      disparador con crearTriggerNotificacionesDesdeHoja(), que envía al
+//      cambiar el estado a PENDIENTE).
+//
+// Credencial: propiedad del script FCM_SERVICE_ACCOUNT con el JSON completo
+// de una cuenta de servicio del proyecto de Firebase (rol "Firebase Cloud
+// Messaging API Admin"). No se guarda en el código ni en la hoja.
+
+const HOJA_DISPOSITIVOS = "dispositivos";
+const HOJA_NOTIFICACIONES = "notificaciones";
+const ENCABEZADO_DISPOSITIVOS = ["id", "usuario_email", "organizacion_id", "token", "plataforma", "actualizado"];
+const ENCABEZADO_NOTIFICACIONES = [
+  "id", "fecha", "remitente_email", "alcance", "organizacion_ids", "usuarios",
+  "titulo", "cuerpo", "ruta", "estado", "enviados", "fallidos", "detalle"
+];
+const COL_NOTIF = { estado: 10, enviados: 11, fallidos: 12, detalle: 13 };
+const ALCANCES_NOTIFICACION = ["global", "organizaciones", "usuarios"];
+const ESTADOS_NOTIFICACION = ["PENDIENTE", "ENVIADA", "SIN_DESTINATARIOS", "ERROR"];
+const CANAL_ANDROID_NOTIFICACIONES = "estilo_neutral_general";
+
+/** Devuelve la hoja, creándola con su encabezado si no existe. */
+function _hojaConEncabezado(ss, nombre, encabezado) {
+  let sh = ss.getSheetByName(nombre);
+  if (!sh) {
+    sh = ss.insertSheet(nombre);
+    sh.appendRow(encabezado);
+    sh.setFrozenRows(1);
+  }
+  return sh;
+}
+
+/**
+ * Crea las hojas de notificaciones (si faltan) y las prepara para usarlas a
+ * mano: listas desplegables de alcance y estado, y columnas de texto.
+ * Se puede correr desde el editor; es idempotente.
+ */
+function prepararHojasNotificaciones() {
+  const ss = getSpreadsheet();
+  const disp = _hojaConEncabezado(ss, HOJA_DISPOSITIVOS, ENCABEZADO_DISPOSITIVOS);
+  disp.getRange("A:F").setNumberFormat("@");
+  const notif = _hojaConEncabezado(ss, HOJA_NOTIFICACIONES, ENCABEZADO_NOTIFICACIONES);
+  notif.getRange("A:J").setNumberFormat("@");
+  notif.getRange("M:M").setNumberFormat("@");
+  notif.getRange("D2:D").setDataValidation(
+    SpreadsheetApp.newDataValidation().requireValueInList(ALCANCES_NOTIFICACION, true).build()
+  );
+  notif.getRange("J2:J").setDataValidation(
+    SpreadsheetApp.newDataValidation().requireValueInList(ESTADOS_NOTIFICACION, true).build()
+  );
+  notif.getRange("A1").setNote(
+    "Para enviar desde la hoja: completá remitente_email (tiene que estar en usuarios), alcance " +
+    "(global | organizaciones | usuarios), organizacion_ids (IDs o nombres separados por coma) o " +
+    "usuarios (emails separados por coma), titulo y cuerpo; poné estado = PENDIENTE. " +
+    "Dejá vacíos id, fecha, enviados, fallidos y detalle: los completa el script."
+  );
+  return { status: "success", message: "Hojas de notificaciones listas." };
+}
+
+/** Quién tiene acceso hoy y a qué organización pertenece. */
+function _mapaAcceso(ss) {
+  const tabla = function (nombre) {
+    const sh = ss.getSheetByName(nombre);
+    return sh && sh.getLastRow() >= 1 ? sh.getDataRange().getValues() : [[]];
+  };
+  const col = function (t, h) {
+    return t[0].map(function (x) { return String(x).trim().toLowerCase(); }).indexOf(h);
+  };
+  const usuarios = tabla("usuarios");
+  const membresias = tabla("usuario_organizacion");
+  const organizaciones = tabla("organizaciones");
+  const cEmail = col(usuarios, "email");
+  const cMiembro = col(membresias, "usuario_email");
+  const cOrg = col(membresias, "organizacion_id");
+  const cIdOrg = col(organizaciones, "id");
+  const cNombreOrg = col(organizaciones, "nombre");
+
+  const orgs = {};
+  organizaciones.slice(1).forEach(function (f) {
+    if (cIdOrg >= 0 && f[cIdOrg]) orgs[String(f[cIdOrg]).trim()] = cNombreOrg >= 0 ? String(f[cNombreOrg]).trim() : "";
+  });
+  const enUsuarios = {};
+  usuarios.slice(1).forEach(function (f) {
+    if (cEmail >= 0 && f[cEmail]) enUsuarios[String(f[cEmail]).trim().toLowerCase()] = true;
+  });
+  const orgDe = {};
+  membresias.slice(1).forEach(function (f) {
+    if (cMiembro < 0 || cOrg < 0) return;
+    const email = String(f[cMiembro]).trim().toLowerCase();
+    const org = String(f[cOrg]).trim();
+    if (enUsuarios[email] && orgs[org] !== undefined) orgDe[email] = org;
+  });
+  return { orgs: orgs, orgDe: orgDe };
+}
+
+/** Registra (o actualiza) el token de un dispositivo del usuario de la sesión. */
+function _registrarDispositivo(ss, usuario, data) {
+  const token = String(data.token || "").replace(/^'/, "").trim();
+  if (!token) return { status: "error", message: "Falta el token del dispositivo." };
+  const plataforma = String(data.plataforma || "").trim();
+  const org = _mapaAcceso(ss).orgDe[usuario] || "";
+  const sh = _hojaConEncabezado(ss, HOJA_DISPOSITIVOS, ENCABEZADO_DISPOSITIVOS);
+  const ahora = new Date().toISOString();
+  const fila = _findRowByColumnValue(sh, 4, token);
+  if (fila !== -1) {
+    // El mismo teléfono con otra cuenta: el token pasa al usuario actual.
+    sh.getRange(fila, 2, 1, 5).setValues([[usuario, org, token, plataforma, ahora]]);
+    return { status: "success", id: String(sh.getRange(fila, 1).getValue()) };
+  }
+  const id = _siguienteIdServidor(sh, ID_PREFIXES.dispositivos);
+  sh.appendRow([id, usuario, org, token, plataforma, ahora]);
+  return { status: "success", id: id };
+}
+
+/** Borra el token (al cerrar sesión). Solo el dueño del dispositivo. */
+function _eliminarDispositivo(ss, usuario, data) {
+  const token = String(data.token || "").replace(/^'/, "").trim();
+  const sh = ss.getSheetByName(HOJA_DISPOSITIVOS);
+  if (!sh || !token) return { status: "success", eliminados: 0 };
+  const fila = _findRowByColumnValue(sh, 4, token);
+  if (fila === -1) return { status: "success", eliminados: 0 };
+  if (String(sh.getRange(fila, 2).getValue()).trim().toLowerCase() !== usuario) {
+    return { status: "error", message: "Ese dispositivo es de otro usuario." };
+  }
+  sh.deleteRow(fila);
+  return { status: "success", eliminados: 1 };
+}
+
+/** Lista de valores: acepta array o texto separado por comas. */
+function _lista(valor) {
+  const arr = Array.isArray(valor) ? valor : String(valor || "").split(",");
+  return arr.map(function (v) { return String(v).replace(/^'/, "").trim(); }).filter(function (v) { return v; });
+}
+
+/**
+ * Valida una solicitud de envío y la normaliza. Las organizaciones se pueden
+ * indicar por ID o por nombre. Devuelve { error } o { solicitud }.
+ */
+function _normalizarSolicitud(ss, remitente, datos) {
+  const acceso = _mapaAcceso(ss);
+  if (!acceso.orgDe[remitente]) {
+    return { error: "El remitente " + remitente + " no tiene acceso: tiene que estar en usuarios y pertenecer a una organización." };
+  }
+  const titulo = String(datos.titulo || "").replace(/^'/, "").trim();
+  const cuerpo = String(datos.cuerpo || "").replace(/^'/, "").trim();
+  if (!titulo || titulo.length > 100) return { error: "El título es obligatorio (hasta 100 caracteres)." };
+  if (!cuerpo || cuerpo.length > 500) return { error: "El mensaje es obligatorio (hasta 500 caracteres)." };
+  const alcance = String(datos.alcance || "").trim().toLowerCase();
+  if (ALCANCES_NOTIFICACION.indexOf(alcance) === -1) {
+    return { error: "Alcance inválido: usá global, organizaciones o usuarios." };
+  }
+
+  let organizacionIds = [];
+  let usuarios = [];
+  if (alcance === "organizaciones") {
+    const porNombre = {};
+    Object.keys(acceso.orgs).forEach(function (id) { porNombre[acceso.orgs[id].toLowerCase()] = id; });
+    const desconocidas = [];
+    _lista(datos.organizacion_ids).forEach(function (v) {
+      const id = acceso.orgs[v] !== undefined ? v : porNombre[v.toLowerCase()];
+      if (id) { if (organizacionIds.indexOf(id) === -1) organizacionIds.push(id); } else desconocidas.push(v);
+    });
+    if (desconocidas.length) return { error: "Organizaciones inexistentes: " + desconocidas.join(", ") };
+    if (!organizacionIds.length) return { error: "Elegí al menos una organización." };
+  }
+  if (alcance === "usuarios") {
+    const desconocidos = [];
+    _lista(datos.usuarios).forEach(function (v) {
+      const email = v.toLowerCase();
+      if (acceso.orgDe[email]) { if (usuarios.indexOf(email) === -1) usuarios.push(email); } else desconocidos.push(v);
+    });
+    if (desconocidos.length) return { error: "Usuarios sin acceso o inexistentes: " + desconocidos.join(", ") };
+    if (!usuarios.length) return { error: "Elegí al menos un usuario." };
+  }
+
+  const extra = {};
+  const datosExtra = datos.datos && typeof datos.datos === "object" ? datos.datos : {};
+  Object.keys(datosExtra).forEach(function (k) { extra[k] = String(datosExtra[k]); });
+  if (datos.ruta) extra.ruta = String(datos.ruta).trim();
+
+  return {
+    acceso: acceso,
+    solicitud: {
+      remitente: remitente, alcance: alcance, organizacionIds: organizacionIds,
+      usuarios: usuarios, titulo: titulo, cuerpo: cuerpo, datos: extra
+    }
+  };
+}
+
+/** Tokens de los dispositivos destinatarios (sin repetir). */
+function _tokensDestino(ss, solicitud, acceso) {
+  const sh = ss.getSheetByName(HOJA_DISPOSITIVOS);
+  if (!sh || sh.getLastRow() < 2) return [];
+  const filas = sh.getRange(2, 1, sh.getLastRow() - 1, 4).getValues();
+  const tokens = [];
+  filas.forEach(function (f) {
+    const email = String(f[1]).trim().toLowerCase();
+    const token = String(f[3]).replace(/^'/, "").trim();
+    const org = acceso.orgDe[email]; // organización de HOY; sin acceso → no recibe
+    if (!token || !org) return;
+    const va =
+      solicitud.alcance === "global" ||
+      (solicitud.alcance === "organizaciones" && solicitud.organizacionIds.indexOf(org) !== -1) ||
+      (solicitud.alcance === "usuarios" && solicitud.usuarios.indexOf(email) !== -1);
+    if (va && tokens.indexOf(token) === -1) tokens.push(token);
+  });
+  return tokens;
+}
+
+function _base64Url(bytesOTexto) {
+  return Utilities.base64EncodeWebSafe(bytesOTexto).replace(/=+$/, "");
+}
+
+/** Token OAuth para FCM a partir de la cuenta de servicio (JWT RS256). */
+function _credencialFcm() {
+  const crudo = PropertiesService.getScriptProperties().getProperty("FCM_SERVICE_ACCOUNT");
+  if (!crudo) return { error: "FCM no está configurado: falta la propiedad del script FCM_SERVICE_ACCOUNT." };
+  let cuenta;
+  try { cuenta = JSON.parse(crudo); } catch (e) { return { error: "FCM_SERVICE_ACCOUNT no es un JSON válido." }; }
+  if (!cuenta.client_email || !cuenta.private_key || !cuenta.project_id) {
+    return { error: "FCM_SERVICE_ACCOUNT incompleto (faltan client_email, private_key o project_id)." };
+  }
+  const cache = CacheService.getScriptCache();
+  const guardado = cache.get("fcm_access_token");
+  if (guardado) return { token: guardado, proyecto: cuenta.project_id };
+
+  const ahora = Math.floor(Date.now() / 1000);
+  const cabecera = _base64Url(JSON.stringify({ alg: "RS256", typ: "JWT" }));
+  const reclamo = _base64Url(JSON.stringify({
+    iss: cuenta.client_email,
+    scope: "https://www.googleapis.com/auth/firebase.messaging",
+    aud: "https://oauth2.googleapis.com/token",
+    iat: ahora,
+    exp: ahora + 3600
+  }));
+  const firma = _base64Url(Utilities.computeRsaSha256Signature(cabecera + "." + reclamo, cuenta.private_key));
+  const res = UrlFetchApp.fetch("https://oauth2.googleapis.com/token", {
+    method: "post",
+    payload: { grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer", assertion: cabecera + "." + reclamo + "." + firma },
+    muteHttpExceptions: true
+  });
+  if (res.getResponseCode() !== 200) {
+    return { error: "Google rechazó la cuenta de servicio de FCM: " + res.getContentText().slice(0, 200) };
+  }
+  const token = JSON.parse(res.getContentText()).access_token;
+  cache.put("fcm_access_token", token, 3000); // 50 min (el token dura 60)
+  return { token: token, proyecto: cuenta.project_id };
+}
+
+/** Envía a cada token. Devuelve { enviados, fallidos, invalidos[], errores[] }. */
+function _enviarFcm(credencial, tokens, solicitud, notificacionId) {
+  const url = "https://fcm.googleapis.com/v1/projects/" + credencial.proyecto + "/messages:send";
+  const datos = Object.assign({}, solicitud.datos, { notificacion_id: notificacionId });
+  const resultado = { enviados: 0, fallidos: 0, invalidos: [], errores: [] };
+  for (let i = 0; i < tokens.length; i += 50) {
+    const lote = tokens.slice(i, i + 50);
+    const pedidos = lote.map(function (token) {
+      return {
+        url: url,
+        method: "post",
+        contentType: "application/json",
+        headers: { Authorization: "Bearer " + credencial.token },
+        muteHttpExceptions: true,
+        payload: JSON.stringify({
+          message: {
+            token: token,
+            notification: { title: solicitud.titulo, body: solicitud.cuerpo },
+            data: datos,
+            android: { priority: "HIGH", notification: { channel_id: CANAL_ANDROID_NOTIFICACIONES } },
+            apns: { payload: { aps: { sound: "default" } } }
+          }
+        })
+      };
+    });
+    UrlFetchApp.fetchAll(pedidos).forEach(function (res, j) {
+      const codigo = res.getResponseCode();
+      if (codigo === 200) { resultado.enviados++; return; }
+      resultado.fallidos++;
+      const texto = res.getContentText();
+      // Token vencido o de otra app: se borra para no reintentarlo.
+      if (codigo === 404 || /UNREGISTERED|SENDER_ID_MISMATCH|registration token is not a valid/i.test(texto)) {
+        resultado.invalidos.push(lote[j]);
+      } else if (resultado.errores.length < 3) {
+        resultado.errores.push(codigo + ": " + texto.slice(0, 150));
+      }
+    });
+  }
+  return resultado;
+}
+
+function _borrarTokens(ss, tokens) {
+  const sh = ss.getSheetByName(HOJA_DISPOSITIVOS);
+  if (!sh || !tokens.length) return;
+  for (let r = sh.getLastRow(); r >= 2; r--) {
+    if (tokens.indexOf(String(sh.getRange(r, 4).getValue()).replace(/^'/, "").trim()) !== -1) sh.deleteRow(r);
+  }
+}
+
+/**
+ * Valida, envía y deja el resultado en "notificaciones". Si [fila] viene
+ * (envío desde la hoja), actualiza esa fila; si no, agrega una.
+ */
+function _procesarNotificacion(ss, remitente, datos, fila) {
+  const sh = _hojaConEncabezado(ss, HOJA_NOTIFICACIONES, ENCABEZADO_NOTIFICACIONES);
+  const norm = _normalizarSolicitud(ss, remitente, datos);
+  let id = fila ? String(sh.getRange(fila, 1).getValue()).trim() : "";
+  if (!id) id = _siguienteIdServidor(sh, ID_PREFIXES.notificaciones);
+
+  const escribir = function (estado, enviados, fallidos, detalle) {
+    const s = norm.solicitud || {};
+    const valores = [
+      id, new Date().toISOString(), remitente,
+      s.alcance || String(datos.alcance || ""),
+      (s.organizacionIds || _lista(datos.organizacion_ids)).join(", "),
+      (s.usuarios || _lista(datos.usuarios)).join(", "),
+      _sanitizarContraFormulas(s.titulo || String(datos.titulo || "")),
+      _sanitizarContraFormulas(s.cuerpo || String(datos.cuerpo || "")),
+      (s.datos && s.datos.ruta) || "",
+      estado, enviados, fallidos, _sanitizarContraFormulas(detalle)
+    ];
+    if (fila) sh.getRange(fila, 1, 1, valores.length).setValues([valores]);
+    else sh.appendRow(valores);
+  };
+
+  if (norm.error) {
+    escribir("ERROR", 0, 0, norm.error);
+    return { status: "error", id: id, message: norm.error };
+  }
+  const tokens = _tokensDestino(ss, norm.solicitud, norm.acceso);
+  if (!tokens.length) {
+    escribir("SIN_DESTINATARIOS", 0, 0, "Ningún destinatario tiene un dispositivo registrado.");
+    return { status: "success", id: id, enviados: 0, fallidos: 0 };
+  }
+  const credencial = _credencialFcm();
+  if (credencial.error) {
+    escribir("ERROR", 0, tokens.length, credencial.error);
+    return { status: "error", id: id, message: credencial.error };
+  }
+  const r = _enviarFcm(credencial, tokens, norm.solicitud, id);
+  _borrarTokens(ss, r.invalidos);
+  const detalle = (r.invalidos.length ? r.invalidos.length + " dispositivos dados de baja (token vencido). " : "") + r.errores.join(" | ");
+  escribir(r.enviados > 0 || r.fallidos === 0 ? "ENVIADA" : "ERROR", r.enviados, r.fallidos, detalle);
+  _appendAuditLog(ss, {
+    usuario: remitente,
+    hoja: HOJA_NOTIFICACIONES,
+    celda: "A",
+    valorAnterior: "null",
+    valorNuevo: id + ": " + norm.solicitud.titulo,
+    accion: "envio_notificacion",
+    norma: "ISO/IEC 27001 §5.14",
+    observaciones: "Alcance " + norm.solicitud.alcance + ": " + r.enviados + " enviadas, " + r.fallidos + " fallidas",
+    organizacionId: norm.acceso.orgDe[remitente]
+  });
+  return { status: "success", id: id, enviados: r.enviados, fallidos: r.fallidos };
+}
+
+/** Envíos permitidos por remitente y por hora desde la app (anti-spam, ver DT-1). */
+const LIMITE_NOTIFICACIONES_POR_HORA = 30;
+
+/** Acción "enviar_notificacion" de la app. */
+function _enviarNotificacion(ss, remitente, datos) {
+  // El /exec es anónimo y el remitente lo declara la app (DT-1): se limita
+  // la cantidad de envíos por remitente para acotar el abuso.
+  const cache = CacheService.getScriptCache();
+  const clave = "notif_" + Utilities.base64EncodeWebSafe(remitente).slice(0, 200);
+  const usados = Number(cache.get(clave) || 0);
+  if (usados >= LIMITE_NOTIFICACIONES_POR_HORA) {
+    return { status: "error", message: "Límite de " + LIMITE_NOTIFICACIONES_POR_HORA + " notificaciones por hora alcanzado. Probá más tarde." };
+  }
+  cache.put(clave, String(usados + 1), 3600);
+  return _procesarNotificacion(ss, remitente, datos, null);
+}
+
+/**
+ * Envía las filas de "notificaciones" con estado PENDIENTE (cargadas a mano
+ * en la hoja). Se puede correr desde el editor o con el disparador.
+ */
+function enviarNotificacionesPendientes() {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    const ss = getSpreadsheet();
+    const sh = _hojaConEncabezado(ss, HOJA_NOTIFICACIONES, ENCABEZADO_NOTIFICACIONES);
+    const procesadas = [];
+    for (let fila = 2; fila <= sh.getLastRow(); fila++) {
+      const f = sh.getRange(fila, 1, 1, ENCABEZADO_NOTIFICACIONES.length).getValues()[0];
+      if (String(f[COL_NOTIF.estado - 1]).trim().toUpperCase() !== "PENDIENTE") continue;
+      const remitente = String(f[2]).trim().toLowerCase();
+      const r = _procesarNotificacion(ss, remitente, {
+        alcance: f[3], organizacion_ids: f[4], usuarios: f[5], titulo: f[6], cuerpo: f[7], ruta: f[8]
+      }, fila);
+      procesadas.push(r);
+    }
+    return { status: "success", procesadas: procesadas.length, resultados: procesadas };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/** Disparador al editar: si en "notificaciones" el estado pasa a PENDIENTE, envía. */
+function alEditarNotificaciones(e) {
+  if (!e || !e.range) return;
+  const sh = e.range.getSheet();
+  if (sh.getName() !== HOJA_NOTIFICACIONES) return;
+  if (e.range.getColumn() > COL_NOTIF.estado || e.range.getLastColumn() < COL_NOTIF.estado) return;
+  enviarNotificacionesPendientes();
+}
+
+/** Instala (una vez) el disparador que envía al marcar una fila PENDIENTE. */
+function crearTriggerNotificacionesDesdeHoja() {
+  ScriptApp.getProjectTriggers()
+    .filter(function (t) { return t.getHandlerFunction() === "alEditarNotificaciones"; })
+    .forEach(function (t) { ScriptApp.deleteTrigger(t); });
+  ScriptApp.newTrigger("alEditarNotificaciones").forSpreadsheet(getSpreadsheet()).onEdit().create();
+  return { status: "success", message: "Disparador de notificaciones instalado." };
 }
 
 function _findRowByColumnValue(sheet, columnIndex, value) {

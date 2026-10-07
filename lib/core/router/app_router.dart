@@ -3,6 +3,7 @@ import 'package:go_router/go_router.dart';
 import '../../features/audit/presentation/routes/audit_routes.dart';
 import '../../features/auth/application/auth_cubit.dart';
 import '../../features/auth/presentation/routes/auth_routes.dart';
+import '../../features/notificaciones/presentation/pages/enviar_notificacion_page.dart';
 import '../../features/reporting/presentation/routes/reporting_routes.dart';
 import '../../features/treasury/presentation/routes/treasury_routes.dart';
 import '../../presentation/routes/operations_routes.dart';
@@ -13,6 +14,7 @@ import 'go_router_refresh_stream.dart';
 import 'guards/auth_guard.dart';
 import 'guards/onboarding_guard.dart';
 import 'pages/not_found_page.dart';
+import 'route_names.dart';
 import 'route_paths.dart';
 
 
@@ -161,6 +163,17 @@ class AppRouter {
             // Rama 15: Tipos de Documento
             StatefulShellBranch(
               routes: [auditRoutesList[10]],
+            ),
+
+            // Rama 16: Notificaciones (FCM)
+            StatefulShellBranch(
+              routes: [
+                GoRoute(
+                  path: RoutePaths.notificaciones,
+                  name: RouteNames.notificaciones,
+                  builder: (context, state) => EnviarNotificacionPage(dataService: dataService),
+                ),
+              ],
             ),
           ],
         ),
