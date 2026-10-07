@@ -1255,13 +1255,11 @@ const COL_NOTIF = { estado: 10, enviados: 11, fallidos: 12, detalle: 13 };
 const ALCANCES_NOTIFICACION = ["global", "organizaciones", "usuarios"];
 const ESTADOS_NOTIFICACION = ["PENDIENTE", "ENVIADA", "SIN_DESTINATARIOS", "ERROR"];
 const CANAL_ANDROID_NOTIFICACIONES = "estilo_neutral_general";
-// Marca en las notificaciones de Android: dorado del monograma del logo y el
-// logo a color en formato 2:1 (assets/notificaciones/logo_notificacion_2x1.jpg,
-// generado desde assets/icons.png), en la carpeta de fotos de Drive. Android
-// muestra la imagen apaisada: con el logo cuadrado recortaba arriba y abajo.
-// La propiedad del script LOGO_NOTIFICACION_URL lo reemplaza; vacía = sin imagen.
-const COLOR_NOTIFICACION = "#BC976F";
-const LOGO_NOTIFICACION_URL = "https://lh3.googleusercontent.com/d/1jNICNjXmmthS4f7jSyE5p5g_jAktB30p";
+// En Android se envían mensajes SOLO DE DATOS (titulo, cuerpo, ruta…): la app
+// arma la notificación con la marca (monograma, color y logo apaisado) que
+// trae en el APK, sin descargar imágenes. Con `notification` + `image`, la
+// imagen la descargaba el teléfono y en Xiaomi/MIUI, con la app dormida, no
+// llegaba a tiempo. iOS (si algún día se configura) usa el bloque `apns`.
 
 /** Devuelve la hoja, creándola con su encabezado si no existe. */
 function _hojaConEncabezado(ss, nombre, encabezado) {
@@ -1502,11 +1500,12 @@ function _credencialFcm() {
 /** Envía a cada token. Devuelve { enviados, fallidos, invalidos[], errores[] }. */
 function _enviarFcm(credencial, tokens, solicitud, notificacionId) {
   const url = "https://fcm.googleapis.com/v1/projects/" + credencial.proyecto + "/messages:send";
-  const logoPropiedad = PropertiesService.getScriptProperties().getProperty("LOGO_NOTIFICACION_URL");
-  const logo = logoPropiedad !== null ? logoPropiedad : LOGO_NOTIFICACION_URL;
-  const notificacionAndroid = { channel_id: CANAL_ANDROID_NOTIFICACIONES, color: COLOR_NOTIFICACION };
-  if (logo) notificacionAndroid.image = logo;
-  const datos = Object.assign({}, solicitud.datos, { notificacion_id: notificacionId });
+  const datos = Object.assign({}, solicitud.datos, {
+    notificacion_id: notificacionId,
+    titulo: solicitud.titulo,
+    cuerpo: solicitud.cuerpo,
+    canal: CANAL_ANDROID_NOTIFICACIONES
+  });
   const resultado = { enviados: 0, fallidos: 0, invalidos: [], errores: [] };
   for (let i = 0; i < tokens.length; i += 50) {
     const lote = tokens.slice(i, i + 50);
@@ -1520,10 +1519,9 @@ function _enviarFcm(credencial, tokens, solicitud, notificacionId) {
         payload: JSON.stringify({
           message: {
             token: token,
-            notification: { title: solicitud.titulo, body: solicitud.cuerpo },
             data: datos,
-            android: { priority: "HIGH", notification: notificacionAndroid },
-            apns: { payload: { aps: { sound: "default" } } }
+            android: { priority: "HIGH" },
+            apns: { payload: { aps: { alert: { title: solicitud.titulo, body: solicitud.cuerpo }, sound: "default" } } }
           }
         })
       };

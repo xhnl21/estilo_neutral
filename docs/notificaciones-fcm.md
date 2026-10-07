@@ -43,9 +43,9 @@ Reglas que aplica el servidor (Apps Script):
                                               firma JWT (cuenta de servicio) ──▶ messages:send (v1)
                                               registra en "notificaciones"   ◀── resultado por token
                                               borra tokens vencidos
- 3. Teléfono destino ◀───────────────────────────────────────────────────────── notificación
-    · app cerrada/en segundo plano: la arma Android (texto, color, logo de Drive)
-    · app abierta: la arma la app (texto, color, logo incluido en el APK)
+ 3. Teléfono destino ◀───────────────────────────────────────────────── mensaje SOLO DE DATOS
+    · la app arma SIEMPRE la notificación (abierta, en segundo plano o
+      cerrada): monograma, color y logo incluidos en el APK, sin descargar
 
  4. Cierra sesión ── eliminar_dispositivo ──▶ borra su token
 ```
@@ -65,8 +65,9 @@ Reglas que aplica el servidor (Apps Script):
 | Apps Script | Producción @57 (`AKfycby6Jg1o…`), test @16 (`AKfycbx6GOO7…`) |
 | Hojas | `dispositivos` y `notificaciones`, creadas en la hoja de producción, con listas desplegables |
 | Disparador | `alEditarNotificaciones` (envía las filas marcadas `PENDIENTE`) |
-| Marca | Color `#BC976F`; logo apaisado `assets/notificaciones/logo_notificacion_2x1.jpg`, publicado en Drive |
-| Versión de la app | `1.0.0+2013` |
+| Marca | Monograma "EN", color `#BC976F` y logo apaisado (`assets/notificaciones/logo_notificacion_2x1.jpg`), incluidos en el APK |
+| Formato del envío | Mensajes **solo de datos** en Android (`titulo`, `cuerpo`, `ruta`…); la app arma la notificación |
+| Versión de la app | `1.0.0+2014` (las anteriores a esta no muestran los mensajes solo de datos) |
 
 El proyecto de Google Cloud del login (`gmp-demo-project-093718520`, "Maps Platform Demo Project") **no tiene Firebase**. Se mantuvo separado para no activar facturación y para que borrar un proyecto no afecte al otro.
 
@@ -194,19 +195,16 @@ Crea `dispositivos` y `notificaciones` con su encabezado, las listas desplegable
 | Elemento | Dónde está | Cómo se ve |
 |---|---|---|
 | Ícono chico | `android/app/src/main/res/drawable-*/ic_notificacion_en.png` (monograma "EN", 24 a 96 px) | Android lo pinta de **un solo color**: es la silueta del monograma, trazada sobre el logo. La campana `drawable/ic_notificacion.xml` queda como alternativa. |
-| Color | `res/values/colors.xml` → `color_notificacion` (`#BC976F`), meta-data `default_notification_color`, `COLOR_NOTIFICACION` en el script y `colorNotificacion` en `push_firebase.dart` | Ícono y nombre de la app en dorado. |
-| Logo con la app cerrada | `LOGO_NOTIFICACION_URL` en el script (Drive) | Miniatura a la derecha; al expandir, el logo apaisado. Lo descarga el teléfono al recibirla. |
-| Logo con la app abierta | `res/drawable-nodpi/logo_notificacion_2x1.jpg` e `ic_logo_notificacion.png` | Igual que la anterior, pero sin descargar nada. |
+| Color | `colorNotificacion` en `push_firebase.dart` (`#BC976F`); también `color_notificacion` en `res/values/colors.xml` | Ícono y nombre de la app en dorado. |
+| Logo | `res/drawable-nodpi/ic_logo_notificacion.png` (miniatura) y `logo_notificacion_2x1.jpg` (al expandir) | Miniatura cuadrada a la derecha; al expandir, el logo apaisado. |
+
+**Por qué la notificación la arma la app, siempre.** Al principio el script enviaba `notification` + `image`: con la app cerrada, la armaba Android y **descargaba** el logo de Drive. En Xiaomi/MIUI, con la app dormida, la descarga no llegaba en los pocos segundos que espera Firebase y la notificación salía sin logo. Desde la versión `1.0.0+2014` el script envía mensajes **solo de datos** y la app arma la notificación con las imágenes que trae el APK (`manejadorSegundoPlano` y `mostrarNotificacionLocal` en `push_firebase.dart`).
+
+Con la app **cerrada**, Android primero tiene que arrancar la app en segundo plano: en el build debug de QA tardó unos 23 s; en release es más rápido. La imagen sale siempre.
 
 `assets/notificaciones/logo_notificacion_2x1.jpg` (1024×512) se generó desde `assets/icons.png` **sin modificar el original**: el logo completo sobre la tela del fondo. Android muestra la imagen en proporción 2:1, y el logo cuadrado salía recortado.
 
-**Cambiar el logo:**
-1. Generar la versión 2:1.
-2. Subirla a la carpeta de Drive.
-3. Poner su URL `https://lh3.googleusercontent.com/d/<id>` en la propiedad del script `LOGO_NOTIFICACION_URL`, o en la constante, y desplegar.
-4. Reemplazar los `drawable-nodpi` y compilar la app.
-
-Con la propiedad vacía se envía sin imagen.
+**Cambiar el logo:** generar la versión 2:1 desde el logo, reemplazar los archivos de `android/app/src/main/res/drawable-nodpi/` y compilar la app. El script ya no envía imágenes; el logo publicado en Drive (`logo_notificacion_2x1_estilo_neutral.jpg`) quedó sin uso.
 
 **Ícono chico (monograma "EN"):** el logo es un render 3D y no se puede recortar su silueta automáticamente, así que se **trazó a mano** sobre `assets/icons.png` (sin modificarlo), con trazos gruesos para que se lea a 24 px. Lo genera `python3 tools/iconos/generar_monograma.py`:
 - `assets/notificaciones/monograma_en.png`: la fuente, de 1024 px;
@@ -323,8 +321,8 @@ El teléfono se registra al iniciar sesión y cuando FCM renueva el token, y se 
 | `SIN_DESTINATARIOS` | Ningún destinatario tiene un teléfono registrado. | Que inicien sesión con la build nueva y acepten el permiso. |
 | "dispositivos dados de baja" en `detalle` | Tokens vencidos (app desinstalada o datos borrados). | Nada: el script los limpia. |
 | "Límite de 30 notificaciones por hora" | El remitente ya envió 30 en la última hora. | Esperar, o enviar desde la hoja. |
-| Llega sin el logo (solo texto) | El teléfono no llegó a descargar la imagen a tiempo. Pasa en Xiaomi/MIUI cuando la app está dormida. | Ajustes → Apps → Estilo Neutral → **Ahorro de batería: sin restricciones** e **Inicio automático** activado. |
-| Llega sin el logo **con la app abierta** | Build anterior a `1.0.0+2012`. | Instalar la versión actual. |
+| No llega nada, pero el envío figura `ENVIADA` | La app instalada es anterior a `1.0.0+2014` y no sabe mostrar los mensajes solo de datos. | Instalar la versión actual. |
+| Llega varios segundos tarde con la app cerrada | Android tiene que arrancar la app en segundo plano para armarla (más lento en builds debug). | Normal. En Xiaomi/MIUI: Ajustes → Apps → Estilo Neutral → **Ahorro de batería: sin restricciones** e **Inicio automático** activado. |
 | `INSTALL_FAILED_VERSION_DOWNGRADE` al instalar | El teléfono tiene un `versionCode` mayor. Builds viejos con `--split-per-abi` usaban `2009`. | `--version X.Y.Z+<mayor>`. El deploy lo detecta y sugiere el número. |
 | `INSTALL_FAILED_UPDATE_INCOMPATIBLE` | La app instalada tiene otra firma (por ejemplo, debug de `flutter run`). | Instalar el build debug encima, o desinstalar y poner el release (se pierden los datos locales). |
 

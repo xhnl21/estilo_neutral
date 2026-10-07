@@ -25,12 +25,82 @@ const canalGeneral = AndroidNotificationChannel(
 /// android/app/src/main/res/values/colors.xml y que el Apps Script).
 const colorNotificacion = Color(0xFFBC976F);
 
-/// Mensajes que llegan con la app cerrada o en segundo plano: el sistema ya
-/// muestra la notificación; acá no hace falta hacer nada más. Tiene que ser
-/// una función de nivel superior (corre en otro isolate).
+/// Mensajes que llegan con la app cerrada o en segundo plano. El script
+/// envía mensajes **solo de datos** (sin `notification`), así que la
+/// notificación la arma la app con la imagen incluida en el APK: no depende
+/// de descargar nada (en Xiaomi/MIUI, con la app dormida, la descarga no
+/// llegaba a tiempo y salía sin logo). Corre en otro isolate: tiene que ser
+/// una función de nivel superior.
 @pragma('vm:entry-point')
 Future<void> manejadorSegundoPlano(RemoteMessage mensaje) async {
-  await _inicializarFirebase();
+  // Un mensaje con `notification` (builds o envíos viejos) ya lo muestra el
+  // sistema; mostrarlo acá lo duplicaría.
+  if (mensaje.notification != null || !Platform.isAndroid) return;
+  final locales = FlutterLocalNotificationsPlugin();
+  await _inicializarLocales(locales);
+  await mostrarNotificacionLocal(locales, mensajeDesde(mensaje));
+}
+
+/// Convierte un mensaje de FCM: el texto viene en `notification` (envíos
+/// viejos) o en los datos `titulo` y `cuerpo` (envíos actuales).
+MensajePush mensajeDesde(RemoteMessage m) {
+  final datos = m.data.map((k, v) => MapEntry(k, '$v'));
+  return MensajePush(
+    titulo: m.notification?.title ?? datos['titulo'],
+    cuerpo: m.notification?.body ?? datos['cuerpo'],
+    datos: datos,
+  );
+}
+
+Future<void> _inicializarLocales(
+  FlutterLocalNotificationsPlugin locales, {
+  void Function(NotificationResponse)? alTocar,
+}) async {
+  await locales.initialize(
+    settings: const InitializationSettings(
+      android: AndroidInitializationSettings('@drawable/ic_notificacion_en'),
+      // El permiso se pide después del login (PushCubit), no al arrancar.
+      iOS: DarwinInitializationSettings(
+        requestAlertPermission: false,
+        requestBadgePermission: false,
+        requestSoundPermission: false,
+      ),
+    ),
+    onDidReceiveNotificationResponse: alTocar,
+  );
+  await locales
+      .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
+      ?.createNotificationChannel(canalGeneral);
+}
+
+/// Muestra la notificación con la marca: monograma "EN" en dorado, logo
+/// cuadrado a la derecha y, al expandir, el logo apaisado (2:1). Las dos
+/// imágenes van en el APK (drawable-nodpi), no se descargan.
+Future<void> mostrarNotificacionLocal(FlutterLocalNotificationsPlugin locales, MensajePush mensaje) {
+  return locales.show(
+    id: DateTime.now().millisecondsSinceEpoch ~/ 1000 % 100000,
+    title: mensaje.titulo,
+    body: mensaje.cuerpo,
+    notificationDetails: NotificationDetails(
+      android: AndroidNotificationDetails(
+        canalGeneral.id,
+        canalGeneral.name,
+        channelDescription: canalGeneral.description,
+        importance: Importance.high,
+        priority: Priority.high,
+        color: colorNotificacion,
+        largeIcon: const DrawableResourceAndroidBitmap('ic_logo_notificacion'),
+        styleInformation: BigPictureStyleInformation(
+          const DrawableResourceAndroidBitmap('logo_notificacion_2x1'),
+          largeIcon: const DrawableResourceAndroidBitmap('ic_logo_notificacion'),
+          hideExpandedLargeIcon: true,
+          contentTitle: mensaje.titulo,
+          summaryText: mensaje.cuerpo,
+        ),
+      ),
+    ),
+    payload: mensaje.ruta,
+  );
 }
 
 /// Inicializa Firebase. Primero con la configuración nativa
@@ -71,24 +141,7 @@ class PushFirebase implements PushGateway {
 
     final locales = FlutterLocalNotificationsPlugin();
     final push = PushFirebase._(FirebaseMessaging.instance, locales);
-    await locales.initialize(
-      settings: const InitializationSettings(
-        android: AndroidInitializationSettings('@drawable/ic_notificacion_en'),
-        // El permiso se pide después del login (PushCubit), no al arrancar.
-        iOS: DarwinInitializationSettings(
-          requestAlertPermission: false,
-          requestBadgePermission: false,
-          requestSoundPermission: false,
-        ),
-      ),
-      onDidReceiveNotificationResponse: (respuesta) {
-        final ruta = respuesta.payload;
-        push._abiertosLocales.add(MensajePush(datos: {if (ruta != null && ruta.isNotEmpty) 'ruta': ruta}));
-      },
-    );
-    await locales
-        .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
-        ?.createNotificationChannel(canalGeneral);
+    await _inicializarLocales(locales, alTocar: (respuesta) => push._abiertosLocales.add(_desdeRuta(respuesta.payload)));
     // iOS: con la app abierta, la notificación la muestra el sistema.
     await FirebaseMessaging.instance.setForegroundNotificationPresentationOptions(
       alert: true,
@@ -98,11 +151,10 @@ class PushFirebase implements PushGateway {
     return push;
   }
 
-  static MensajePush _convertir(RemoteMessage m) => MensajePush(
-        titulo: m.notification?.title,
-        cuerpo: m.notification?.body,
-        datos: m.data.map((k, v) => MapEntry(k, '$v')),
-      );
+  static MensajePush _convertir(RemoteMessage m) => mensajeDesde(m);
+
+  static MensajePush _desdeRuta(String? ruta) =>
+      MensajePush(datos: {if (ruta != null && ruta.isNotEmpty) 'ruta': ruta});
 
   @override
   bool get disponible => true;
@@ -141,40 +193,20 @@ class PushFirebase implements PushGateway {
   @override
   Future<MensajePush?> mensajeInicial() async {
     final m = await _fcm.getInitialMessage();
-    return m == null ? null : _convertir(m);
+    if (m != null) return _convertir(m);
+    // La app se abrió tocando una notificación local (las que arma la app).
+    final lanzamiento = await _locales.getNotificationAppLaunchDetails();
+    if (lanzamiento?.didNotificationLaunchApp ?? false) {
+      return _desdeRuta(lanzamiento!.notificationResponse?.payload);
+    }
+    return null;
   }
 
   @override
   Future<void> mostrarLocal(MensajePush mensaje) async {
     // En iOS la muestra el sistema (setForegroundNotificationPresentationOptions).
     if (Platform.isIOS) return;
-    await _locales.show(
-      id: DateTime.now().millisecondsSinceEpoch ~/ 1000 % 100000,
-      title: mensaje.titulo,
-      body: mensaje.cuerpo,
-      notificationDetails: NotificationDetails(
-        android: AndroidNotificationDetails(
-          canalGeneral.id,
-          canalGeneral.name,
-          channelDescription: canalGeneral.description,
-          importance: Importance.high,
-          priority: Priority.high,
-          // Marca, igual que las que arma el sistema con la app cerrada:
-          // dorado del logo, miniatura cuadrada a la derecha y, al expandir,
-          // el logo apaisado (2:1) que va en el APK (no se descarga).
-          color: colorNotificacion,
-          largeIcon: const DrawableResourceAndroidBitmap('ic_logo_notificacion'),
-          styleInformation: BigPictureStyleInformation(
-            const DrawableResourceAndroidBitmap('logo_notificacion_2x1'),
-            largeIcon: const DrawableResourceAndroidBitmap('ic_logo_notificacion'),
-            hideExpandedLargeIcon: true,
-            contentTitle: mensaje.titulo,
-            summaryText: mensaje.cuerpo,
-          ),
-        ),
-      ),
-      payload: mensaje.ruta,
-    );
+    await mostrarNotificacionLocal(_locales, mensaje);
   }
 
   @override

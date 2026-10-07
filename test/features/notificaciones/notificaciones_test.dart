@@ -1,9 +1,11 @@
 import 'dart:async';
 
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:estilo_neutral/features/auth/application/auth_cubit.dart';
 import 'package:estilo_neutral/features/auth/domain/auth_state.dart';
 import 'package:estilo_neutral/features/notificaciones/notificaciones.dart';
+import 'package:estilo_neutral/features/notificaciones/infrastructure/push_firebase.dart';
 import 'package:estilo_neutral/shared/google_sheets/sheets_data_service.dart';
 import '../../test_servidor.dart';
 
@@ -48,6 +50,24 @@ void main() {
   setUp(() async => (ds, servidor) = await servicioConServidor());
 
   Map<String, dynamic> ultimo(String accion) => servidor.enviados.lastWhere((e) => e['action'] == accion);
+
+  group('mensajeDesde', () {
+    test('mensaje solo de datos (envíos actuales): título, cuerpo y ruta de los datos', () {
+      final m = mensajeDesde(const RemoteMessage(data: {'titulo': 'Hola', 'cuerpo': 'Texto', 'ruta': '/ventas'}));
+      expect(m.titulo, 'Hola');
+      expect(m.cuerpo, 'Texto');
+      expect(m.ruta, '/ventas');
+    });
+
+    test('mensaje con notification (envíos viejos): usa notification', () {
+      final m = mensajeDesde(const RemoteMessage(
+        notification: RemoteNotification(title: 'Viejo', body: 'Cuerpo'),
+        data: {'titulo': 'ignorado'},
+      ));
+      expect(m.titulo, 'Viejo');
+      expect(m.cuerpo, 'Cuerpo');
+    });
+  });
 
   group('DestinoNotificacion', () {
     test('serializa cada alcance', () {
