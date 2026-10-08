@@ -134,6 +134,7 @@ Menú → **Comunicación**.
   - **Filtrar:** tocá un tipo arriba del listado (**Todas** muestra todo).
   - **Ver:** muestra la notificación y, debajo, a quién enviarla (todos, una o varias organizaciones, o usuarios puntuales) → **Enviar notificación**. Abajo ves cuántas te quedan en el período.
   - **Editar** cambia tipo, título o mensaje; **Eliminar** la quita del listado (lo ya enviado queda registrado).
+  - **Por correo a los clientes:** en **Ver**, elegí **Correo a clientes**, después **Todos** o **Elegir** clientes → **Enviar correo**. Hace falta que la organización tenga correo (Organizaciones → Editar → **Correo**): los correos llevan su nombre y las respuestas le llegan a ese correo. Google permite unos 100 correos por día; la pantalla muestra cuántos quedan.
 - **Configuración de notificaciones:** cuántas notificaciones se pueden enviar en cada organización. Tocá la organización y elegí el período (hora, día, semana o mes), el límite **por usuario** y el límite **para toda la organización** (`0` = sin límite) → **Guardar**. Las organizaciones marcadas **Por defecto** usan 30 por hora por usuario.
 
 ## Cerrar sesión

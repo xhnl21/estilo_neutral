@@ -213,13 +213,13 @@ Lotes aplicados, registrados en la bitácora (`audit_log`):
 `tools/apps_script/generar_credencial_fcm.sh` la lee (o la que indique `FCM_CLAVE`) y genera **`credencial_fcm.js`**, con `const FCM_SERVICE_ACCOUNT_EMBEBIDA = {type, project_id, client_email, private_key, private_key_id, token_uri}`. Los dos `deploy.sh` lo ejecutan y suben el archivo (`.claspignore` lo permite). No se versiona.
 
 Orden en que el script busca la credencial:
-1. la propiedad del script `FCM_SERVICE_ACCOUNT`;
-2. `FCM_SERVICE_ACCOUNT_EMBEBIDA`.
+1. `FCM_SERVICE_ACCOUNT_EMBEBIDA` (la que sube el deploy);
+2. la propiedad del script `FCM_SERVICE_ACCOUNT` (respaldo).
 
 Si se rota la clave:
 1. crear una nueva en la cuenta de servicio;
-2. reemplazar el archivo local y la propiedad;
-3. volver a desplegar;
+2. guardarla en la raíz como `fcm-clave-estilo-neutral-<id>.json` (el nombre tiene que empezar con `fcm-clave`: así la ignora git y la encuentra el deploy) y borrar el archivo viejo;
+3. volver a desplegar y comprobar que llegue una notificación;
 4. **borrar la clave vieja** en Google Cloud. Las versiones viejas del Apps Script conservan la credencial embebida, así que la única forma de invalidarla es borrarla en Google Cloud.
 
 ---

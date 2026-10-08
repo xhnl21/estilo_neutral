@@ -143,6 +143,13 @@ fi
 echo -e "${CYAN}🚀 Paso 3/4: Compilando binarios de Release (Flavor: prod)...${NC}"
 
 if [ "$BUILD_TYPE" = "apk" ] || [ "$BUILD_TYPE" = "all" ]; then
+    # APKs de compilaciones anteriores (otros flavors, debug, versiones
+    # viejas): se borran para que en la carpeta quede solo el de esta.
+    APK_DIR="$PROJECT_ROOT/build/app/outputs/flutter-apk"
+    if [ -d "$APK_DIR" ]; then
+        echo -e "   🧹 Vaciando build/app/outputs/flutter-apk/..."
+        find "$APK_DIR" -mindepth 1 -delete
+    fi
     echo -e "   🔨 Generando APK de producción..."
     paso "build apk" flutter build apk \
         --flavor prod \

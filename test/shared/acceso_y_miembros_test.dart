@@ -7,6 +7,7 @@ import 'package:estilo_neutral/presentation/cubits/miembros_organizacion/miembro
 import 'package:estilo_neutral/shared/google_sheets/sheets_data_service.dart';
 import '../test_fake_dio.dart';
 import '../test_sheets_config.dart';
+import '../test_servidor.dart';
 
 const _org = '67774411-6aa1-4aa3-a4b2-d3fc6913b768';
 
@@ -30,8 +31,8 @@ class _Servidor implements HttpClientAdapter {
     final gviz = o.uri.toString().contains('gviz');
     if (gviz) {
       final csv = hojas[o.uri.queryParameters['sheet']];
-      return ResponseBody.fromBytes(utf8.encode(csv ?? 'error'), csv != null ? 200 : 500,
-          headers: {Headers.contentTypeHeader: ['text/csv']});
+      if (csv == null) return lecturaSinDatos();
+      return ResponseBody.fromBytes(utf8.encode(csv), 200, headers: {Headers.contentTypeHeader: ['text/csv']});
     }
     final body = respuesta ?? '{"status":"success","id":"x${(++_ids).toString().padLeft(8, '0')}"}';
     return ResponseBody.fromBytes(utf8.encode(body), 200,

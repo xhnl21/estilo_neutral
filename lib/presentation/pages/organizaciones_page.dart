@@ -235,6 +235,15 @@ class _OrganizacionesView extends StatelessWidget {
                                                         FontWeight.w600)),
                                             TextSpan(text: organizacion.id),
                                             const TextSpan(
+                                                text: '\n✉️ Correo: ',
+                                                style: TextStyle(
+                                                    fontWeight:
+                                                        FontWeight.w600)),
+                                            TextSpan(
+                                                text: organizacion.email.isEmpty
+                                                    ? 'sin correo (no puede enviar correos a clientes)'
+                                                    : organizacion.email),
+                                            const TextSpan(
                                                 text:
                                                     '\n👥 Usuarios asignados: ',
                                                 style: TextStyle(
@@ -593,6 +602,9 @@ class _OrganizacionesView extends StatelessWidget {
     final isEditing = organizacion != null;
     final nombreController =
         TextEditingController(text: organizacion?.nombre ?? '');
+    final emailController =
+        TextEditingController(text: organizacion?.email ?? '');
+    String? errorEmail;
     final tasaManualExistente = organizacion != null
         ? cubit.tasaManualOrganizacion(organizacion.id)
         : null;
@@ -643,6 +655,27 @@ class _OrganizacionesView extends StatelessWidget {
                   controller: nombreController,
                   hint: 'Ej: Estilo Neutral',
                 ),
+                const SizedBox(height: AppSpacing.md),
+                AppTextField(
+                  label: 'Correo (opcional)',
+                  controller: emailController,
+                  hint: 'Ej: ventas@estiloneutral.com',
+                  keyboardType: TextInputType.emailAddress,
+                  prefixIcon: CupertinoIcons.mail,
+                  errorText: errorEmail,
+                  onChanged: (_) {
+                    if (errorEmail != null) setModalState(() => errorEmail = null);
+                  },
+                ),
+                Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: Text(
+                    'Con correo, la organización puede enviar correos a sus clientes desde '
+                    'Notificaciones. Las respuestas de los clientes llegan a este correo.',
+                    style: AppTypography.labelSmall
+                        .copyWith(color: AppPalette.textSecondary),
+                  ),
+                ),
                 if (isEditing) ...[
                   const SizedBox(height: AppSpacing.lg),
                   MonedaSelector(
@@ -685,12 +718,21 @@ class _OrganizacionesView extends StatelessWidget {
                         onPressed: () async {
                           final nombre = nombreController.text.trim();
                           if (nombre.isEmpty) return;
+                          final email = emailController.text.trim();
+                          final error = OrganizacionesCubit.errorEmail(email);
+                          if (error != null) {
+                            setModalState(() => errorEmail = error);
+                            return;
+                          }
 
                           Navigator.pop(ctx);
 
                           if (isEditing) {
                             await cubit.updateOrganizacion(
-                              Organizacion(id: organizacion.id, nombre: nombre),
+                              Organizacion(
+                                  id: organizacion.id,
+                                  nombre: nombre,
+                                  email: email),
                             );
                             await cubit.setMonedaOrganizacion(
                                 organizacion.id, monedaBase);
@@ -707,7 +749,7 @@ class _OrganizacionesView extends StatelessWidget {
                                   organizacion.id);
                             }
                           } else {
-                            await cubit.addOrganizacion(nombre);
+                            await cubit.addOrganizacion(nombre, email: email);
                           }
                         },
                       ),

@@ -62,13 +62,14 @@ class ServidorSimulado implements HttpClientAdapter {
     if (gviz) {
       final hoja = o.uri.queryParameters['sheet'] ?? '';
       lecturas[hoja] = (lecturas[hoja] ?? 0) + 1;
+      // Sin CSV propio, la lectura "falla" con un encabezado que no es el de
+      // ninguna hoja: la app la descarta igual que un error de red (y sigue
+      // con los datos que tenía), pero sin un HTTP 500 que el interceptor de
+      // Dio registraría como error en cada lectura de cada test.
       final csv = csvPorHoja[hoja];
-      if (csv != null) {
-        return ResponseBody.fromBytes(utf8.encode(csv), 200,
-            headers: {Headers.contentTypeHeader: ['text/csv']});
-      }
-      return ResponseBody.fromBytes(utf8.encode('error'), 500,
-          headers: {Headers.contentTypeHeader: ['text/plain']});
+      return csv == null
+          ? lecturaSinDatos()
+          : ResponseBody.fromBytes(utf8.encode(csv), 200, headers: {Headers.contentTypeHeader: ['text/csv']});
     }
     final payload = o.data == null
         ? <String, dynamic>{}
@@ -106,6 +107,16 @@ class ServidorSimulado implements HttpClientAdapter {
   @override
   void close({bool force = false}) {}
 }
+
+/// Lectura gviz que "falla" sin un HTTP 500: un encabezado que no es el de
+/// ninguna hoja. La app la descarta igual que un error de red (y sigue con
+/// los datos que tenía), pero el interceptor de Dio no la registra como
+/// error en cada lectura de cada test (ruido en script/log_script.txt).
+ResponseBody lecturaSinDatos() => ResponseBody.fromBytes(
+      utf8.encode('"sin_datos_en_el_servidor_simulado"\n'),
+      200,
+      headers: {Headers.contentTypeHeader: ['text/csv']},
+    );
 
 /// Servicio inicializado (con los datos de respaldo) contra un
 /// [ServidorSimulado], en la organización de prueba y con un usuario.

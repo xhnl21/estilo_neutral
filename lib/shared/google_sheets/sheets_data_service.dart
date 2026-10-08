@@ -9,6 +9,7 @@ import '../../features/credits/domain/entities/credit_status.dart';
 import '../../features/credits/domain/value_objects/credit_amount.dart';
 import '../../features/credits/domain/value_objects/credit_id.dart';
 import '../../features/credits/infrastructure/models/client_credit_model.dart';
+import '../../features/notificaciones/domain/correo_clientes.dart';
 import '../../features/notificaciones/domain/destino_notificacion.dart';
 import '../../models/models.dart';
 import '../storage/secure_token_storage.dart';
@@ -1731,6 +1732,58 @@ class SheetsDataService extends ChangeNotifier {
     }
     _versionNotificaciones++;
     notifyListeners();
+  }
+
+  /// Clientes activos de la organización actual con un correo válido: los
+  /// que pueden recibir un correo de la organización.
+  List<Cliente> get clientesConEmail =>
+      List.unmodifiable(clientesActivos.where((c) => Organizacion.formatoEmail.hasMatch(c.email.trim())));
+
+  /// Envía un correo de la organización actual a sus clientes ([todos] o
+  /// los de [clienteIds]): asunto y mensaje de una notificación guardada. Sale
+  /// con el nombre de la organización y "Responder a" su correo. Lanza
+  /// [ArgumentError] si faltan datos y [StateError] si el servidor lo rechaza.
+  Future<ResultadoEnvioCorreo> enviarCorreoClientes({
+    required String asunto,
+    required String cuerpo,
+    bool todos = false,
+    Set<String> clienteIds = const {},
+  }) async {
+    final a = asunto.trim();
+    final c = cuerpo.trim();
+    if (a.isEmpty || a.length > PlantillaNotificacion.maxTitulo) throw ArgumentError('El asunto es obligatorio (hasta 100 caracteres).');
+    if (c.isEmpty || c.length > PlantillaNotificacion.maxCuerpo) throw ArgumentError('El mensaje es obligatorio (hasta 500 caracteres).');
+    if (!todos && clienteIds.isEmpty) throw ArgumentError('Elegí al menos un cliente.');
+    if (_currentUsuarioEmail == null) throw StateError('No hay usuario en la sesión.');
+    final r = await _accionEnServidor({
+      'action': 'enviar_correo',
+      'sheet': 'correos',
+      'data': {'asunto': a, 'cuerpo': c, 'todos': todos, if (!todos) 'cliente_ids': clienteIds.toList()},
+    });
+    _logAudit(
+      hoja: 'correos',
+      celda: 'A',
+      valorAnterior: 'null',
+      valorNuevo: '${r['id']}: $a',
+      accion: 'envio_correo_clientes',
+      norma: 'ISO/IEC 27001 §5.14',
+      observaciones: 'Correo a clientes: ${r['enviados']} enviados, ${r['fallidos']} fallidos',
+    );
+    return ResultadoEnvioCorreo(
+      id: r['id']?.toString() ?? '',
+      enviados: (r['enviados'] as num?)?.toInt() ?? 0,
+      fallidos: (r['fallidos'] as num?)?.toInt() ?? 0,
+      restantes: (r['restantes'] as num?)?.toInt(),
+    );
+  }
+
+  /// Correos que Google todavía permite enviar hoy desde el Apps Script.
+  Future<int> cupoCorreo() async {
+    if (_currentUsuarioEmail == null) throw StateError('No hay usuario en la sesión.');
+    final r = await _accionEnServidor({'action': 'uso_correo', 'sheet': 'correos'});
+    final restantes = r['restantes'];
+    if (restantes is! num) throw StateError('El servidor no informó el cupo de correos.');
+    return restantes.toInt();
   }
 
   /// Límites y uso del período actual para el usuario de la sesión (los
@@ -3769,13 +3822,22 @@ usuarioEmail: 'xhnl21@gmail.com',
   /// Crea la organización (UUID v4 generado acá: única excepción a R1).
   /// Lanza [ArgumentError] si el nombre está vacío o repetido, y
   /// [StateError] (sin dejar nada) si Sheets no la confirma.
-  Future<void> addOrganizacion(String nombre) async {
+  static String _emailOrganizacion(String email) {
+    final limpio = email.trim().toLowerCase();
+    if (limpio.isNotEmpty && !Organizacion.formatoEmail.hasMatch(limpio)) {
+      throw ArgumentError('El correo "$limpio" no es válido.');
+    }
+    return limpio;
+  }
+
+  Future<void> addOrganizacion(String nombre, {String email = ''}) async {
     final limpio = nombre.trim();
     if (limpio.isEmpty) throw ArgumentError('El nombre de la organización es obligatorio.');
+    final correo = _emailOrganizacion(email);
     if (_organizaciones.any((o) => o.nombre.trim().toLowerCase() == limpio.toLowerCase())) {
       throw ArgumentError('Ya existe una organización llamada "$limpio".');
     }
-    final nuevo = Organizacion(id: _generarOrganizacionId(), nombre: limpio);
+    final nuevo = Organizacion(id: _generarOrganizacionId(), nombre: limpio, email: correo);
     _organizaciones.add(nuevo);
     notifyListeners();
     await _crearConRollback('organizaciones', nuevo.toMap(), revertir: () => _organizaciones.remove(nuevo));
@@ -3800,14 +3862,14 @@ usuarioEmail: 'xhnl21@gmail.com',
       throw ArgumentError('Ya existe una organización llamada "$limpio".');
     }
     final old = _organizaciones[index];
-    final actualizada = Organizacion(id: old.id, nombre: limpio);
-    if (actualizada.nombre == old.nombre) return; // nada que guardar
+    final actualizada = Organizacion(id: old.id, nombre: limpio, email: _emailOrganizacion(organizacion.email));
+    if (actualizada.nombre == old.nombre && actualizada.email == old.email) return; // nada que guardar
     _organizaciones[index] = actualizada;
     _logAudit(
       hoja: 'organizaciones',
       celda: 'A${index + 2}',
-      valorAnterior: old.nombre,
-      valorNuevo: actualizada.nombre,
+      valorAnterior: '${old.nombre} <${old.email}>',
+      valorNuevo: '${actualizada.nombre} <${actualizada.email}>',
       accion: 'actualizacion_organizacion',
       norma: 'ISO/IEC 27001 §9.2',
       observaciones: 'Edición de organización vía App Móvil',

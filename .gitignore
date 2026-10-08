@@ -82,7 +82,7 @@ ios/Runner/GoogleService-Info.plist
 # Descargas de google-services.json de la consola (con sufijo) en la raíz
 /google-services*.json
 # Claves de cuentas de servicio descargadas a mano (FCM u otras): nunca se commitean
-/fcm-clave-*.json
+/fcm-clave*.json
 *-service-account*.json
 # Credencial FCM generada por deploy.sh (contiene la clave privada)
 /credencial_fcm.js

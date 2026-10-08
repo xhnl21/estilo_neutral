@@ -53,7 +53,8 @@ const ID_PREFIXES = {
   plantillas_notificacion: "pn",
   tipos_notificacion: "tn",
   bancos: "bn",
-  cuentas_bancarias: "cb"
+  cuentas_bancarias: "cb",
+  correos: "co"
 };
 
 /** Hojas que originalmente no tenían columna id (ver migrarEsquema). */
@@ -157,6 +158,13 @@ function doPost(e) {
 
     if (action === "preparar_hojas_notificaciones") {
       return respond(prepararHojasNotificaciones());
+    }
+
+    if (action === "enviar_correo" || action === "uso_correo") {
+      if (!usuarioSesion) return respond({ status: "error", message: "Falta el usuario de la sesión." }, 401);
+      // Asunto y mensaje sin sanitizar: son texto del correo, no celdas.
+      if (action === "uso_correo") return respond({ status: "success", restantes: MailApp.getRemainingDailyQuota() });
+      return respond(_enviarCorreoClientes(ss, usuarioSesion, payload.data || {}));
     }
 
     if (action === "registrar_dispositivo" || action === "eliminar_dispositivo" || action === "enviar_notificacion" ||
@@ -820,10 +828,14 @@ function _handleCreate(ss, sheet, sheetName, data, skipAudit) {
     ];
     _asegurarColumnaEstado(sheet, COL_ESTADO.usuarios);
   } else if (sheetName === "organizaciones") {
+    const errEmail = _validarEmailOrganizacion(data.email);
+    if (errEmail) throw new Error(errEmail);
     rowValues = [
       data.id,
-      data.nombre || ""
+      data.nombre || "",
+      String(data.email || "").trim().toLowerCase()
     ];
+    _asegurarEncabezado(sheet, COL_EMAIL_ORGANIZACION, "email");
   } else if (sheetName === "cuentas_bancarias") {
     const c = _normalizarCuentaBancaria(data);
     const errCuenta = _validarCuentaBancaria(ss, sheet, c, -1);
@@ -1085,6 +1097,12 @@ function _handleUpdate(ss, sheet, sheetName, id, data, skipAudit) {
     }
   } else if (sheetName === "organizaciones") {
     if (data.nombre !== undefined) sheet.getRange(rowIndex, 2).setValue(data.nombre);
+    if (data.email !== undefined) {
+      const errEmail = _validarEmailOrganizacion(data.email);
+      if (errEmail) return { status: "error", message: errEmail };
+      _asegurarEncabezado(sheet, COL_EMAIL_ORGANIZACION, "email");
+      sheet.getRange(rowIndex, COL_EMAIL_ORGANIZACION).setValue(String(data.email).trim().toLowerCase());
+    }
   } else if (sheetName === "cuentas_bancarias") {
     // Se valida la cuenta completa (fila actual + cambios): los campos
     // obligatorios dependen del tipo.
@@ -1383,6 +1401,129 @@ function _textoEstado(valor) {
 function _asegurarColumnaEstado(sheet, columna) {
   const celda = sheet.getRange(1, columna);
   if (String(celda.getValue()).trim() === "") celda.setValue("status");
+}
+
+// =============================================================================
+// MÓDULO CORREO A CLIENTES
+// =============================================================================
+// Una organización (con email en la columna C de "organizaciones") envía un
+// correo a sus clientes (columna D "email" de "clientes"), reutilizando el
+// título y el mensaje de una notificación guardada.
+//
+// Remitente: Google solo deja enviar desde la cuenta dueña del script (o un
+// alias verificado de ella). Por eso el correo sale de esa cuenta con el
+// NOMBRE de la organización y "Responder a" = el email de la organización:
+// las respuestas de los clientes le llegan a la organización.
+//
+// Cupo: el de Google para MailApp (≈100 destinatarios por día con gmail,
+// ≈1.500 con Google Workspace). Se comprueba antes de enviar.
+// Hoja "correos": un registro por envío.
+const COL_EMAIL_ORGANIZACION = 3;
+const HOJA_CORREOS = "correos";
+const ENCABEZADO_CORREOS = [
+  "id", "fecha", "remitente_email", "organizacion_id", "asunto", "cuerpo",
+  "destinatarios", "enviados", "fallidos", "estado", "detalle"
+];
+const FORMATO_EMAIL = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
+const MAX_ASUNTO_CORREO = 100;
+const MAX_CUERPO_CORREO = 500;
+
+function _validarEmailOrganizacion(valor) {
+  const email = String(valor === undefined || valor === null ? "" : valor).replace(/^'/, "").trim();
+  if (email && !FORMATO_EMAIL.test(email)) return "El correo de la organización no es válido: " + email;
+  return null;
+}
+
+/** Escribe el encabezado [nombre] en la columna [columna] si está vacío. */
+function _asegurarEncabezado(sheet, columna, nombre) {
+  const celda = sheet.getRange(1, columna);
+  if (String(celda.getValue()).trim() === "") celda.setValue(nombre);
+}
+
+/** Corre esta función UNA VEZ desde el editor para dar el permiso de enviar correos. */
+function autorizarCorreo() {
+  return "Permiso de correo concedido. Cupo de hoy: " + MailApp.getRemainingDailyQuota() + " destinatarios.";
+}
+
+function _escaparHtml(texto) {
+  return String(texto).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+
+/** Acción "enviar_correo": correo de la organización del remitente a sus clientes. */
+function _enviarCorreoClientes(ss, remitente, datos) {
+  const acceso = _mapaAcceso(ss);
+  const org = acceso.orgDe[remitente];
+  if (!org) return { status: "error", message: "El remitente " + remitente + " no tiene acceso." };
+
+  // Organización: nombre y email.
+  const orgs = ss.getSheetByName("organizaciones").getDataRange().getValues();
+  const filaOrg = orgs.slice(1).filter(function (f) { return String(f[0]).trim() === org; })[0];
+  const nombreOrg = filaOrg ? String(filaOrg[1]).trim() : "";
+  const emailOrg = filaOrg ? String(filaOrg[COL_EMAIL_ORGANIZACION - 1] || "").trim().toLowerCase() : "";
+  if (!FORMATO_EMAIL.test(emailOrg)) {
+    return { status: "error", code: "organizacion_sin_correo", message: "La organización " + (nombreOrg || org) + " no tiene correo. Agregalo en Administración → Organizaciones." };
+  }
+
+  const asunto = String(datos.asunto || "").trim();
+  const cuerpo = String(datos.cuerpo || "").trim();
+  if (!asunto || asunto.length > MAX_ASUNTO_CORREO) return { status: "error", message: "El asunto es obligatorio (hasta " + MAX_ASUNTO_CORREO + " caracteres)." };
+  if (!cuerpo || cuerpo.length > MAX_CUERPO_CORREO) return { status: "error", message: "El mensaje es obligatorio (hasta " + MAX_CUERPO_CORREO + " caracteres)." };
+
+  // Destinatarios: clientes activos de la organización con email válido.
+  const clientes = ss.getSheetByName("clientes");
+  const elegidos = datos.todos === true ? null : (datos.cliente_ids || []).map(function (x) { return String(x).trim(); });
+  if (elegidos && !elegidos.length) return { status: "error", message: "Elegí al menos un cliente." };
+  const destinos = [];
+  if (clientes && clientes.getLastRow() >= 2) {
+    clientes.getDataRange().getValues().slice(1).forEach(function (f) {
+      const id = String(f[0]).trim();
+      const email = String(f[3] || "").replace(/^'/, "").trim().toLowerCase();
+      if (String(f[6]).trim() !== org || !_estadoActivo(f[COL_ESTADO.clientes - 1])) return;
+      if (!FORMATO_EMAIL.test(email) || (elegidos && elegidos.indexOf(id) === -1)) return;
+      if (!destinos.some(function (d) { return d.email === email; })) destinos.push({ id: id, nombre: String(f[1]).trim(), email: email });
+    });
+  }
+  if (!destinos.length) return { status: "error", message: "Ninguno de los clientes elegidos tiene un correo válido." };
+
+  const cupo = MailApp.getRemainingDailyQuota();
+  if (cupo < destinos.length) {
+    return { status: "error", code: "cupo_correo", message: "Google permite enviar " + cupo + " correo" + (cupo === 1 ? "" : "s") + " más hoy y elegiste " + destinos.length + ". Elegí menos clientes o probá mañana." };
+  }
+
+  const pie = "\n\n—\n" + nombreOrg + "\nPara responder, escribí a " + emailOrg + ".";
+  const html = "<div style=\"font-family:Arial,sans-serif;font-size:15px;color:#0A1F33\">" +
+    "<p>" + _escaparHtml(cuerpo).replace(/\n/g, "<br>") + "</p>" +
+    "<hr style=\"border:none;border-top:1px solid #D6E2F0\">" +
+    "<p style=\"font-size:13px;color:#4A5A6B\"><b>" + _escaparHtml(nombreOrg) + "</b><br>Para responder, escribí a " +
+    "<a href=\"mailto:" + _escaparHtml(emailOrg) + "\">" + _escaparHtml(emailOrg) + "</a>.</p></div>";
+  let enviados = 0;
+  const errores = [];
+  destinos.forEach(function (d) {
+    try {
+      // Uno por cliente: nadie ve los correos de los demás.
+      MailApp.sendEmail({ to: d.email, subject: asunto, body: cuerpo + pie, htmlBody: html, name: nombreOrg, replyTo: emailOrg });
+      enviados++;
+    } catch (e) {
+      if (errores.length < 3) errores.push(d.id + ": " + String(e).slice(0, 120));
+    }
+  });
+  const fallidos = destinos.length - enviados;
+
+  const sh = _hojaConEncabezado(ss, HOJA_CORREOS, ENCABEZADO_CORREOS);
+  const id = _siguienteIdServidor(sh, ID_PREFIXES.correos);
+  sh.appendRow([
+    id, new Date().toISOString(), remitente, org,
+    _sanitizarContraFormulas(asunto), _sanitizarContraFormulas(cuerpo),
+    destinos.map(function (d) { return d.id; }).join(", "),
+    enviados, fallidos, enviados > 0 ? "ENVIADO" : "ERROR", _sanitizarContraFormulas(errores.join(" | "))
+  ]);
+  _appendAuditLog(ss, {
+    usuario: remitente, hoja: HOJA_CORREOS, celda: "A", valorAnterior: "null", valorNuevo: id + ": " + asunto,
+    accion: "envio_correo_clientes", norma: "ISO/IEC 27001 §5.14",
+    observaciones: enviados + " enviados, " + fallidos + " fallidos", organizacionId: org
+  });
+  if (!enviados) return { status: "error", id: id, message: "No se pudo enviar ningún correo. " + errores.join(" | ") };
+  return { status: "success", id: id, enviados: enviados, fallidos: fallidos, restantes: MailApp.getRemainingDailyQuota() };
 }
 
 // =============================================================================
@@ -1787,23 +1928,26 @@ function _base64Url(bytesOTexto) {
 
 /** Token OAuth para FCM a partir de la cuenta de servicio (JWT RS256). */
 function _credencialFcm() {
-  // 1) Propiedad del script FCM_SERVICE_ACCOUNT (si se cargó a mano).
-  // 2) Si no, la credencial que embebe deploy.sh en credencial_fcm.js, un
-  //    archivo generado desde la clave local que no se versiona.
+  // 1) La credencial que embebe deploy.sh en credencial_fcm.js (generada
+  //    desde la clave local, que no se versiona). Va primero: así, rotar la
+  //    clave es reemplazar el archivo local y desplegar.
+  // 2) Si no hay, la propiedad del script FCM_SERVICE_ACCOUNT (cargada a mano).
   const crudo = PropertiesService.getScriptProperties().getProperty("FCM_SERVICE_ACCOUNT");
   let cuenta;
-  if (crudo) {
-    try { cuenta = JSON.parse(crudo); } catch (e) { return { error: "FCM_SERVICE_ACCOUNT no es un JSON válido." }; }
-  } else if (typeof FCM_SERVICE_ACCOUNT_EMBEBIDA !== "undefined" && FCM_SERVICE_ACCOUNT_EMBEBIDA) {
+  if (typeof FCM_SERVICE_ACCOUNT_EMBEBIDA !== "undefined" && FCM_SERVICE_ACCOUNT_EMBEBIDA) {
     cuenta = FCM_SERVICE_ACCOUNT_EMBEBIDA;
+  } else if (crudo) {
+    try { cuenta = JSON.parse(crudo); } catch (e) { return { error: "FCM_SERVICE_ACCOUNT no es un JSON válido." }; }
   } else {
     return { error: "FCM no está configurado: falta la propiedad del script FCM_SERVICE_ACCOUNT (o desplegar con la clave local, ver deploy.sh)." };
   }
   if (!cuenta.client_email || !cuenta.private_key || !cuenta.project_id) {
     return { error: "FCM_SERVICE_ACCOUNT incompleto (faltan client_email, private_key o project_id)." };
   }
+  // El token se guarda por clave: al rotarla no se reutiliza el de la vieja.
   const cache = CacheService.getScriptCache();
-  const guardado = cache.get("fcm_access_token");
+  const claveCache = "fcm_access_token_" + String(cuenta.private_key_id || cuenta.client_email).slice(0, 40);
+  const guardado = cache.get(claveCache);
   if (guardado) return { token: guardado, proyecto: cuenta.project_id };
 
   const ahora = Math.floor(Date.now() / 1000);
@@ -1825,7 +1969,7 @@ function _credencialFcm() {
     return { error: "Google rechazó la cuenta de servicio de FCM: " + res.getContentText().slice(0, 200) };
   }
   const token = JSON.parse(res.getContentText()).access_token;
-  cache.put("fcm_access_token", token, 3000); // 50 min (el token dura 60)
+  cache.put(claveCache, token, 3000); // 50 min (el token dura 60)
   return { token: token, proyecto: cuenta.project_id };
 }
 

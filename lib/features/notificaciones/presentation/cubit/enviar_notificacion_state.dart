@@ -4,6 +4,7 @@ import '../../../../models/config_notificaciones.dart';
 import '../../../../models/organizacion.dart';
 import '../../../../models/plantilla_notificacion.dart';
 import '../../../../models/usuario.dart';
+import '../../domain/correo_clientes.dart';
 import '../../domain/destino_notificacion.dart';
 
 enum EnviarNotificacionStatus { editando, enviando, enviada, error }
@@ -39,6 +40,9 @@ class EnviarNotificacionState extends Equatable {
   final PlantillaNotificacion? plantilla;
   final String nombreTipo;
 
+  /// Notificación al teléfono de los usuarios, o correo a los clientes.
+  final CanalEnvio canal;
+
   const EnviarNotificacionState({
     this.status = EnviarNotificacionStatus.editando,
     this.alcance = AlcanceNotificacion.organizaciones,
@@ -52,6 +56,7 @@ class EnviarNotificacionState extends Equatable {
     this.avisoCupo,
     this.plantilla,
     this.nombreTipo = '',
+    this.canal = CanalEnvio.notificacion,
   });
 
   bool get enviando => status == EnviarNotificacionStatus.enviando;
@@ -79,6 +84,7 @@ class EnviarNotificacionState extends Equatable {
     PlantillaNotificacion? plantilla,
     bool sinPlantilla = false,
     String? nombreTipo,
+    CanalEnvio? canal,
   }) {
     return EnviarNotificacionState(
       status: status ?? this.status,
@@ -93,6 +99,7 @@ class EnviarNotificacionState extends Equatable {
       avisoCupo: avisoCupo,
       plantilla: sinPlantilla ? null : (plantilla ?? this.plantilla),
       nombreTipo: nombreTipo ?? this.nombreTipo,
+      canal: canal ?? this.canal,
     );
   }
 
@@ -110,5 +117,6 @@ class EnviarNotificacionState extends Equatable {
         avisoCupo,
         plantilla,
         nombreTipo,
+        canal,
       ];
 }

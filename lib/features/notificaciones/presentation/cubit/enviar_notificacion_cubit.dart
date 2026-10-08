@@ -6,6 +6,7 @@ import '../../../../core/utils/logger.dart';
 
 import '../../../../models/usuario.dart';
 import '../../../../shared/google_sheets/sheets_data_service.dart';
+import '../../domain/correo_clientes.dart';
 import '../../domain/destino_notificacion.dart';
 import 'enviar_notificacion_state.dart';
 
@@ -92,6 +93,8 @@ class EnviarNotificacionCubit extends Cubit<EnviarNotificacionState> {
   }
 
   Map<CampoNotificacion, String> _sinError(CampoNotificacion campo) => Map.of(state.errores)..remove(campo);
+
+  void cambiarCanal(CanalEnvio canal) => emit(state.copyWith(canal: canal, errores: state.errores));
 
   void cambiarAlcance(AlcanceNotificacion alcance) {
     emit(state.copyWith(alcance: alcance, errores: _sinError(CampoNotificacion.destino)));

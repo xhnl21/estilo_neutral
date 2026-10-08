@@ -165,6 +165,11 @@ const tokensDe = (e) => e.map((m) => m.token).sort().join(',');
   const otro = vm.runInContext(`_enviarNotificacion(getSpreadsheet(), "bea@x.com", {alcance:"usuarios", usuarios:["ana@x.com"], titulo:"T", cuerpo:"C"})`, ctx);
   check(otro.status === 'success', 'límite: es por remitente');
 }
+{ // la credencial del deploy tiene prioridad sobre la propiedad (rotar = reemplazar el archivo y desplegar)
+  const { ctx } = crearContexto({ FCM_SERVICE_ACCOUNT: '{"clave":"vieja-rota' }, { client_email: 'sa@p.iam', private_key: 'k', project_id: 'proyecto', private_key_id: 'nueva' });
+  const r = vm.runInContext(`_enviarNotificacion(getSpreadsheet(), "ana@x.com", {alcance:"usuarios", usuarios:["bea@x.com"], titulo:"T", cuerpo:"C"})`, ctx);
+  check(r.status === 'success' && r.enviados === 1, 'credencial: la embebida gana sobre una propiedad vieja');
+}
 { // credencial embebida por deploy.sh (sin propiedad del script)
   const { ctx } = crearContexto({}, { client_email: 'sa@p.iam', private_key: 'k', project_id: 'proyecto' });
   const r = vm.runInContext(`_enviarNotificacion(getSpreadsheet(), "ana@x.com", {alcance:"usuarios", usuarios:["bea@x.com"], titulo:"T", cuerpo:"C"})`, ctx);

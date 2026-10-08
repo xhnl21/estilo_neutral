@@ -7,6 +7,7 @@ import 'package:estilo_neutral/features/reporting/presentation/cubit/reporting_c
 import 'package:estilo_neutral/models/resumen_diario.dart';
 import 'package:estilo_neutral/shared/google_sheets/sheets_data_service.dart';
 import '../test_sheets_config.dart';
+import '../test_servidor.dart';
 
 /// gviz falla (datos de respaldo); el Apps Script responde [respuesta] y se
 /// guarda cada payload enviado.
@@ -28,9 +29,10 @@ class _Servidor implements HttpClientAdapter {
               ? '{"status":"success","id":"rd${(++_ultimoId).toString().padLeft(8, '0')}"}'
               : '{"status":"success"}');
     }
+    if (gviz) return lecturaSinDatos();
     return ResponseBody.fromBytes(
       utf8.encode(body),
-      gviz ? 500 : 200,
+      200,
       headers: {Headers.contentTypeHeader: ['application/json']},
     );
   }

@@ -10,15 +10,17 @@ import 'package:estilo_neutral/presentation/cubits/abono/abono_state.dart';
 import 'package:estilo_neutral/presentation/pages/ventas_page.dart';
 import 'package:estilo_neutral/shared/google_sheets/sheets_data_service.dart';
 import '../test_sheets_config.dart';
+import '../test_servidor.dart';
 
 /// Lecturas gviz fallan (datos de respaldo); el Apps Script responde éxito.
 class _Servidor implements HttpClientAdapter {
   @override
   Future<ResponseBody> fetch(RequestOptions o, Stream<Uint8List>? _, Future<void>? __) async {
     final gviz = o.uri.toString().contains('gviz');
+    if (gviz) return lecturaSinDatos();
     return ResponseBody.fromBytes(
-      utf8.encode(gviz ? 'error' : '{"status":"success","transactionId":"tx"}'),
-      gviz ? 500 : 200,
+      utf8.encode('{"status":"success","transactionId":"tx"}'),
+      200,
       headers: {Headers.contentTypeHeader: ['application/json']},
     );
   }

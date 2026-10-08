@@ -79,10 +79,16 @@ class OrganizacionesCubit extends Cubit<OrganizacionesState> {
     }
   }
 
-  Future<bool> addOrganizacion(String nombre) async {
+  /// Error del correo de una organización (vacío está permitido), o `null`.
+  static String? errorEmail(String email) {
+    final e = email.trim();
+    return e.isEmpty || Organizacion.formatoEmail.hasMatch(e) ? null : 'Correo no válido (ej: ventas@tienda.com).';
+  }
+
+  Future<bool> addOrganizacion(String nombre, {String email = ''}) async {
     emit(state.copyWith(status: OrganizacionesStatus.loading));
     try {
-      await _dataService.addOrganizacion(nombre);
+      await _dataService.addOrganizacion(nombre, email: email);
       if (!isClosed) {
         emit(state.copyWith(
           status: OrganizacionesStatus.success,

@@ -1,7 +1,9 @@
+export 'domain/correo_clientes.dart';
 export 'domain/destino_notificacion.dart';
 export 'infrastructure/push_gateway.dart';
 export 'presentation/cubit/config_notificaciones_cubit.dart';
 export 'presentation/cubit/config_notificaciones_state.dart';
+export 'presentation/cubit/enviar_correo_cubit.dart';
 export 'presentation/cubit/enviar_notificacion_cubit.dart';
 export 'presentation/cubit/enviar_notificacion_state.dart';
 export 'presentation/cubit/plantilla_form_cubit.dart';

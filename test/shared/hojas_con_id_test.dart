@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:estilo_neutral/models/models.dart';
 import 'package:estilo_neutral/shared/google_sheets/sheets_data_service.dart';
 import '../test_sheets_config.dart';
+import '../test_servidor.dart';
 
 const _org = '67774411-6aa1-4aa3-a4b2-d3fc6913b768';
 
@@ -22,8 +23,9 @@ class _Servidor implements HttpClientAdapter {
     if (!gviz && o.data != null) {
       enviados.add(Map<String, dynamic>.from(o.data is String ? jsonDecode(o.data as String) as Map : o.data as Map));
     }
-    final body = gviz ? 'error' : (respuesta ?? '{"status":"success","id":"x${(++_ids).toString().padLeft(8, '0')}"}');
-    return ResponseBody.fromBytes(utf8.encode(body), gviz ? 500 : 200,
+    if (gviz) return lecturaSinDatos();
+    final body = respuesta ?? '{"status":"success","id":"x${(++_ids).toString().padLeft(8, '0')}"}';
+    return ResponseBody.fromBytes(utf8.encode(body), 200,
         headers: {Headers.contentTypeHeader: ['application/json']});
   }
 

@@ -8,7 +8,10 @@ import '../../../../core/router/route_paths.dart';
 import '../../../../models/config_notificaciones.dart';
 import '../../../../shared/google_sheets/sheets_data_service.dart';
 import '../../domain/destino_notificacion.dart';
+import '../../domain/correo_clientes.dart';
+import '../cubit/enviar_correo_cubit.dart';
 import '../cubit/enviar_notificacion_cubit.dart';
+import 'seccion_correo_clientes.dart';
 import '../cubit/enviar_notificacion_state.dart';
 
 /// Vista "Ver" de una notificación guardada: su tipo, título y mensaje y,
@@ -22,8 +25,12 @@ class EnviarNotificacionPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return BlocProvider(
-      create: (_) => EnviarNotificacionCubit(dataService: dataService, plantillaId: plantillaId),
+    return MultiBlocProvider(
+      providers: [
+        BlocProvider(create: (_) => EnviarNotificacionCubit(dataService: dataService, plantillaId: plantillaId)),
+        // Se crea recién al elegir "Correo" (consulta el cupo de Google).
+        BlocProvider(create: (_) => EnviarCorreoCubit(dataService: dataService, plantillaId: plantillaId)),
+      ],
       child: const _EnviarNotificacionView(),
     );
   }
@@ -116,62 +123,90 @@ class _EnviarNotificacionView extends StatelessWidget {
             ),
           ),
           const SizedBox(height: AppSpacing.lg),
-          Text('Destinatarios', style: AppTypography.titleLarge.copyWith(fontSize: 16)),
+          Text('Enviar por', style: AppTypography.titleLarge.copyWith(fontSize: 16)),
           const SizedBox(height: AppSpacing.sm),
-          SegmentedButton<AlcanceNotificacion>(
+          SegmentedButton<CanalEnvio>(
             segments: const [
               ButtonSegment(
-                value: AlcanceNotificacion.global,
-                label: Text('Todos'),
-                icon: Icon(CupertinoIcons.globe),
+                value: CanalEnvio.notificacion,
+                label: Text('Notificación'),
+                icon: Icon(CupertinoIcons.bell_fill),
               ),
               ButtonSegment(
-                value: AlcanceNotificacion.organizaciones,
-                label: Text('Organizaciones'),
-                icon: Icon(CupertinoIcons.building_2_fill),
-              ),
-              ButtonSegment(
-                value: AlcanceNotificacion.usuarios,
-                label: Text('Usuarios'),
-                icon: Icon(CupertinoIcons.person_2),
+                value: CanalEnvio.correo,
+                label: Text('Correo a clientes'),
+                icon: Icon(CupertinoIcons.mail_solid),
               ),
             ],
-            selected: {state.alcance},
-            onSelectionChanged: ocupado ? null : (s) => cubit.cambiarAlcance(s.first),
+            selected: {state.canal},
+            onSelectionChanged: ocupado ? null : (s) => cubit.cambiarCanal(s.first),
           ),
-          if (state.errores[CampoNotificacion.destino] case final error?)
-            Padding(
-              padding: const EdgeInsets.only(top: AppSpacing.xs),
-              child: Semantics(
-                liveRegion: true,
-                child: Text(error, style: AppTypography.bodyMedium.copyWith(color: AppPalette.error)),
-              ),
-            ),
-          const SizedBox(height: AppSpacing.sm),
-          ..._destinatarios(cubit, state, ocupado),
           const SizedBox(height: AppSpacing.lg),
-          if (_textoCupo(state.uso) case final texto?) ...[
-            Semantics(
-              liveRegion: true,
-              child: Text(
-                texto,
-                style: AppTypography.bodyMedium.copyWith(
-                  color: state.sinCupo ? AppPalette.error : AppPalette.textSecondary,
-                ),
-              ),
-            ),
-            const SizedBox(height: AppSpacing.sm),
-          ],
-          AppButton(
-            label: 'Enviar notificación',
-            icon: CupertinoIcons.paperplane_fill,
-            isLoading: ocupado,
-            isFullWidth: true,
-            onPressed: ocupado || state.sinCupo ? null : cubit.enviarPlantilla,
-          ),
+          if (state.canal == CanalEnvio.correo)
+            const SeccionCorreoClientes()
+          else
+            ..._seccionNotificacion(cubit, state, ocupado),
         ],
       ),
     );
+  }
+
+  List<Widget> _seccionNotificacion(EnviarNotificacionCubit cubit, EnviarNotificacionState state, bool ocupado) {
+    return [
+      Text('Destinatarios', style: AppTypography.titleLarge.copyWith(fontSize: 16)),
+      const SizedBox(height: AppSpacing.sm),
+      SegmentedButton<AlcanceNotificacion>(
+        segments: const [
+          ButtonSegment(
+            value: AlcanceNotificacion.global,
+            label: Text('Todos'),
+            icon: Icon(CupertinoIcons.globe),
+          ),
+          ButtonSegment(
+            value: AlcanceNotificacion.organizaciones,
+            label: Text('Organizaciones'),
+            icon: Icon(CupertinoIcons.building_2_fill),
+          ),
+          ButtonSegment(
+            value: AlcanceNotificacion.usuarios,
+            label: Text('Usuarios'),
+            icon: Icon(CupertinoIcons.person_2),
+          ),
+        ],
+        selected: {state.alcance},
+        onSelectionChanged: ocupado ? null : (s) => cubit.cambiarAlcance(s.first),
+      ),
+      if (state.errores[CampoNotificacion.destino] case final error?)
+        Padding(
+          padding: const EdgeInsets.only(top: AppSpacing.xs),
+          child: Semantics(
+            liveRegion: true,
+            child: Text(error, style: AppTypography.bodyMedium.copyWith(color: AppPalette.error)),
+          ),
+        ),
+      const SizedBox(height: AppSpacing.sm),
+      ..._destinatarios(cubit, state, ocupado),
+      const SizedBox(height: AppSpacing.lg),
+      if (_textoCupo(state.uso) case final texto?) ...[
+        Semantics(
+          liveRegion: true,
+          child: Text(
+            texto,
+            style: AppTypography.bodyMedium.copyWith(
+              color: state.sinCupo ? AppPalette.error : AppPalette.textSecondary,
+            ),
+          ),
+        ),
+        const SizedBox(height: AppSpacing.sm),
+      ],
+      AppButton(
+        label: 'Enviar notificación',
+        icon: CupertinoIcons.paperplane_fill,
+        isLoading: ocupado,
+        isFullWidth: true,
+        onPressed: ocupado || state.sinCupo ? null : cubit.enviarPlantilla,
+      ),
+    ];
   }
 
   /// "Te quedan 5 notificaciones hoy." / "No te quedan… Se renueva el …".

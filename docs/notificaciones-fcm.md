@@ -104,8 +104,8 @@ Se configuran en la app, en **Comunicación → Configuración de notificaciones
 | Configuración Android | `android/app/google-services.json` (una sola, con las tres apps; fuera de git) |
 | API | Firebase Cloud Messaging API (v1), habilitada |
 | Cuenta de servicio | `fcm-sender@estilo-neutral.iam.gserviceaccount.com`, rol *Administrador de la API de Firebase Cloud Messaging* |
-| Credencial en el script | Propiedad `FCM_SERVICE_ACCOUNT` y, como respaldo, `credencial_fcm.js` que genera el deploy |
-| Apps Script | Producción @64 (`AKfycby6Jg1o…`), test @23 (`AKfycbx6GOO7…`) |
+| Credencial en el script | `credencial_fcm.js` que genera el deploy desde `fcm-clave-*.json` (clave `8ff27b…`, rotada el 2026-10-08); la propiedad `FCM_SERVICE_ACCOUNT` queda como respaldo |
+| Apps Script | Producción @65 (`AKfycby6Jg1o…`), test @23 (`AKfycbx6GOO7…`) |
 | Hojas | `dispositivos` y `notificaciones`, creadas en la hoja de producción, con listas desplegables |
 | Disparador | `alEditarNotificaciones` (envía las filas marcadas `PENDIENTE`) |
 | Marca | Monograma "EN", color `#BC976F` y logo apaisado (`assets/notificaciones/logo_notificacion_2x1.jpg`), incluidos en el APK |
@@ -217,8 +217,10 @@ Abrir <https://console.cloud.google.com/apis/library/fcm.googleapis.com?project=
 
 Hay dos formas, y alcanza con una. El script usa la primera que encuentra:
 
-1. **Propiedad del script, recomendada:** en el editor de producción → **⚙ Configuración del proyecto → Propiedades del script → Agregar propiedad**. Nombre `FCM_SERVICE_ACCOUNT`, valor: el JSON completo. Repetir en el script de test.
-2. **Embebida por el deploy:** `tools/apps_script/generar_credencial_fcm.sh` toma `fcm-clave-*.json` (o la ruta en `FCM_CLAVE`) y genera `credencial_fcm.js`, que los `deploy.sh` suben junto al script. El archivo generado no se versiona.
+1. **Embebida por el deploy, recomendada:** `tools/apps_script/generar_credencial_fcm.sh` toma `fcm-clave-*.json` de la raíz (o la ruta en `FCM_CLAVE`) y genera `credencial_fcm.js`, que los `deploy.sh` suben junto al script. El archivo generado no se versiona. Rotar la clave es reemplazar el archivo local y desplegar.
+2. **Propiedad del script (respaldo):** en el editor → **⚙ Configuración del proyecto → Propiedades del script → Agregar propiedad**. Nombre `FCM_SERVICE_ACCOUNT`, valor: el JSON completo. Solo se usa si el deploy no embebió ninguna clave.
+
+El token de acceso que se obtiene con la clave se guarda 50 minutos **por ID de clave**: al rotarla, el siguiente envío pide un token nuevo.
 
 No hace falta volver a autorizar el script: el envío usa permisos que ya tenía (`script.external_request`).
 
@@ -422,7 +424,7 @@ node tools/apps_script/tests/notificaciones.test.js # tests del script, sin Goog
 - **Remitente no autenticado (DT-1).** El `/exec` acepta pedidos anónimos y el remitente es el email que declara la app. Alguien que conozca la URL y el email de un usuario podría enviar notificaciones a todos. Lo acotan los límites de envío de cada organización (§1.3) y el registro de cada envío; como cualquiera puede cambiar esos límites, no reemplazan a la autenticación. La solución completa es la de DT-1 (`docs/deuda-tecnica.md`): verificar un token de Google en el script.
 - **Sin roles.** Cualquier usuario puede notificar a cualquier organización, y así se pidió. Si se agregan roles, conviene restringir el alcance `global`.
 - **Contenido.** Pasa por Google y aparece en la pantalla bloqueada: no incluir montos, cédulas ni datos de clientes.
-- **Credencial.** `fcm-sender` solo puede enviar mensajes. Para rotar la clave: crear una nueva, reemplazar el archivo local y la propiedad, desplegar y **borrar la vieja** en Google Cloud. Las versiones anteriores del script conservan la credencial embebida, así que la única forma de invalidarla es borrarla en Google Cloud.
+- **Credencial.** `fcm-sender` solo puede enviar mensajes. Para rotar la clave: crear una nueva, reemplazar el archivo local `fcm-clave-*.json` (borrar el viejo), desplegar, comprobar que llegue una notificación y **borrar la vieja** en Google Cloud. **Nunca** mostrar `credencial_fcm.gs` en capturas ni pegar la clave en chats: si pasa, rotarla. Las versiones anteriores del script conservan la credencial embebida, así que la única forma de invalidarla es borrarla en Google Cloud.
 - **Costo:** cero. Firebase en Spark sin facturación, FCM gratis, Apps Script y Drive dentro de la cuota gratuita. Lo único pago sería iOS (USD 99 por año).
 - **Volumen.** La API v1 envía de a un dispositivo por pedido (el script agrupa de a 50). Alcanza para cientos de dispositivos; para miles, convendría usar topics.
 
