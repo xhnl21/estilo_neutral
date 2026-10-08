@@ -162,6 +162,7 @@ if [[ "$TESTS" == true ]]; then
   ejecutar flutter test
   ejecutar node tools/apps_script/tests/notificaciones.test.js
   ejecutar node tools/apps_script/tests/acceso.test.js
+  ejecutar node tools/apps_script/tests/datos_bancarios.test.js
   ok "Tests en verde."
 else
   aviso "Tests omitidos (--sin-tests)."

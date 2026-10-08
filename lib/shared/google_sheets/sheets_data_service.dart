@@ -87,6 +87,8 @@ class SheetsDataService extends ChangeNotifier {
   List<ConfigNotificaciones> _configNotificaciones = [];
   List<TipoNotificacion> _tiposNotificacion = [];
   List<PlantillaNotificacion> _plantillasNotificacion = [];
+  List<Banco> _bancos = [];
+  List<CuentaBancaria> _cuentasBancarias = [];
   List<GaleriaItem> _galeria = [];
   List<ClientCredit> _creditosClientes = [];
   List<CodigoTelefono> _codigosTelefono = [
@@ -311,6 +313,16 @@ class SheetsDataService extends ChangeNotifier {
   /// "moneda_organizacion").
   List<MonedaOrganizacion> get monedasOrganizacion => List.unmodifiable(_monedasOrganizacion);
 
+  /// Catálogo de bancos (todos, también los inactivos, para mostrar el banco
+  /// de una cuenta vieja).
+  List<Banco> get bancos => List.unmodifiable(_bancos);
+
+  Banco? bancoPorId(String id) => _bancos.where((b) => b.id == id).firstOrNull;
+
+  /// Datos bancarios (transferencia y pago móvil) de la organización actual.
+  List<CuentaBancaria> get cuentasBancarias =>
+      List.unmodifiable(_cuentasBancarias.where((c) => _matchesCurrentOrg(c.organizacionId)));
+
   /// Catálogo de tipos de notificación (todos, también los inactivos, para
   /// poder mostrar el tipo de una plantilla vieja).
   List<TipoNotificacion> get tiposNotificacion => List.unmodifiable(_tiposNotificacion);
@@ -526,6 +538,10 @@ class SheetsDataService extends ChangeNotifier {
         // Moneda base seleccionada por organización — separada en su
         // propia hoja (no una columna en "organizaciones") para no
         // duplicar la misma fuente de verdad en dos lugares.
+        // Datos bancarios por organización y catálogo de bancos.
+        safeFetch('bancos', _parseBancos, expectedHeaders: const ['id', 'codigo', 'nombre', 'status']),
+        safeFetch('cuentas_bancarias', _parseCuentasBancarias,
+            expectedHeaders: const ['id', 'organizacion_id', 'tipo', 'banco_id', 'titular']),
         // Notificaciones guardadas para reutilizar y su catálogo de tipos.
         safeFetch('tipos_notificacion', _parseTiposNotificacion, expectedHeaders: const ['id', 'nombre', 'status']),
         safeFetch('plantillas_notificacion', _parsePlantillasNotificacion,
@@ -843,6 +859,24 @@ class SheetsDataService extends ChangeNotifier {
         .toList();
     final localPending = _tasas.where((local) => !cloud.any((t) => t.id == local.id)).toList();
     _tasas = [...cloud, ...localPending];
+  }
+
+  void _parseBancos(List<List<String>> rows) {
+    if (rows.isEmpty) return;
+    _bancos = rows
+        .where((r) => r.isNotEmpty && r.first.trim().isNotEmpty)
+        .map((r) => Banco.fromRow(r))
+        .where((b) => b.id.isNotEmpty && b.nombre.isNotEmpty)
+        .toList();
+  }
+
+  void _parseCuentasBancarias(List<List<String>> rows) {
+    if (rows.isEmpty) return;
+    _cuentasBancarias = rows
+        .where((r) => r.isNotEmpty && r.first.trim().isNotEmpty)
+        .map((r) => CuentaBancaria.fromRow(r))
+        .whereType<CuentaBancaria>()
+        .toList();
   }
 
   void _parseTiposNotificacion(List<List<String>> rows) {
@@ -1713,6 +1747,141 @@ class SheetsDataService extends ChangeNotifier {
       usadosUsuario: entero('usados_usuario'),
       usadosOrganizacion: entero('usados_organizacion'),
       renueva: DateTime.tryParse(r['renueva']?.toString() ?? '')?.toLocal(),
+    );
+  }
+
+  // ===========================================================================
+  // DATOS BANCARIOS (hojas cuentas_bancarias y bancos)
+  // ===========================================================================
+
+  /// Relee los bancos y los datos bancarios (al entrar al módulo: pudieron
+  /// cambiar desde otro teléfono o en la hoja).
+  Future<void> releerDatosBancarios() async {
+    if (_isLoading) return;
+    try {
+      await Future.wait([
+        _fetchSheet('bancos', _parseBancos, expectedHeaders: const ['id', 'codigo', 'nombre', 'status']),
+        _fetchSheet('cuentas_bancarias', _parseCuentasBancarias,
+            expectedHeaders: const ['id', 'organizacion_id', 'tipo', 'banco_id', 'titular']),
+      ]);
+    } catch (e) {
+      Logger.warning('SheetsDataService: no se pudieron releer los datos bancarios: $e');
+    }
+    notifyListeners();
+  }
+
+  /// Motivo por el que [cuenta] no es válida (mismas reglas que el servidor),
+  /// o `null`. [excluirId]: la propia cuenta, al editar.
+  String? motivoCuentaBancariaInvalida(CuentaBancaria cuenta, {String? excluirId}) {
+    final banco = bancoPorId(cuenta.bancoId);
+    if (banco == null) return 'Elegí el banco.';
+    if (cuenta.titular.trim().isEmpty || cuenta.titular.trim().length > 80) {
+      return 'El titular es obligatorio (hasta 80 caracteres).';
+    }
+    final errorDoc = DocumentoIdentidad.validar(cuenta.tipoDocumento, cuenta.documento);
+    if (errorDoc != null) return errorDoc;
+    final otras = _cuentasBancarias.where(
+        (c) => c.organizacionId == cuenta.organizacionId && c.id != excluirId && c.tipo == cuenta.tipo);
+    if (cuenta.tipo == TipoCuentaBancaria.transferencia) {
+      if (!RegExp(r'^\d{20}$').hasMatch(cuenta.numeroCuenta)) return 'El número de cuenta tiene que tener 20 dígitos.';
+      if (!cuenta.numeroCuenta.startsWith(banco.codigo)) {
+        return 'El número de cuenta empieza con ${cuenta.numeroCuenta.substring(0, 4)}, '
+            'pero el código de ${banco.nombre} es ${banco.codigo}.';
+      }
+      if (cuenta.modalidad == null) return 'Elegí el tipo de cuenta: corriente o ahorro.';
+      if (otras.any((c) => c.numeroCuenta == cuenta.numeroCuenta)) return 'Esa cuenta ya está registrada.';
+    } else {
+      if (!RegExp(r'^04\d{9}$').hasMatch(cuenta.telefono)) {
+        return 'El teléfono de pago móvil tiene que ser un celular (04XX-XXXXXXX).';
+      }
+      if (otras.any((c) => c.bancoId == cuenta.bancoId && c.telefono == cuenta.telefono)) {
+        return 'Ese pago móvil (banco y teléfono) ya está registrado.';
+      }
+    }
+    return null;
+  }
+
+  /// Registra un dato bancario en la organización actual y lo devuelve con
+  /// el ID del servidor. Lanza [ArgumentError] si no es válido y
+  /// [StateError] (y revierte) si Sheets no lo confirma.
+  Future<CuentaBancaria> addCuentaBancaria(CuentaBancaria datos) async {
+    final org = _currentOrganizacionId;
+    if (org == null || org.isEmpty) throw StateError('No hay una organización seleccionada.');
+    final nueva = CuentaBancaria(
+      id: '',
+      organizacionId: org,
+      tipo: datos.tipo,
+      bancoId: datos.bancoId,
+      titular: datos.titular.trim(),
+      tipoDocumento: datos.tipoDocumento,
+      documento: datos.documento,
+      numeroCuenta: datos.numeroCuenta,
+      modalidad: datos.modalidad,
+      telefono: datos.telefono,
+      activa: datos.activa,
+      actualizadoEn: DateTime.now().toUtc().toIso8601String(),
+    );
+    final motivo = motivoCuentaBancariaInvalida(nueva);
+    if (motivo != null) throw ArgumentError(motivo);
+    _cuentasBancarias.add(nueva);
+    notifyListeners();
+    final id = await _crearConRollback('cuentas_bancarias', Map.of(nueva.toMap())..remove('id'),
+        revertir: () => _cuentasBancarias.remove(nueva));
+    final confirmada = nueva.copyWith(id: id);
+    final i = _cuentasBancarias.indexOf(nueva);
+    if (i != -1) _cuentasBancarias[i] = confirmada;
+    notifyListeners();
+    return confirmada;
+  }
+
+  /// Reemplaza los datos de una cuenta (conserva ID y organización).
+  Future<void> updateCuentaBancaria(CuentaBancaria cuenta) async {
+    final index = _cuentasBancarias.indexWhere((c) => c.id == cuenta.id);
+    if (index == -1) throw ArgumentError('El dato bancario ya no existe.');
+    final anterior = _cuentasBancarias[index];
+    final actualizada = CuentaBancaria(
+      id: anterior.id,
+      organizacionId: anterior.organizacionId,
+      tipo: cuenta.tipo,
+      bancoId: cuenta.bancoId,
+      titular: cuenta.titular.trim(),
+      tipoDocumento: cuenta.tipoDocumento,
+      documento: cuenta.documento,
+      numeroCuenta: cuenta.numeroCuenta,
+      modalidad: cuenta.modalidad,
+      telefono: cuenta.telefono,
+      activa: cuenta.activa,
+      actualizadoEn: DateTime.now().toUtc().toIso8601String(),
+    );
+    if (actualizada.copyWith(actualizadoEn: anterior.actualizadoEn) == anterior) return; // sin cambios
+    final motivo = motivoCuentaBancariaInvalida(actualizada, excluirId: anterior.id);
+    if (motivo != null) throw ArgumentError(motivo);
+    _cuentasBancarias[index] = actualizada;
+    notifyListeners();
+    await _sincronizarConRollback(
+      {
+        'action': 'update',
+        'sheet': 'cuentas_bancarias',
+        'id': anterior.id,
+        'data': Map.of(actualizada.toMap())..remove('id')..remove('organizacion_id'),
+      },
+      revertir: () {
+        final i = _cuentasBancarias.indexOf(actualizada);
+        if (i != -1) _cuentasBancarias[i] = anterior;
+      },
+    );
+  }
+
+  /// Elimina un dato bancario. Lanza [StateError] (y lo repone) si Sheets no
+  /// lo confirma.
+  Future<void> deleteCuentaBancaria(String id) async {
+    final index = _cuentasBancarias.indexWhere((c) => c.id == id);
+    if (index == -1) throw ArgumentError('El dato bancario ya no existe.');
+    final anterior = _cuentasBancarias.removeAt(index);
+    notifyListeners();
+    await _sincronizarConRollback(
+      {'action': 'delete', 'sheet': 'cuentas_bancarias', 'id': id},
+      revertir: () => _cuentasBancarias.insert(index.clamp(0, _cuentasBancarias.length), anterior),
     );
   }
 

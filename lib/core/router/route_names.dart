@@ -32,5 +32,6 @@ abstract class RouteNames {
   static const String tiposDocumento = 'tiposDocumento';
   static const String notificaciones = 'notificaciones';
   static const String configNotificaciones = 'config-notificaciones';
+  static const String datosBancarios = 'datos-bancarios';
   static const String plantillaNotificacion = 'plantilla-notificacion';
 }

@@ -30,6 +30,7 @@ abstract class RoutePaths {
   static const String tasas = '/tasas';
   static const String codigosTelefono = '/codigos-telefono';
   static const String tiposDocumento = '/tipos-documento';
+  static const String datosBancarios = '/datos-bancarios';
 
   // Comunicación
   static const String notificaciones = '/notificaciones';

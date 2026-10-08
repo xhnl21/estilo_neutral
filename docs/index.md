@@ -12,6 +12,7 @@ Conector Flutter para Google Sheets con arquitectura ORM bajo demanda y cero pol
 - **¿Vas a agregar o tocar una hoja de Sheets?** → [Estándar de hojas y escrituras](estandar-hojas.md)
 - **¿Configurás una máquina nueva o buscás un archivo que no está en git?** → [Archivos ignorados y configuración](configuracion-local.md)
 - **¿Notificaciones push: configurar, enviar o diagnosticar?** → [Notificaciones push (FCM)](notificaciones-fcm.md)
+- **¿Cuentas bancarias y pago móvil de una organización?** → [Datos bancarios](datos-bancarios.md)
 
 ## Integraciones con Google
 

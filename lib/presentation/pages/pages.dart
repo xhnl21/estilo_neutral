@@ -13,3 +13,4 @@ export 'metodos_pago_page.dart';
 export 'tasas_page.dart';
 export 'codigos_telefono_page.dart';
 export 'tipos_documento_page.dart';
+export 'datos_bancarios_page.dart';

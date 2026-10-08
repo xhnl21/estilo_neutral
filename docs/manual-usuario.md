@@ -117,6 +117,14 @@ Acá se administran las organizaciones que usan el sistema (relevante solo si tu
 
   Esto es lo mismo que elegir la organización al crear o editar un usuario desde **Usuarios** — está disponible en los dos lugares para más comodidad.
 
+## Datos bancarios
+
+Menú → **Administración → Datos bancarios**. Las cuentas para transferencias y el pago móvil de tu organización.
+
+- **Nuevo:** elegí **Transferencia** o **Pago móvil**, el banco, el titular y su cédula/RIF. Para transferencia, el número de cuenta (20 dígitos) y si es corriente o ahorro; para pago móvil, el teléfono → **Guardar**.
+- **Ver** → **Copiar datos**: copia los datos listos para pegarlos en el chat con el cliente.
+- **Editar** cambia los datos (con **Activo** apagado queda guardado pero marcado como inactivo); **Eliminar** lo borra.
+
 ## Notificaciones
 
 Menú → **Comunicación**.

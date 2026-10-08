@@ -28,3 +28,4 @@ export 'documento_identidad.dart';
 export 'fila_hoja.dart';
 export 'config_notificaciones.dart';
 export 'plantilla_notificacion.dart';
+export 'cuenta_bancaria.dart';

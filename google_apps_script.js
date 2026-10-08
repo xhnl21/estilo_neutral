@@ -51,7 +51,9 @@ const ID_PREFIXES = {
   notificaciones: "nt",
   config_notificaciones: "cn",
   plantillas_notificacion: "pn",
-  tipos_notificacion: "tn"
+  tipos_notificacion: "tn",
+  bancos: "bn",
+  cuentas_bancarias: "cb"
 };
 
 /** Hojas que originalmente no tenían columna id (ver migrarEsquema). */
@@ -146,6 +148,11 @@ function doPost(e) {
       }
       PropertiesService.getScriptProperties().setProperty("FCM_SERVICE_ACCOUNT", payload.fcm_service_account);
       return respond({ status: "success", message: "Propiedad FCM_SERVICE_ACCOUNT guardada correctamente." });
+    }
+
+    if (action === "preparar_datos_bancarios") {
+      if (!usuarioSesion) return respond({ status: "error", message: "Falta el usuario de la sesión." }, 401);
+      return respond(prepararHojasDatosBancarios());
     }
 
     if (action === "preparar_hojas_notificaciones") {
@@ -245,6 +252,10 @@ function doPost(e) {
       sheet = _hojaConEncabezado(ss, HOJA_PLANTILLAS_NOTIFICACION, ENCABEZADO_PLANTILLAS_NOTIFICACION);
     }
     if (!sheet && sheetName === HOJA_TIPOS_NOTIFICACION) sheet = _hojaTiposNotificacion(ss);
+    if (!sheet && sheetName === HOJA_BANCOS) sheet = _hojaBancos(ss);
+    if (!sheet && sheetName === HOJA_CUENTAS_BANCARIAS) {
+      sheet = _hojaConEncabezado(ss, HOJA_CUENTAS_BANCARIAS, ENCABEZADO_CUENTAS_BANCARIAS);
+    }
     if (!sheet) {
       return respond({ status: "error", message: "Hoja '" + sheetName + "' no encontrada" }, 404);
     }
@@ -813,6 +824,28 @@ function _handleCreate(ss, sheet, sheetName, data, skipAudit) {
       data.id,
       data.nombre || ""
     ];
+  } else if (sheetName === "cuentas_bancarias") {
+    const c = _normalizarCuentaBancaria(data);
+    const errCuenta = _validarCuentaBancaria(ss, sheet, c, -1);
+    if (errCuenta) throw new Error(errCuenta);
+    rowValues = [
+      data.id,
+      c.organizacion_id,
+      c.tipo,
+      c.banco_id,
+      c.titular,
+      c.tipo_documento,
+      _comoTexto(c.documento),
+      _comoTexto(c.numero_cuenta),
+      c.tipo_cuenta,
+      _comoTexto(c.telefono),
+      _textoEstado(data.status),
+      new Date().toISOString()
+    ];
+  } else if (sheetName === "bancos") {
+    const errBanco = _validarBanco(sheet, data, -1);
+    if (errBanco) throw new Error(errBanco);
+    rowValues = [data.id, _comoTexto(String(data.codigo).trim()), String(data.nombre).trim(), _textoEstado(data.status)];
   } else if (sheetName === "plantillas_notificacion") {
     const errPlantilla = _validarPlantillaNotificacion(ss, data, true);
     if (errPlantilla) throw new Error(errPlantilla);
@@ -1052,6 +1085,27 @@ function _handleUpdate(ss, sheet, sheetName, id, data, skipAudit) {
     }
   } else if (sheetName === "organizaciones") {
     if (data.nombre !== undefined) sheet.getRange(rowIndex, 2).setValue(data.nombre);
+  } else if (sheetName === "cuentas_bancarias") {
+    // Se valida la cuenta completa (fila actual + cambios): los campos
+    // obligatorios dependen del tipo.
+    const actual = sheet.getRange(rowIndex, 1, 1, ENCABEZADO_CUENTAS_BANCARIAS.length).getValues()[0];
+    const previo = {};
+    ENCABEZADO_CUENTAS_BANCARIAS.forEach(function (h, i) { previo[h] = String(actual[i]).replace(/^'/, ""); });
+    const c = _normalizarCuentaBancaria(Object.assign(previo, data, { organizacion_id: previo.organizacion_id }));
+    const errCuenta = _validarCuentaBancaria(ss, sheet, c, rowIndex);
+    if (errCuenta) return { status: "error", message: errCuenta };
+    sheet.getRange(rowIndex, 3, 1, 8).setValues([[
+      c.tipo, c.banco_id, c.titular, c.tipo_documento, _comoTexto(c.documento),
+      _comoTexto(c.numero_cuenta), c.tipo_cuenta, _comoTexto(c.telefono)
+    ]]);
+    if (data.status !== undefined) sheet.getRange(rowIndex, 11).setValue(_textoEstado(data.status));
+    sheet.getRange(rowIndex, 12).setValue(new Date().toISOString());
+  } else if (sheetName === "bancos") {
+    const errBanco = _validarBanco(sheet, data, rowIndex);
+    if (errBanco) return { status: "error", message: errBanco };
+    if (data.codigo !== undefined) sheet.getRange(rowIndex, 2).setValue(_comoTexto(String(data.codigo).trim()));
+    if (data.nombre !== undefined) sheet.getRange(rowIndex, 3).setValue(String(data.nombre).trim());
+    if (data.status !== undefined) sheet.getRange(rowIndex, 4).setValue(_textoEstado(data.status));
   } else if (sheetName === "plantillas_notificacion") {
     const errPlantilla = _validarPlantillaNotificacion(ss, data, false);
     if (errPlantilla) return { status: "error", message: errPlantilla };
@@ -1329,6 +1383,156 @@ function _textoEstado(valor) {
 function _asegurarColumnaEstado(sheet, columna) {
   const celda = sheet.getRange(1, columna);
   if (String(celda.getValue()).trim() === "") celda.setValue("status");
+}
+
+// =============================================================================
+// MÓDULO DATOS BANCARIOS (cuentas para transferencia y pago móvil)
+// =============================================================================
+//   bancos:            id | codigo | nombre | status       (catálogo común)
+//   cuentas_bancarias: id | organizacion_id | tipo | banco_id | titular |
+//                      tipo_documento | documento | numero_cuenta | tipo_cuenta |
+//                      telefono | status | actualizado_en
+// tipo: transferencia (número de cuenta de 20 dígitos que empieza con el
+// código del banco, y tipo de cuenta) o pago_movil (teléfono). Cada
+// organización administra las suyas. Códigos, documentos, cuentas y
+// teléfonos se escriben como texto (no pierden ceros a la izquierda).
+const HOJA_BANCOS = "bancos";
+const ENCABEZADO_BANCOS = ["id", "codigo", "nombre", "status"];
+const HOJA_CUENTAS_BANCARIAS = "cuentas_bancarias";
+const ENCABEZADO_CUENTAS_BANCARIAS = [
+  "id", "organizacion_id", "tipo", "banco_id", "titular", "tipo_documento", "documento",
+  "numero_cuenta", "tipo_cuenta", "telefono", "status", "actualizado_en"
+];
+const TIPOS_CUENTA_BANCARIA = ["transferencia", "pago_movil"];
+const TIPOS_CUENTA = ["corriente", "ahorro"];
+// Bancos venezolanos con su código SUDEBAN (los 4 primeros dígitos de la cuenta).
+const BANCOS_INICIALES = [
+  ["0102", "Banco de Venezuela"], ["0104", "Venezolano de Crédito"], ["0105", "Mercantil"],
+  ["0108", "Provincial"], ["0114", "Bancaribe"], ["0115", "Exterior"], ["0128", "Caroní"],
+  ["0134", "Banesco"], ["0137", "Sofitasa"], ["0138", "Plaza"], ["0146", "Bangente"],
+  ["0151", "BFC Banco Fondo Común"], ["0156", "100% Banco"], ["0157", "DelSur"],
+  ["0163", "Banco del Tesoro"], ["0166", "Banco Agrícola de Venezuela"], ["0168", "Bancrecer"],
+  ["0169", "R4 Banco Microfinanciero"], ["0171", "Banco Activo"], ["0172", "Bancamiga"],
+  ["0173", "Banco Internacional de Desarrollo"], ["0174", "Banplus"],
+  ["0175", "Banco Digital de los Trabajadores"], ["0177", "BANFANB"], ["0178", "N58 Banco Digital"],
+  ["0191", "BNC Banco Nacional de Crédito"]
+];
+
+/** Hoja de bancos; si no existe, la crea con los bancos iniciales. */
+function _hojaBancos(ss) {
+  let sh = ss.getSheetByName(HOJA_BANCOS);
+  if (sh) return sh;
+  sh = _hojaConEncabezado(ss, HOJA_BANCOS, ENCABEZADO_BANCOS);
+  sh.getRange("A:B").setNumberFormat("@");
+  BANCOS_INICIALES.forEach(function (b) {
+    sh.appendRow([_siguienteIdServidor(sh, ID_PREFIXES.bancos), _comoTexto(b[0]), b[1], "activo"]);
+  });
+  return sh;
+}
+
+/** Código de banco de la hoja: Sheets puede haber convertido "0102" en 102. */
+function _codigoBanco(valor) {
+  const s = String(valor === undefined || valor === null ? "" : valor).replace(/^'/, "").trim();
+  return /^\d{1,4}$/.test(s) ? ("0000" + s).slice(-4) : s;
+}
+
+/** Crea (si faltan) las hojas del módulo. Idempotente; se puede correr desde el editor. */
+function prepararHojasDatosBancarios() {
+  const ss = getSpreadsheet();
+  const bancos = _hojaBancos(ss);
+  // Repara códigos que Sheets guardó como número (102 → '0102).
+  for (let r = 2; r <= bancos.getLastRow(); r++) {
+    const celda = bancos.getRange(r, 2);
+    const actual = celda.getValue();
+    if (typeof actual === "number" || String(actual).charAt(0) !== "'") {
+      const codigo = _codigoBanco(actual);
+      if (codigo) celda.setValue(_comoTexto(codigo));
+    }
+  }
+  const cuentas = _hojaConEncabezado(ss, HOJA_CUENTAS_BANCARIAS, ENCABEZADO_CUENTAS_BANCARIAS);
+  cuentas.getRange("A:J").setNumberFormat("@");
+  cuentas.getRange("C2:C").setDataValidation(
+    SpreadsheetApp.newDataValidation().requireValueInList(TIPOS_CUENTA_BANCARIA, true).build()
+  );
+  cuentas.getRange("I2:I").setDataValidation(
+    SpreadsheetApp.newDataValidation().requireValueInList(["", "corriente", "ahorro"], true).build()
+  );
+  return { status: "success", message: "Hojas de datos bancarios listas." };
+}
+
+function _soloDigitos(v) {
+  return String(v === undefined || v === null ? "" : v).replace(/\D/g, "");
+}
+
+/** Normaliza los campos de una cuenta y limpia los que no aplican a su tipo. */
+function _normalizarCuentaBancaria(data) {
+  const texto = function (v) { return String(v === undefined || v === null ? "" : v).replace(/^'/, "").trim(); };
+  const tipo = texto(data.tipo).toLowerCase();
+  let telefono = _soloDigitos(data.telefono);
+  if (telefono.length === 12 && telefono.indexOf("58") === 0) telefono = "0" + telefono.slice(2);
+  if (telefono.length === 10 && telefono.charAt(0) !== "0") telefono = "0" + telefono;
+  return {
+    organizacion_id: texto(data.organizacion_id),
+    tipo: tipo,
+    banco_id: texto(data.banco_id),
+    titular: texto(data.titular),
+    tipo_documento: texto(data.tipo_documento).toUpperCase(),
+    documento: texto(data.documento).toUpperCase().replace(/[^A-Z0-9]/g, ""),
+    numero_cuenta: tipo === "transferencia" ? _soloDigitos(data.numero_cuenta) : "",
+    tipo_cuenta: tipo === "transferencia" ? texto(data.tipo_cuenta).toLowerCase() : "",
+    telefono: tipo === "pago_movil" ? telefono : ""
+  };
+}
+
+/** Error de validación de una cuenta ya normalizada, o null. */
+function _validarCuentaBancaria(ss, sheet, c, filaActual) {
+  if (!_existeId(ss, "organizaciones", c.organizacion_id)) return "La organización " + c.organizacion_id + " no existe.";
+  if (TIPOS_CUENTA_BANCARIA.indexOf(c.tipo) === -1) return "Tipo inválido: transferencia o pago_movil.";
+  const bancos = _hojaBancos(ss);
+  const filaBanco = _findRowById(bancos, c.banco_id);
+  if (filaBanco === -1) return "El banco " + c.banco_id + " no existe.";
+  const codigoBanco = _codigoBanco(bancos.getRange(filaBanco, 2).getValue());
+  if (!c.titular || c.titular.length > 80) return "El titular es obligatorio (hasta 80 caracteres).";
+  if (!c.tipo_documento || !/^[A-Z0-9]{5,15}$/.test(c.documento)) return "La cédula o el RIF del titular no es válido.";
+  if (c.tipo === "transferencia") {
+    if (!/^\d{20}$/.test(c.numero_cuenta)) return "El número de cuenta tiene que tener 20 dígitos.";
+    if (c.numero_cuenta.slice(0, 4) !== codigoBanco) {
+      return "El número de cuenta empieza con " + c.numero_cuenta.slice(0, 4) + ", pero el código del banco es " + codigoBanco + ".";
+    }
+    if (TIPOS_CUENTA.indexOf(c.tipo_cuenta) === -1) return "Elegí el tipo de cuenta: corriente o ahorro.";
+  } else if (!/^04\d{9}$/.test(c.telefono)) {
+    return "El teléfono de pago móvil tiene que ser un celular venezolano (04XX-XXXXXXX).";
+  }
+  // Sin duplicados en la organización: misma cuenta, o mismo banco + teléfono.
+  const filas = sheet.getDataRange().getValues();
+  for (let i = 1; i < filas.length; i++) {
+    if (i + 1 === filaActual || String(filas[i][1]).trim() !== c.organizacion_id) continue;
+    const tipoFila = String(filas[i][2]).trim();
+    if (tipoFila !== c.tipo) continue;
+    if (c.tipo === "transferencia" && _soloDigitos(filas[i][7]) === c.numero_cuenta) {
+      return "Esa cuenta ya está registrada en la organización.";
+    }
+    if (c.tipo === "pago_movil" && String(filas[i][3]).trim() === c.banco_id && _soloDigitos(filas[i][9]) === c.telefono) {
+      return "Ese pago móvil (banco y teléfono) ya está registrado en la organización.";
+    }
+  }
+  return null;
+}
+
+/** Error de validación de un banco (código de 4 dígitos y nombre únicos), o null. */
+function _validarBanco(sheet, data, filaActual) {
+  if (filaActual === -1 && (data.codigo === undefined || data.nombre === undefined)) return "Faltan el código o el nombre del banco.";
+  const codigo = data.codigo === undefined ? null : String(data.codigo).replace(/^'/, "").trim();
+  const nombre = data.nombre === undefined ? null : String(data.nombre).replace(/^'/, "").trim();
+  if (codigo !== null && !/^\d{4}$/.test(codigo)) return "El código del banco tiene 4 dígitos.";
+  if (nombre !== null && (!nombre || nombre.length > 60)) return "El nombre del banco es obligatorio (hasta 60 caracteres).";
+  const filas = sheet.getDataRange().getValues();
+  for (let i = 1; i < filas.length; i++) {
+    if (i + 1 === filaActual) continue;
+    if (codigo !== null && _codigoBanco(filas[i][1]) === codigo) return "Ya existe un banco con el código " + codigo + ".";
+    if (nombre !== null && String(filas[i][2]).trim().toLowerCase() === nombre.toLowerCase()) return "Ya existe el banco " + nombre + ".";
+  }
+  return null;
 }
 
 // =============================================================================

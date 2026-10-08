@@ -64,6 +64,7 @@ class _MainShellState extends State<MainShell> {
     (title: 'Tipos Documento', sheet: 'tipo de documento', icon: CupertinoIcons.doc_text_fill, category: 'Administración'),
     (title: 'Notificaciones', sheet: 'notificaciones', icon: CupertinoIcons.bell_fill, category: 'Comunicación'),
     (title: 'Configuración de notificaciones', sheet: 'config_notificaciones', icon: CupertinoIcons.slider_horizontal_3, category: 'Comunicación'),
+    (title: 'Datos bancarios', sheet: 'cuentas_bancarias', icon: CupertinoIcons.creditcard, category: 'Administración'),
   ];
 
   @override
@@ -88,6 +89,7 @@ class _MainShellState extends State<MainShell> {
       TiposDocumentoPage(dataService: widget.dataService),
       NotificacionesPage(dataService: widget.dataService),
       ConfigNotificacionesPage(dataService: widget.dataService),
+      DatosBancariosPage(dataService: widget.dataService),
     ];
   }
 
@@ -100,6 +102,8 @@ class _MainShellState extends State<MainShell> {
     final hoja = _vistasInfo[index].sheet;
     if (hoja == 'notificaciones' || hoja == 'config_notificaciones') {
       unawaited(widget.dataService.releerNotificaciones(config: true));
+    } else if (hoja == 'cuentas_bancarias') {
+      unawaited(widget.dataService.releerDatosBancarios());
     }
     if (widget.navigationShell != null) {
       widget.navigationShell!.goBranch(
@@ -388,6 +392,7 @@ class _MainShellState extends State<MainShell> {
                   _buildDrawerItem(13, _vistasInfo[13]),
                   _buildDrawerItem(14, _vistasInfo[14]),
                   _buildDrawerItem(15, _vistasInfo[15]),
+                  _buildDrawerItem(18, _vistasInfo[18]),
 
                   const Divider(height: 24, thickness: 1, color: AppPalette.divider),
                   _buildCategoryHeader('COMUNICACIÓN'),

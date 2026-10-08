@@ -8,6 +8,7 @@ import '../../features/notificaciones/presentation/pages/enviar_notificacion_pag
 import '../../features/notificaciones/presentation/pages/notificaciones_page.dart';
 import '../../features/reporting/presentation/routes/reporting_routes.dart';
 import '../../features/treasury/presentation/routes/treasury_routes.dart';
+import '../../presentation/pages/datos_bancarios_page.dart';
 import '../../presentation/routes/operations_routes.dart';
 import '../../presentation/shell/main_shell.dart';
 import '../../shared/google_sheets/sheets_auth.dart';
@@ -195,6 +196,17 @@ class AppRouter {
                   path: RoutePaths.configNotificaciones,
                   name: RouteNames.configNotificaciones,
                   builder: (context, state) => ConfigNotificacionesPage(dataService: dataService),
+                ),
+              ],
+            ),
+
+            // Rama 18: Datos bancarios (transferencia y pago móvil por organización)
+            StatefulShellBranch(
+              routes: [
+                GoRoute(
+                  path: RoutePaths.datosBancarios,
+                  name: RouteNames.datosBancarios,
+                  builder: (context, state) => DatosBancariosPage(dataService: dataService),
                 ),
               ],
             ),
