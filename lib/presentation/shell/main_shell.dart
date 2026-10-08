@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import '../../core/config/environment_config.dart';
@@ -7,7 +9,8 @@ import '../../core/router/route_paths.dart';
 import '../../core/utils/logger.dart';
 import '../../features/auth/application/auth_cubit.dart';
 import '../../features/reporting/reporting.dart';
-import '../../features/notificaciones/presentation/pages/enviar_notificacion_page.dart';
+import '../../features/notificaciones/presentation/pages/config_notificaciones_page.dart';
+import '../../features/notificaciones/presentation/pages/notificaciones_page.dart';
 import '../../features/treasury/treasury.dart';
 import '../../shared/shared.dart';
 import '../pages/pages.dart';
@@ -60,6 +63,7 @@ class _MainShellState extends State<MainShell> {
     (title: 'Códigos Teléfono', sheet: 'codigo de telefonos', icon: CupertinoIcons.phone_fill, category: 'Administración'),
     (title: 'Tipos Documento', sheet: 'tipo de documento', icon: CupertinoIcons.doc_text_fill, category: 'Administración'),
     (title: 'Notificaciones', sheet: 'notificaciones', icon: CupertinoIcons.bell_fill, category: 'Comunicación'),
+    (title: 'Configuración de notificaciones', sheet: 'config_notificaciones', icon: CupertinoIcons.slider_horizontal_3, category: 'Comunicación'),
   ];
 
   @override
@@ -82,11 +86,21 @@ class _MainShellState extends State<MainShell> {
       TasasPage(dataService: widget.dataService),
       CodigosTelefonoPage(dataService: widget.dataService),
       TiposDocumentoPage(dataService: widget.dataService),
-      EnviarNotificacionPage(dataService: widget.dataService),
+      NotificacionesPage(dataService: widget.dataService),
+      ConfigNotificacionesPage(dataService: widget.dataService),
     ];
   }
 
   void _navigateToIndex(int index) {
+    // Al entrar a Notificaciones o a su configuración se releen los límites
+    // y el cupo: pudieron cambiar desde otro teléfono mientras esta app
+    // estaba cerrada o en segundo plano (el push silencioso solo refresca lo
+    // que está abierto). Las ramas se mantienen vivas, así que no alcanza con
+    // hacerlo al crear el Cubit.
+    final hoja = _vistasInfo[index].sheet;
+    if (hoja == 'notificaciones' || hoja == 'config_notificaciones') {
+      unawaited(widget.dataService.releerNotificaciones(config: true));
+    }
     if (widget.navigationShell != null) {
       widget.navigationShell!.goBranch(
         index,
@@ -260,31 +274,31 @@ class _MainShellState extends State<MainShell> {
               _navigateToIndex(index);
             }
           },
-          destinations: const [
-            NavigationDestination(
+          destinations: [
+            const NavigationDestination(
               icon: Icon(CupertinoIcons.person_2),
               selectedIcon: Icon(CupertinoIcons.person_2_fill),
               label: 'Clientes',
             ),
-            NavigationDestination(
+            const NavigationDestination(
               icon: Icon(CupertinoIcons.tag),
               selectedIcon: Icon(CupertinoIcons.tag_fill),
               label: 'Inventario',
             ),
-            NavigationDestination(
+            const NavigationDestination(
               icon: Icon(CupertinoIcons.cart),
               selectedIcon: Icon(CupertinoIcons.cart_fill),
               label: 'Ventas',
             ),
-            NavigationDestination(
+            const NavigationDestination(
               icon: Icon(CupertinoIcons.money_dollar_circle),
               selectedIcon: Icon(CupertinoIcons.money_dollar_circle_fill),
               label: 'Tesorería',
             ),
             NavigationDestination(
-              icon: Icon(CupertinoIcons.square_grid_2x2),
-              selectedIcon: Icon(CupertinoIcons.square_grid_2x2_fill),
-              label: 'Más Vistas (9)',
+              icon: const Icon(CupertinoIcons.square_grid_2x2),
+              selectedIcon: const Icon(CupertinoIcons.square_grid_2x2_fill),
+              label: 'Más Vistas (${_vistasInfo.length - 4})',
             ),
           ],
         ),
@@ -378,6 +392,7 @@ class _MainShellState extends State<MainShell> {
                   const Divider(height: 24, thickness: 1, color: AppPalette.divider),
                   _buildCategoryHeader('COMUNICACIÓN'),
                   _buildDrawerItem(16, _vistasInfo[16]),
+                  _buildDrawerItem(17, _vistasInfo[17]),
                 ],
               ),
             ),

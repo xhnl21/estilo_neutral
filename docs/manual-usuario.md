@@ -117,6 +117,17 @@ Acá se administran las organizaciones que usan el sistema (relevante solo si tu
 
   Esto es lo mismo que elegir la organización al crear o editar un usuario desde **Usuarios** — está disponible en los dos lugares para más comodidad.
 
+## Notificaciones
+
+Menú → **Comunicación**.
+
+- **Notificaciones:** listado de las notificaciones guardadas de tu organización, para reutilizarlas.
+  - **Nueva notificación:** elegí el tipo (Pago quincenal, Cumpleaños, Reunión…; con **+** agregás uno nuevo), escribí el título y el mensaje → **Guardar**. Ejemplo: tipo *Pago quincenal*, título *Día de pago*, mensaje *Hoy se realizó el pago de su quincena.*
+  - **Filtrar:** tocá un tipo arriba del listado (**Todas** muestra todo).
+  - **Ver:** muestra la notificación y, debajo, a quién enviarla (todos, una o varias organizaciones, o usuarios puntuales) → **Enviar notificación**. Abajo ves cuántas te quedan en el período.
+  - **Editar** cambia tipo, título o mensaje; **Eliminar** la quita del listado (lo ya enviado queda registrado).
+- **Configuración de notificaciones:** cuántas notificaciones se pueden enviar en cada organización. Tocá la organización y elegí el período (hora, día, semana o mes), el límite **por usuario** y el límite **para toda la organización** (`0` = sin límite) → **Guardar**. Las organizaciones marcadas **Por defecto** usan 30 por hora por usuario.
+
 ## Cerrar sesión
 
 Menú lateral (☰) → **"Cerrar sesión"** → confirmar. Lo que pasa después depende de si tenés un método activado en Seguridad:

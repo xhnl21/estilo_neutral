@@ -33,6 +33,10 @@ abstract class RoutePaths {
 
   // Comunicación
   static const String notificaciones = '/notificaciones';
+  static const String configNotificaciones = '/configuracion-notificaciones';
+
+  /// Ver una notificación guardada (y enviarla).
+  static String buildPlantillaNotificacionPath(String id) => '$notificaciones/$id';
 
   /// Helper para construir path de detalle de venta con id
   static String buildSaleDetailPath(String id) => '/ventas/$id';

@@ -291,6 +291,29 @@ void main() {
       await cubit.close();
     });
 
+    test('pushes silenciosos de límites y uso: no se muestran y refrescan las pantallas', () async {
+      final cubit = crear();
+      auth.login(email: 'xhnl21@gmail.com', organizacionId: organizacionDePrueba);
+      await _esperar();
+      servidor.lecturas.clear();
+      final version = ds.versionNotificaciones;
+      push.primerPlano.add(const MensajePush(datos: {'tipo': tipoConfigNotificaciones}));
+      await _esperar();
+      expect(servidor.lecturas['config_notificaciones'], 1, reason: 'relee los límites');
+      push.primerPlano.add(const MensajePush(datos: {'tipo': tipoUsoNotificaciones}));
+      await _esperar();
+      expect(push.mostrados, isEmpty);
+      expect(ds.versionNotificaciones, version + 2);
+      expect(servidor.lecturas['config_notificaciones'], 1, reason: 'el uso no relee la hoja');
+      await cubit.close();
+    });
+
+    test('esSilencioso: los tipos del servidor', () {
+      expect(const MensajePush(datos: {'tipo': 'uso_notificaciones'}).esSilencioso, isTrue);
+      expect(const MensajePush(datos: {'tipo': 'sesion_revocada'}).esSilencioso, isTrue);
+      expect(const MensajePush(titulo: 'Hola', datos: {'ruta': '/ventas'}).esSilencioso, isFalse);
+    });
+
     test('push de sesión revocada sin sesión abierta: no hace nada', () async {
       final cubit = crear();
       servidor.lecturas.clear();

@@ -3,7 +3,9 @@ import 'package:go_router/go_router.dart';
 import '../../features/audit/presentation/routes/audit_routes.dart';
 import '../../features/auth/application/auth_cubit.dart';
 import '../../features/auth/presentation/routes/auth_routes.dart';
+import '../../features/notificaciones/presentation/pages/config_notificaciones_page.dart';
 import '../../features/notificaciones/presentation/pages/enviar_notificacion_page.dart';
+import '../../features/notificaciones/presentation/pages/notificaciones_page.dart';
 import '../../features/reporting/presentation/routes/reporting_routes.dart';
 import '../../features/treasury/presentation/routes/treasury_routes.dart';
 import '../../presentation/routes/operations_routes.dart';
@@ -171,7 +173,28 @@ class AppRouter {
                 GoRoute(
                   path: RoutePaths.notificaciones,
                   name: RouteNames.notificaciones,
-                  builder: (context, state) => EnviarNotificacionPage(dataService: dataService),
+                  builder: (context, state) => NotificacionesPage(dataService: dataService),
+                  routes: [
+                    GoRoute(
+                      path: ':id',
+                      name: RouteNames.plantillaNotificacion,
+                      builder: (context, state) => EnviarNotificacionPage(
+                        dataService: dataService,
+                        plantillaId: state.pathParameters['id'] ?? '',
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+
+            // Rama 17: Configuración de notificaciones (límites por organización)
+            StatefulShellBranch(
+              routes: [
+                GoRoute(
+                  path: RoutePaths.configNotificaciones,
+                  name: RouteNames.configNotificaciones,
+                  builder: (context, state) => ConfigNotificacionesPage(dataService: dataService),
                 ),
               ],
             ),

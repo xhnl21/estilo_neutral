@@ -15,11 +15,25 @@ class MensajePush {
   /// Aviso silencioso del servidor: la cuenta fue inactivada o eliminada y
   /// hay que cerrar la sesión. No se muestra.
   bool get esSesionRevocada => datos['tipo'] == tipoSesionRevocada;
+
+  /// Push silencioso del servidor (sesión revocada, límites o uso de las
+  /// notificaciones): la app lo atiende sin mostrar nada.
+  bool get esSilencioso => tiposSilenciosos.contains(datos['tipo']);
 }
 
 /// Valor de `tipo` del push silencioso que envía el Apps Script
 /// (`_expulsarUsuario`) al inactivar o eliminar un usuario.
 const tipoSesionRevocada = 'sesion_revocada';
+
+/// Cambiaron los límites de notificaciones de alguna organización
+/// (TIPO_CONFIG_NOTIFICACIONES en el Apps Script).
+const tipoConfigNotificaciones = 'config_notificaciones';
+
+/// Alguien de la organización gastó parte del cupo compartido
+/// (TIPO_USO_NOTIFICACIONES en el Apps Script).
+const tipoUsoNotificaciones = 'uso_notificaciones';
+
+const tiposSilenciosos = {tipoSesionRevocada, tipoConfigNotificaciones, tipoUsoNotificaciones};
 
 /// Canal de notificaciones push del dispositivo. Abstrae Firebase para que
 /// la lógica (PushCubit) se pueda probar sin él.

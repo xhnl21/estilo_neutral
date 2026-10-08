@@ -47,7 +47,7 @@ function crearContexto(props, embebida) {
   };
   const ctx = {
     console,
-    SpreadsheetApp: { getActiveSpreadsheet: () => ss, openById: () => ss, newDataValidation: () => ({ requireValueInList() { return this; }, build() { return {}; } }) },
+    SpreadsheetApp: { flush() {}, getActiveSpreadsheet: () => ss, openById: () => ss, newDataValidation: () => ({ requireValueInList() { return this; }, build() { return {}; } }) },
     LockService: { getScriptLock: () => ({ waitLock() {}, releaseLock() {} }) },
     PropertiesService: { getScriptProperties: () => ({ getProperty: (k) => props[k] || null }) },
     CacheService: { getScriptCache: () => ({ get: (k) => (cache[k] ?? null), put: (k, v) => { cache[k] = v; } }) },
@@ -161,7 +161,7 @@ const tokensDe = (e) => e.map((m) => m.token).sort().join(',');
   for (let i = 0; i < 31; i++) {
     ultimo = vm.runInContext(`_enviarNotificacion(getSpreadsheet(), "ana@x.com", {alcance:"usuarios", usuarios:["bea@x.com"], titulo:"T", cuerpo:"C"})`, ctx);
   }
-  check(ultimo.status === 'error' && /Límite/.test(ultimo.message), 'límite: el envío 31 de la hora se rechaza');
+  check(ultimo.status === 'error' && /límite de 30 notificaciones esta hora/.test(ultimo.message) && ultimo.code === 'limite_notificaciones', 'límite por defecto: el envío 31 de la hora se rechaza -> ' + ultimo.message);
   const otro = vm.runInContext(`_enviarNotificacion(getSpreadsheet(), "bea@x.com", {alcance:"usuarios", usuarios:["ana@x.com"], titulo:"T", cuerpo:"C"})`, ctx);
   check(otro.status === 'success', 'límite: es por remitente');
 }
@@ -223,5 +223,98 @@ const tokensDe = (e) => e.map((m) => m.token).sort().join(',');
   const id = fila ? fila[0] : '';
   vm.runInContext(`doPost({postData:{contents: JSON.stringify({action:"update", sheet:"clientes", id:"${id}", usuario_sesion:"ana@x.com", data:{status:false}})}})`, ctx);
   check(hojas.clientes.filas[1] && hojas.clientes.filas[1][9] === 'inactivo' && hojas.clientes.filas[1][1] === 'Zoe', 'cliente: inactivar sin tocar el resto');
+}
+{ // configuración por organización: períodos de calendario (hora de Venezuela)
+  const { ctx } = crearContexto(cred);
+  const iso = (d) => vm.runInContext(`(function(){ const p = _limitesPeriodo(${JSON.stringify(d.p)}, new Date(${JSON.stringify(d.ahora)})); return [p.inicio.toISOString(), p.fin.toISOString()]; })()`, ctx);
+  // miércoles 2026-10-07 23:30 en Venezuela = 2026-10-08T03:30Z
+  check(JSON.stringify(iso({ p: 'dia', ahora: '2026-10-08T03:30:00Z' })) === JSON.stringify(['2026-10-07T04:00:00.000Z', '2026-10-08T04:00:00.000Z']), 'período día: de 00:00 a 00:00 de Venezuela');
+  check(JSON.stringify(iso({ p: 'semana', ahora: '2026-10-08T03:30:00Z' })) === JSON.stringify(['2026-10-05T04:00:00.000Z', '2026-10-12T04:00:00.000Z']), 'período semana: de lunes a lunes');
+  check(JSON.stringify(iso({ p: 'mes', ahora: '2026-10-08T03:30:00Z' })) === JSON.stringify(['2026-10-01T04:00:00.000Z', '2026-11-01T04:00:00.000Z']), 'período mes: del día 1 al 1');
+  check(JSON.stringify(iso({ p: 'hora', ahora: '2026-10-08T03:30:00Z' })) === JSON.stringify(['2026-10-08T03:00:00.000Z', '2026-10-08T04:00:00.000Z']), 'período hora: hora en punto');
+}
+{ // límite por usuario y de la organización (org2: bea y cami)
+  const { ctx, hojas } = crearContexto(cred);
+  const crear = (data) => JSON.parse(vm.runInContext(`doPost({postData:{contents: JSON.stringify(${JSON.stringify({ action: 'create', sheet: 'config_notificaciones', usuario_sesion: 'ana@x.com', data })})}})`, ctx));
+  const r = crear({ organizacion_id: 'org2', periodo: 'dia', limite_por_usuario: 2, limite_organizacion: 3, actualizado_por: 'ana@x.com' });
+  check(r.status === 'success' && hojas.config_notificaciones && hojas.config_notificaciones.filas[1][0] === 'cn00000001', 'config: se crea la hoja y la fila con ID del servidor -> ' + JSON.stringify(r));
+  check(crear({ organizacion_id: 'org2', periodo: 'dia', limite_por_usuario: 1, limite_organizacion: 0 }).status === 'error', 'config: una sola fila por organización');
+  check(crear({ organizacion_id: 'org-x', periodo: 'dia', limite_por_usuario: 1, limite_organizacion: 0 }).status === 'error', 'config: la organización tiene que existir');
+  check(crear({ organizacion_id: 'org1', periodo: 'anio', limite_por_usuario: 1, limite_organizacion: 0 }).status === 'error', 'config: período inválido se rechaza');
+  check(crear({ organizacion_id: 'org1', periodo: 'dia', limite_por_usuario: -1, limite_organizacion: 0 }).status === 'error', 'config: límite negativo se rechaza');
+  const enviar = (de) => vm.runInContext(`_enviarNotificacion(getSpreadsheet(), "${de}", {alcance:"usuarios", usuarios:["ana@x.com"], titulo:"T", cuerpo:"C"})`, ctx);
+  check(enviar('bea@x.com').status === 'success' && enviar('bea@x.com').status === 'success', 'por usuario: bea envía 2');
+  const b3 = enviar('bea@x.com');
+  check(b3.status === 'error' && /2 notificaciones hoy por usuario/.test(b3.message), 'por usuario: la 3ra de bea se rechaza -> ' + b3.message);
+  check(enviar('cami@x.com').status === 'success', 'organización: cami usa el 3er envío de org2');
+  const c2 = enviar('cami@x.com');
+  check(c2.status === 'error' && /organización llegó a su límite de 3/.test(c2.message), 'organización: el 4to de org2 se rechaza -> ' + c2.message);
+  check(enviar('ana@x.com').status === 'success', 'otra organización (org1, sin fila) no se ve afectada');
+  const filasError = hojas.notificaciones.filas.filter((f) => f[9] === 'ERROR').length;
+  check(filasError === 0, 'desde la app, el rechazo por límite no agrega filas');
+  const uso = JSON.parse(vm.runInContext(`doPost({postData:{contents: JSON.stringify({action:"uso_notificaciones", usuario_sesion:"bea@x.com"})}})`, ctx));
+  check(uso.status === 'success' && uso.periodo === 'dia' && uso.limite_por_usuario === 2 && uso.usados_usuario === 2 && uso.usados_organizacion === 3, 'uso_notificaciones -> ' + JSON.stringify(uso));
+  // editar: sube el límite de la organización
+  const id = hojas.config_notificaciones.filas[1][0];
+  const u = JSON.parse(vm.runInContext(`doPost({postData:{contents: JSON.stringify({action:"update", sheet:"config_notificaciones", id:"${id}", usuario_sesion:"ana@x.com", data:{limite_por_usuario:0, limite_organizacion:0}})}})`, ctx));
+  check(u.status === 'success' && enviar('bea@x.com').status === 'success', 'editar: con 0 (sin límite) vuelve a enviar');
+  const mal = JSON.parse(vm.runInContext(`doPost({postData:{contents: JSON.stringify({action:"update", sheet:"config_notificaciones", id:"${id}", usuario_sesion:"ana@x.com", data:{periodo:"anio"}})}})`, ctx));
+  check(mal.status === 'error' && hojas.config_notificaciones.filas[1][2] === 'dia', 'editar: período inválido no se guarda');
+}
+{ // desde la hoja: la fila que supera el límite queda en ERROR (no PENDIENTE)
+  const { ctx, hojas } = crearContexto(cred);
+  hojas.config_notificaciones = hoja('config_notificaciones', [
+    ['id','organizacion_id','periodo','limite_por_usuario','limite_organizacion','actualizado_en','actualizado_por'],
+    ['cn00000001','org1','mes',1,0,'','']]);
+  vm.runInContext(`prepararHojasNotificaciones()`, ctx);
+  hojas.notificaciones.filas.push(['', '', 'ana@x.com', 'global', '', '', 'Uno', 'x', '', 'PENDIENTE', '', '', '']);
+  hojas.notificaciones.filas.push(['', '', 'ana@x.com', 'global', '', '', 'Dos', 'x', '', 'PENDIENTE', '', '', '']);
+  vm.runInContext(`enviarNotificacionesPendientes()`, ctx);
+  const [f1, f2] = [hojas.notificaciones.filas[1], hojas.notificaciones.filas[2]];
+  check(f1[9] === 'ENVIADA' && f2[9] === 'ERROR' && /límite de 1 notificaciones este mes/.test(f2[12]), 'hoja: la segunda del mes queda en ERROR con el motivo -> ' + f2[12]);
+}
+{ // pushes silenciosos: cambio de límites y uso del cupo de la organización
+  const { ctx, hojas, enviados } = crearContexto(cred);
+  const silenciosos = (tipo) => enviados.filter((m) => m.data && m.data.tipo === tipo);
+  const r = JSON.parse(vm.runInContext(`doPost({postData:{contents: JSON.stringify({action:"create", sheet:"config_notificaciones", usuario_sesion:"ana@x.com", data:{organizacion_id:"org2", periodo:"dia", limite_por_usuario:0, limite_organizacion:5}})}})`, ctx));
+  const conf = silenciosos('config_notificaciones');
+  check(r.status === 'success' && tokensDe(conf) === 'tok-ana,tok-bea,tok-cami-vencido', 'config: push silencioso a todos los usuarios con acceso -> ' + tokensDe(conf));
+  check(conf.every((m) => !m.data.titulo && !m.data.cuerpo && !m.notification), 'config: el push no tiene título ni cuerpo');
+  check(!hojas.dispositivos.filas.some((f) => f[3] === 'tok-cami-vencido'), 'config: los tokens vencidos se borran');
+  enviados.length = 0;
+  vm.runInContext(`_enviarNotificacion(getSpreadsheet(), "bea@x.com", {alcance:"usuarios", usuarios:["ana@x.com"], titulo:"T", cuerpo:"C"})`, ctx);
+  check(tokensDe(silenciosos('uso_notificaciones')) === 'tok-bea', 'uso: con límite de organización, push silencioso a sus usuarios (org2)');
+  enviados.length = 0;
+  vm.runInContext(`_enviarNotificacion(getSpreadsheet(), "ana@x.com", {alcance:"usuarios", usuarios:["bea@x.com"], titulo:"T", cuerpo:"C"})`, ctx);
+  check(silenciosos('uso_notificaciones').length === 0, 'uso: sin límite de organización (org1) no hay push de uso');
+  enviados.length = 0;
+  const mal = JSON.parse(vm.runInContext(`doPost({postData:{contents: JSON.stringify({action:"update", sheet:"config_notificaciones", id:"cn00000001", usuario_sesion:"ana@x.com", data:{periodo:"anio"}})}})`, ctx));
+  check(mal.status === 'error' && silenciosos('config_notificaciones').length === 0, 'config: un cambio rechazado no avisa');
+}
+{ // plantillas y tipos de notificación
+  const { ctx, hojas, enviados } = crearContexto(cred);
+  const post = (o) => JSON.parse(vm.runInContext(`doPost({postData:{contents: ${JSON.stringify(JSON.stringify(Object.assign({ usuario_sesion: 'ana@x.com' }, o)))}}})`, ctx));
+  vm.runInContext(`prepararHojasNotificaciones()`, ctx);
+  const tipos = hojas.tipos_notificacion.filas;
+  check(tipos.length === 8 && tipos[1][0] === 'tn00000001' && tipos[1][1] === 'Pago quincenal' && tipos[7][1] === 'Otro', 'tipos: la hoja nace con los 7 tipos iniciales');
+  vm.runInContext(`prepararHojasNotificaciones()`, ctx);
+  check(hojas.tipos_notificacion.filas.length === 8, 'tipos: preparar dos veces no duplica');
+  const nt = post({ action: 'create', sheet: 'tipos_notificacion', data: { nombre: 'Aniversario' } });
+  check(nt.status === 'success' && nt.id === 'tn00000008' && hojas.tipos_notificacion.filas[8][2] === 'activo', 'tipos: alta con ID del servidor -> ' + JSON.stringify(nt));
+  check(post({ action: 'create', sheet: 'tipos_notificacion', data: { nombre: 'cumpleaños' } }).status === 'error', 'tipos: nombre repetido (sin importar mayúsculas) se rechaza');
+
+  enviados.length = 0;
+  const p1 = post({ action: 'create', sheet: 'plantillas_notificacion', data: { organizacion_id: 'org1', tipo_id: 'tn00000001', titulo: 'Día de pago', cuerpo: 'Hoy se realizó el pago de su quincena.', creado_por: 'ana@x.com' } });
+  const fila = hojas.plantillas_notificacion.filas[1];
+  check(p1.status === 'success' && fila[0] === 'pn00000001' && fila[2] === 'tn00000001' && fila[3] === 'Día de pago', 'plantilla: alta con ID del servidor -> ' + JSON.stringify(fila));
+  check(enviados.some((m) => m.data && m.data.tipo === 'config_notificaciones'), 'plantilla: avisa con push silencioso');
+  check(post({ action: 'create', sheet: 'plantillas_notificacion', data: { organizacion_id: 'org1', tipo_id: 'tn99', titulo: 'T', cuerpo: 'C' } }).status === 'error', 'plantilla: el tipo tiene que existir');
+  check(post({ action: 'create', sheet: 'plantillas_notificacion', data: { organizacion_id: 'org1', tipo_id: 'tn00000001', titulo: '', cuerpo: 'C' } }).status === 'error', 'plantilla: título obligatorio');
+  check(post({ action: 'create', sheet: 'plantillas_notificacion', data: { organizacion_id: 'org-x', tipo_id: 'tn00000001', titulo: 'T', cuerpo: 'C' } }).status === 'error', 'plantilla: la organización tiene que existir');
+  const u = post({ action: 'update', sheet: 'plantillas_notificacion', id: 'pn00000001', data: { titulo: 'Pago de quincena', tipo_id: 'tn00000002' } });
+  check(u.status === 'success' && hojas.plantillas_notificacion.filas[1][3] === 'Pago de quincena' && hojas.plantillas_notificacion.filas[1][2] === 'tn00000002' && hojas.plantillas_notificacion.filas[1][1] === 'org1', 'plantilla: editar conserva la organización');
+  check(post({ action: 'update', sheet: 'plantillas_notificacion', id: 'pn00000001', data: { cuerpo: 'x'.repeat(501) } }).status === 'error', 'plantilla: mensaje de más de 500 se rechaza');
+  const d = post({ action: 'delete', sheet: 'plantillas_notificacion', id: 'pn00000001' });
+  check(d.status === 'success' && hojas.plantillas_notificacion.filas.length === 1, 'plantilla: eliminar por ID');
 }
 process.exit(fallas ? 1 : 0);

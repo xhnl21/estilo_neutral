@@ -27,7 +27,7 @@ class ServidorSimulado implements HttpClientAdapter {
     'moneda_organizacion': 'mo', 'creditos_clientes': 'cr', 'codigo de telefonos': 'ct',
     'tipo de documento': 'td', 'resumen_diario': 'rd', 'metodo pago': 'mp',
     'usuario_organizacion': 'uo', 'seguridad': 'sg', 'checklist_iso': 'ck', 'cuarentena': 'cq',
-    'audit_log': 'al', 'reporte_migracion': 'rm',
+    'audit_log': 'al', 'reporte_migracion': 'rm', 'config_notificaciones': 'cn', 'tipos_notificacion': 'tn', 'plantillas_notificacion': 'pn',
   };
   final _contadores = <String, int>{};
 

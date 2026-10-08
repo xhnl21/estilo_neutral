@@ -49,6 +49,9 @@ Future<void> manejadorSegundoPlano(RemoteMessage mensaje) async {
     await _almacenAvisos.write(key: _claveAvisoRevocacion, value: DateTime.now().toIso8601String());
     return;
   }
+  // Otros avisos silenciosos (límites o uso de las notificaciones): con la
+  // app cerrada no hay pantalla que refrescar; al entrar al módulo se relee.
+  if (recibido.esSilencioso) return;
   // Un mensaje con `notification` (builds o envíos viejos) ya lo muestra el
   // sistema; mostrarlo acá lo duplicaría.
   if (mensaje.notification != null || !Platform.isAndroid) return;
@@ -92,7 +95,10 @@ Future<void> _inicializarLocales(
 /// Muestra la notificación con la marca: monograma "EN" en dorado, logo
 /// cuadrado a la derecha y, al expandir, el logo apaisado (2:1). Las dos
 /// imágenes van en el APK (drawable-nodpi), no se descargan.
-Future<void> mostrarNotificacionLocal(FlutterLocalNotificationsPlugin locales, MensajePush mensaje) {
+Future<void> mostrarNotificacionLocal(FlutterLocalNotificationsPlugin locales, MensajePush mensaje) async {
+  // Un aviso silencioso (o un tipo nuevo que esta versión no conoce) no trae
+  // texto: nunca se muestra una notificación vacía.
+  if (mensaje.esSilencioso || ((mensaje.titulo ?? '').isEmpty && (mensaje.cuerpo ?? '').isEmpty)) return;
   return locales.show(
     id: DateTime.now().millisecondsSinceEpoch ~/ 1000 % 100000,
     title: mensaje.titulo,

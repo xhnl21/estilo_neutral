@@ -1,95 +1,119 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../../../core/design_system/design_system.dart';
+import '../../../../core/router/route_paths.dart';
+import '../../../../models/config_notificaciones.dart';
 import '../../../../shared/google_sheets/sheets_data_service.dart';
 import '../../domain/destino_notificacion.dart';
 import '../cubit/enviar_notificacion_cubit.dart';
 import '../cubit/enviar_notificacion_state.dart';
 
-/// Vista "Enviar notificación" (hojas: notificaciones + dispositivos).
-/// Cualquier usuario con acceso puede enviar a todos, a una o varias
-/// organizaciones, o a usuarios puntuales de cualquier organización.
+/// Vista "Ver" de una notificación guardada: su tipo, título y mensaje y,
+/// debajo, los destinatarios (todos, una o varias organizaciones, o usuarios
+/// puntuales de cualquier organización) y el botón para enviarla.
 class EnviarNotificacionPage extends StatelessWidget {
   final SheetsDataService dataService;
+  final String plantillaId;
 
-  const EnviarNotificacionPage({super.key, required this.dataService});
+  const EnviarNotificacionPage({super.key, required this.dataService, required this.plantillaId});
 
   @override
   Widget build(BuildContext context) {
     return BlocProvider(
-      create: (_) => EnviarNotificacionCubit(dataService: dataService),
+      create: (_) => EnviarNotificacionCubit(dataService: dataService, plantillaId: plantillaId),
       child: const _EnviarNotificacionView(),
     );
   }
 }
 
-class _EnviarNotificacionView extends StatefulWidget {
+class _EnviarNotificacionView extends StatelessWidget {
   const _EnviarNotificacionView();
 
   @override
-  State<_EnviarNotificacionView> createState() => _EnviarNotificacionViewState();
-}
-
-class _EnviarNotificacionViewState extends State<_EnviarNotificacionView> {
-  final _titulo = TextEditingController();
-  final _cuerpo = TextEditingController();
-
-  @override
-  void dispose() {
-    _titulo.dispose();
-    _cuerpo.dispose();
-    super.dispose();
+  Widget build(BuildContext context) {
+    return BlocListener<EnviarNotificacionCubit, EnviarNotificacionState>(
+      listenWhen: (prev, curr) => curr.avisoCupo != null && prev.avisoCupo != curr.avisoCupo,
+      listener: (context, state) => _mostrarCupoAgotado(context, state.avisoCupo!),
+      child: BlocConsumer<EnviarNotificacionCubit, EnviarNotificacionState>(
+        listenWhen: (prev, curr) => curr.mensaje != null && prev.mensaje != curr.mensaje,
+        listener: (context, state) {
+          final ok = state.status == EnviarNotificacionStatus.enviada;
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text(state.mensaje!),
+            backgroundColor: ok ? AppPalette.success : AppPalette.error,
+            duration: const Duration(seconds: 4),
+          ));
+        },
+        builder: (context, state) => _build(context, state),
+      ),
+    );
   }
 
-  @override
-  Widget build(BuildContext context) {
-    return BlocConsumer<EnviarNotificacionCubit, EnviarNotificacionState>(
-      listenWhen: (prev, curr) => curr.mensaje != null && prev.mensaje != curr.mensaje,
-      listener: (context, state) {
-        final ok = state.status == EnviarNotificacionStatus.enviada;
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text(state.mensaje!),
-          backgroundColor: ok ? AppPalette.success : AppPalette.error,
-          duration: const Duration(seconds: 4),
-        ));
-        if (ok) {
-          _titulo.clear();
-          _cuerpo.clear();
-        }
-      },
-      builder: (context, state) => _build(context, state),
+  void _mostrarCupoAgotado(BuildContext context, String motivo) {
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        icon: const Icon(CupertinoIcons.bell_slash_fill, color: AppPalette.error),
+        title: const Text('Se acabaron las notificaciones'),
+        content: Text(motivo),
+        actions: [
+          FilledButton(onPressed: () => Navigator.pop(ctx), child: const Text('Entendido')),
+        ],
+      ),
     );
+  }
+
+  void _volver(BuildContext context) {
+    if (context.canPop()) {
+      context.pop();
+    } else {
+      context.go(RoutePaths.notificaciones);
+    }
   }
 
   Widget _build(BuildContext context, EnviarNotificacionState state) {
     final cubit = context.read<EnviarNotificacionCubit>();
     final ocupado = state.enviando;
+    final plantilla = state.plantilla;
+
+    if (plantilla == null) {
+      return AppScaffold(
+        title: 'Notificación',
+        showBackButton: true,
+        onBack: () => _volver(context),
+        body: AppEmptyState(
+          title: 'Esta notificación ya no existe',
+          subtitle: 'Puede que la hayan eliminado desde otro teléfono.',
+          icon: CupertinoIcons.bell_slash,
+          actionLabel: 'Volver al listado',
+          onAction: () => _volver(context),
+        ),
+      );
+    }
 
     return AppScaffold(
-      title: 'Notificaciones',
-      subtitle: 'Enviar un aviso a los teléfonos de los usuarios',
+      title: 'Ver notificación',
+      subtitle: 'Elegí los destinatarios y enviala',
+      showBackButton: true,
+      onBack: () => _volver(context),
       body: ListView(
         padding: const EdgeInsets.fromLTRB(AppSpacing.lg, AppSpacing.md, AppSpacing.lg, 80),
         children: [
-          AppTextField(
-            label: 'Título',
-            controller: _titulo,
-            hint: 'Ej: Llegó mercancía nueva',
-            readOnly: ocupado,
-            errorText: state.errores[CampoNotificacion.titulo],
-            onChanged: (_) => cubit.campoEditado(CampoNotificacion.titulo),
-          ),
-          const SizedBox(height: AppSpacing.sm),
-          AppTextField(
-            label: 'Mensaje',
-            controller: _cuerpo,
-            hint: 'Ej: Ya están disponibles las tallas nuevas.',
-            maxLines: 4,
-            readOnly: ocupado,
-            errorText: state.errores[CampoNotificacion.cuerpo],
-            onChanged: (_) => cubit.campoEditado(CampoNotificacion.cuerpo),
+          AppCard(
+            semanticLabel: 'Notificación ${state.nombreTipo}: ${plantilla.titulo}. ${plantilla.cuerpo}',
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                AppChip(label: state.nombreTipo, icon: CupertinoIcons.tag),
+                const SizedBox(height: AppSpacing.sm),
+                Text(plantilla.titulo, style: AppTypography.titleLarge.copyWith(fontSize: 17)),
+                const SizedBox(height: AppSpacing.xs),
+                Text(plantilla.cuerpo, style: AppTypography.bodyMedium),
+              ],
+            ),
           ),
           const SizedBox(height: AppSpacing.lg),
           Text('Destinatarios', style: AppTypography.titleLarge.copyWith(fontSize: 16)),
@@ -126,16 +150,40 @@ class _EnviarNotificacionViewState extends State<_EnviarNotificacionView> {
           const SizedBox(height: AppSpacing.sm),
           ..._destinatarios(cubit, state, ocupado),
           const SizedBox(height: AppSpacing.lg),
+          if (_textoCupo(state.uso) case final texto?) ...[
+            Semantics(
+              liveRegion: true,
+              child: Text(
+                texto,
+                style: AppTypography.bodyMedium.copyWith(
+                  color: state.sinCupo ? AppPalette.error : AppPalette.textSecondary,
+                ),
+              ),
+            ),
+            const SizedBox(height: AppSpacing.sm),
+          ],
           AppButton(
             label: 'Enviar notificación',
             icon: CupertinoIcons.paperplane_fill,
             isLoading: ocupado,
             isFullWidth: true,
-            onPressed: ocupado ? null : () => cubit.enviar(titulo: _titulo.text, cuerpo: _cuerpo.text),
+            onPressed: ocupado || state.sinCupo ? null : cubit.enviarPlantilla,
           ),
         ],
       ),
     );
+  }
+
+  /// "Te quedan 5 notificaciones hoy." / "No te quedan… Se renueva el …".
+  /// `null` si no hay límite o no se pudo consultar.
+  String? _textoCupo(UsoNotificaciones? uso) {
+    final restantes = uso?.restantes;
+    if (uso == null || restantes == null) return null;
+    final periodo = uso.periodo.enElPeriodo;
+    if (restantes > 0) {
+      return 'Te ${restantes == 1 ? 'queda 1 notificación' : 'quedan $restantes notificaciones'} $periodo.';
+    }
+    return 'No te quedan notificaciones $periodo.${uso.textoRenueva()}';
   }
 
   List<Widget> _destinatarios(EnviarNotificacionCubit cubit, EnviarNotificacionState state, bool ocupado) {

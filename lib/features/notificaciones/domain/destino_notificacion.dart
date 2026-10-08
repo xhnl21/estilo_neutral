@@ -54,6 +54,12 @@ class DestinoNotificacion extends Equatable {
   List<Object?> get props => [alcance, organizacionIds.toList()..sort(), usuarioEmails.toList()..sort()];
 }
 
+/// El servidor rechazó el envío porque se agotó el cupo del período (código
+/// `limite_notificaciones`). Es un [StateError] como los demás rechazos.
+class LimiteNotificacionesAgotado extends StateError {
+  LimiteNotificacionesAgotado(super.message);
+}
+
 /// Resultado de un envío, tal como lo informa el servidor.
 class ResultadoEnvioNotificacion extends Equatable {
   /// ID de la fila en la hoja "notificaciones".

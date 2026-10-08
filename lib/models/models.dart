@@ -26,3 +26,5 @@ export 'tipo_documento.dart';
 export 'telefono_ve.dart';
 export 'documento_identidad.dart';
 export 'fila_hoja.dart';
+export 'config_notificaciones.dart';
+export 'plantilla_notificacion.dart';

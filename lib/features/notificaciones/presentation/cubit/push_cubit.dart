@@ -52,6 +52,11 @@ class PushCubit extends Cubit<PushState> {
   Future<void> _alRecibir(MensajePush mensaje) async {
     if (mensaje.esSesionRevocada) {
       await atenderSesionRevocada();
+    } else if (mensaje.esSilencioso) {
+      // Límites o uso de las notificaciones: refresca las pantallas abiertas.
+      if (authCubit.isAuthenticated) {
+        await dataService.releerNotificaciones(config: mensaje.datos['tipo'] == tipoConfigNotificaciones);
+      }
     } else {
       await gateway.mostrarLocal(mensaje);
     }

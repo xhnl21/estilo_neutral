@@ -26,7 +26,7 @@ Reglas que aplica el servidor (Apps Script):
 - Solo reciben los usuarios que **siguen teniendo acceso**, según la organización a la que pertenecen **hoy**.
 - Una notificación que se toca abre la pantalla indicada en `ruta` (por ejemplo `/ventas`), si la trae.
 - Cada envío queda en la hoja `notificaciones` y en la bitácora (`audit_log`).
-- Desde la app, como máximo **30 envíos por hora por remitente**.
+- Cada organización tiene sus **límites de envío** (por hora, día, semana o mes; por usuario y para toda la organización), configurables en **Comunicación → Configuración de notificaciones** (§1.3). Sin configurar: **30 por hora por usuario**.
 
 > Los destinatarios son **usuarios de la app**. Los clientes de la hoja `clientes` no tienen la app instalada y no pueden recibir notificaciones FCM.
 
@@ -68,6 +68,31 @@ La app no confía a ciegas en el aviso: siempre relee el acceso, así un aviso v
 
 Para inactivar desde la hoja (sin la app): escribir `inactivo` en la columna `status` de `usuarios`. El disparador de edición (`alEditarNotificaciones`, el mismo de §5.2, instalado con `crearTriggerNotificacionesDesdeHoja()`) envía el push silencioso igual que desde la app. Sin el disparador, la sesión se cierra en la siguiente lectura o escritura.
 
+### 1.3 Límites de envío por organización
+
+Se configuran en la app, en **Comunicación → Configuración de notificaciones**, o directamente en la hoja `config_notificaciones` (§6). Cada organización tiene su propia configuración:
+
+| Campo | Qué es |
+|---|---|
+| Período | `hora`, `dia`, `semana` o `mes`. Es de calendario, en hora de Venezuela: el día empieza a las 00:00, la semana el lunes y el mes el día 1. |
+| Por usuario | Cuántas puede enviar cada usuario de la organización en el período. `0` = sin límite. |
+| Para toda la organización | Cuántas pueden enviar entre todos sus usuarios en el período. `0` = sin límite. |
+
+- Una organización **sin fila** usa lo de siempre: 30 por hora por usuario, sin límite para la organización.
+- Cuentan los envíos `ENVIADA` y `SIN_DESTINATARIOS` de la hoja `notificaciones`, desde la app **y** desde la hoja. Un envío a 50 teléfonos cuenta como 1.
+- El límite de la organización suma los envíos de los usuarios que pertenecen a ella **hoy**.
+- Al pasarse, el servidor rechaza el envío con el motivo y cuándo se renueva. Desde la app no se registra el intento; una fila cargada en la hoja queda en `ERROR` con ese motivo (no `PENDIENTE`).
+- La pantalla **Notificaciones** muestra cuántas te quedan en el período (acción `uso_notificaciones`) y deshabilita el envío al llegar a 0. Cuando el cupo se agota aparece el diálogo **"Se acabaron las notificaciones"** con el motivo y cuándo se renueva: al entrar sin cupo, cuando el servidor rechaza un envío por límite (código `limite_notificaciones`) o cuando otro usuario agota el cupo de la organización con la pantalla abierta.
+- **Actualización en los demás teléfonos (push silencioso):**
+
+  | Cuándo | Tipo | A quién | Qué hace la app |
+  |---|---|---|---|
+  | Se crean o cambian los límites de una organización | `config_notificaciones` | Todos los usuarios con acceso | Relee `config_notificaciones` y vuelve a consultar el cupo. |
+  | Alguien envía y su organización tiene límite de organización | `uso_notificaciones` | Los usuarios de esa organización | Vuelve a consultar el cupo (y muestra el diálogo si se agotó). |
+
+  No muestran nada en el teléfono. Con la app cerrada o en segundo plano se ignoran: al **entrar** a Notificaciones o a su configuración la app relee los límites y el cupo igual.
+- Mientras no haya roles (DT-1), cualquier usuario puede cambiar los límites de cualquier organización. Cada cambio guarda quién lo hizo (`actualizado_por`).
+
 ---
 
 ## 2. Estado de la configuración
@@ -80,12 +105,12 @@ Para inactivar desde la hoja (sin la app): escribir `inactivo` en la columna `st
 | API | Firebase Cloud Messaging API (v1), habilitada |
 | Cuenta de servicio | `fcm-sender@estilo-neutral.iam.gserviceaccount.com`, rol *Administrador de la API de Firebase Cloud Messaging* |
 | Credencial en el script | Propiedad `FCM_SERVICE_ACCOUNT` y, como respaldo, `credencial_fcm.js` que genera el deploy |
-| Apps Script | Producción @59 (`AKfycby6Jg1o…`), test @18 (`AKfycbx6GOO7…`) |
+| Apps Script | Producción @62 (`AKfycby6Jg1o…`), test @21 (`AKfycbx6GOO7…`) |
 | Hojas | `dispositivos` y `notificaciones`, creadas en la hoja de producción, con listas desplegables |
 | Disparador | `alEditarNotificaciones` (envía las filas marcadas `PENDIENTE`) |
 | Marca | Monograma "EN", color `#BC976F` y logo apaisado (`assets/notificaciones/logo_notificacion_2x1.jpg`), incluidos en el APK |
 | Formato del envío | Mensajes **solo de datos** en Android (`titulo`, `cuerpo`, `ruta`…); la app arma la notificación |
-| Versión de la app | `1.0.0+2020` (las anteriores a `1.0.0+2014` no muestran los mensajes solo de datos; las anteriores a `1.0.0+2017` no conocen el cierre de sesión silencioso) |
+| Versión de la app | `1.0.0+2023` (las anteriores a `1.0.0+2014` no muestran los mensajes solo de datos; las anteriores a `1.0.0+2017` no conocen el cierre de sesión silencioso; las anteriores a `1.0.0+2022` muestran vacíos los avisos de límites) |
 | Probado | En las apps **prod** y **QA** (Android, Redmi Note 8): con la app abierta, en segundo plano y cerrada, y el cierre de sesión silencioso al inactivar un usuario. |
 
 El proyecto de Google Cloud del login (`gmp-demo-project-093718520`, "Maps Platform Demo Project") **no tiene Firebase**. Se mantuvo separado para no activar facturación y para que borrar un proyecto no afecte al otro.
@@ -262,14 +287,15 @@ Requiere el **Apple Developer Program, que cuesta USD 99 por año**, así que se
 
 ### 5.1 Desde la app
 
-Menú lateral → **Comunicación → Notificaciones**:
+Menú lateral → **Comunicación → Notificaciones**. Las notificaciones se **guardan para reutilizarlas** (hoja `plantillas_notificacion`, por organización):
 
-1. Título (hasta 100 caracteres) y mensaje (hasta 500).
-2. Destinatarios:
+1. **Nueva notificación:** tipo (Pago quincenal, Recordatorio de pago, Cumpleaños, Reunión, Recordatorio, Evento, Otro, o uno nuevo con el botón **+**), título (hasta 100 caracteres) y mensaje (hasta 500) → **Guardar**.
+2. El listado se filtra por tipo (chips arriba). Cada notificación tiene **Ver**, **Editar** y **Eliminar**. Eliminar la quita del listado; los envíos ya hechos siguen en la hoja `notificaciones`.
+3. **Ver** muestra la notificación y, debajo, los destinatarios:
    - **Todos**;
    - **Organizaciones** (una o varias);
    - **Usuarios**: agrupados por organización, con un botón **Todos** por organización.
-3. **Enviar notificación.** El aviso dice a cuántos dispositivos llegó.
+4. **Enviar notificación.** El aviso dice a cuántos dispositivos llegó. La misma notificación se puede volver a enviar cuantas veces haga falta (dentro de los límites, §1.3).
 
 ### 5.2 Desde la hoja
 
@@ -317,6 +343,37 @@ Respuesta: `{"status":"success","id":"nt…","enviados":N,"fallidos":M}`.
 
 El teléfono se registra al iniciar sesión y cuando FCM renueva el token, y se borra al cerrar sesión. Los tokens vencidos los borra el script.
 
+**`tipos_notificacion`** (catálogo común; la crea el script con Pago quincenal, Recordatorio de pago, Cumpleaños, Reunión, Recordatorio, Evento y Otro):
+
+| Columna | Contenido |
+|---|---|
+| `id` | `tn00000001`… (lo genera el servidor). |
+| `nombre` | Único, sin importar mayúsculas (hasta 40 caracteres). |
+| `status` | `activo` / `inactivo`. Un tipo inactivo no se ofrece para notificaciones nuevas. |
+
+**`plantillas_notificacion`** (notificaciones guardadas para reutilizar; cada organización ve las suyas):
+
+| Columna | Contenido |
+|---|---|
+| `id` | `pn00000001`… (lo genera el servidor). |
+| `organizacion_id` | Organización dueña. |
+| `tipo_id` | FK a `tipos_notificacion.id`. |
+| `titulo`, `cuerpo` | Hasta 100 y 500 caracteres. |
+| `creado_por`, `actualizado_en` | Autor y último cambio. |
+
+Crear, editar o eliminar una notificación guardada o un tipo envía el aviso silencioso `config_notificaciones` (§1.3), así el listado se actualiza en los teléfonos que lo tienen abierto.
+
+**`config_notificaciones`** (una fila por organización; la crea el script al guardar la primera, o `prepararHojasNotificaciones()`):
+
+| Columna | Contenido |
+|---|---|
+| `id` | `cn00000001`… (lo genera el servidor). |
+| `organizacion_id` | Organización (una sola fila por organización). |
+| `periodo` | `hora`, `dia`, `semana` o `mes` (lista desplegable). |
+| `limite_por_usuario` | Entero; `0` = sin límite. |
+| `limite_organizacion` | Entero; `0` = sin límite. |
+| `actualizado_en`, `actualizado_por` | Último cambio (lo completa el script / la app). |
+
 **`notificaciones`** (una fila por envío):
 
 | Columna | Contenido |
@@ -342,9 +399,10 @@ El teléfono se registra al iniciar sesión y cuando FCM renueva el token, y se 
 | `ERROR` con `403` en `detalle` | A `fcm-sender` le falta el rol, o la clave es de otro proyecto. | <https://console.cloud.google.com/iam-admin/iam?project=estilo-neutral> |
 | `SIN_DESTINATARIOS` | Ningún destinatario tiene un teléfono registrado. | Que inicien sesión con la build nueva y acepten el permiso. |
 | "dispositivos dados de baja" en `detalle` | Tokens vencidos (app desinstalada o datos borrados). | Nada: el script los limpia. |
-| "Límite de 30 notificaciones por hora" | El remitente ya envió 30 en la última hora. | Esperar, o enviar desde la hoja. |
+| "Llegaste al límite de N notificaciones…" o "Tu organización llegó a su límite…" | Se agotó el cupo del período de esa organización (§1.3). | Esperar a la fecha que indica el mensaje, o subir el límite en **Configuración de notificaciones**. |
 | No llega nada, pero el envío figura `ENVIADA` | La app instalada es anterior a `1.0.0+2014` y no sabe mostrar los mensajes solo de datos. | Instalar la versión actual. |
 | Llega varios segundos tarde con la app cerrada | Android tiene que arrancar la app en segundo plano para armarla (más lento en builds debug). | Normal. En Xiaomi/MIUI: Ajustes → Apps → Estilo Neutral → **Ahorro de batería: sin restricciones** e **Inicio automático** activado. |
+| Aparece una notificación **vacía** (sin título ni texto) | App anterior a `1.0.0+2022`: no conoce los avisos silenciosos `config_notificaciones` / `uso_notificaciones`. | Instalar la versión actual. |
 | Un usuario inactivado sigue con la sesión abierta | App anterior a `1.0.0+2017` (no conoce el aviso silencioso), sin conexión, o se inactivó a mano en la hoja sin el disparador instalado. | Se cierra igual al volver a la app o al intentar guardar. Instalar la versión actual. |
 | `INSTALL_FAILED_VERSION_DOWNGRADE` al instalar | El teléfono tiene un `versionCode` mayor. Builds viejos con `--split-per-abi` usaban `2009`. | `--version X.Y.Z+<mayor>`. El deploy lo detecta y sugiere el número. |
 | `INSTALL_FAILED_UPDATE_INCOMPATIBLE` | La app instalada tiene otra firma (por ejemplo, debug de `flutter run`). | Instalar el build debug encima, o desinstalar y poner el release (se pierden los datos locales). |
@@ -361,7 +419,7 @@ node tools/apps_script/tests/notificaciones.test.js # tests del script, sin Goog
 
 ## 8. Seguridad, privacidad y costo
 
-- **Remitente no autenticado (DT-1).** El `/exec` acepta pedidos anónimos y el remitente es el email que declara la app. Alguien que conozca la URL y el email de un usuario podría enviar notificaciones a todos. Lo acotan el límite de 30 por hora y el registro de cada envío. La solución completa es la de DT-1 (`docs/deuda-tecnica.md`): verificar un token de Google en el script.
+- **Remitente no autenticado (DT-1).** El `/exec` acepta pedidos anónimos y el remitente es el email que declara la app. Alguien que conozca la URL y el email de un usuario podría enviar notificaciones a todos. Lo acotan los límites de envío de cada organización (§1.3) y el registro de cada envío; como cualquiera puede cambiar esos límites, no reemplazan a la autenticación. La solución completa es la de DT-1 (`docs/deuda-tecnica.md`): verificar un token de Google en el script.
 - **Sin roles.** Cualquier usuario puede notificar a cualquier organización, y así se pidió. Si se agregan roles, conviene restringir el alcance `global`.
 - **Contenido.** Pasa por Google y aparece en la pantalla bloqueada: no incluir montos, cédulas ni datos de clientes.
 - **Credencial.** `fcm-sender` solo puede enviar mensajes. Para rotar la clave: crear una nueva, reemplazar el archivo local y la propiedad, desplegar y **borrar la vieja** en Google Cloud. Las versiones anteriores del script conservan la credencial embebida, así que la única forma de invalidarla es borrarla en Google Cloud.
@@ -376,7 +434,12 @@ node tools/apps_script/tests/notificaciones.test.js # tests del script, sin Goog
 |---|---|
 | App: canal push | `lib/features/notificaciones/infrastructure/push_gateway.dart`, `push_firebase.dart` |
 | App: estado | `presentation/cubit/push_cubit.dart` (registro y apertura), `enviar_notificacion_cubit.dart` |
-| App: pantalla | `presentation/pages/enviar_notificacion_page.dart`, ruta `/notificaciones` |
+| App: pantallas | `presentation/pages/notificaciones_page.dart` (listado, filtro por tipo y formulario; ruta `/notificaciones`) y `enviar_notificacion_page.dart` (Ver: destinatarios y envío; ruta `/notificaciones/:id`) |
+| App: notificaciones guardadas | `plantillas_notificacion_cubit.dart`, `plantilla_form_cubit.dart`; modelo `lib/models/plantilla_notificacion.dart`; `SheetsDataService.addPlantillaNotificacion`, `updatePlantillaNotificacion`, `deletePlantillaNotificacion`, `addTipoNotificacion` |
+| App: límites | `presentation/pages/config_notificaciones_page.dart` + `config_notificaciones_cubit.dart`, ruta `/configuracion-notificaciones`; modelo `lib/models/config_notificaciones.dart`; `SheetsDataService.guardarConfigNotificaciones`, `usoNotificaciones` |
+| Script: notificaciones guardadas | `_hojaTiposNotificacion` (crea el catálogo inicial), `_validarPlantillaNotificacion`, `_validarTipoNotificacion` |
+| Script: avisos silenciosos | `_enviarSilencioso`, `_avisarSilencioso`, `_avisarUsoOrganizacion` (y `_expulsarUsuario`) |
+| Script: límites | `_validarConfigNotificaciones`, `_configNotificaciones`, `_limitesPeriodo`, `_cuotaNotificaciones`, `_usoNotificaciones` en `google_apps_script.js` |
 | App: servicio | `SheetsDataService.registrarDispositivo`, `eliminarDispositivo`, `enviarNotificacion` (`_accionEnServidor`) |
 | App: cierre silencioso | `PushCubit.atenderSesionRevocada`, `manejadorSegundoPlano` + `consumirAvisoRevocacion`, `lib/features/auth/application/control_acceso_sesion.dart` |
 | Script: estado y expulsión | `_estadoActivo`, `_asegurarColumnaEstado`, `_expulsarUsuario`, `_enviarMensajesFcm` en `google_apps_script.js` |

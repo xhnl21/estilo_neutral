@@ -48,7 +48,10 @@ const ID_PREFIXES = {
   audit_log: "al",
   reporte_migracion: "rm",
   dispositivos: "dv",
-  notificaciones: "nt"
+  notificaciones: "nt",
+  config_notificaciones: "cn",
+  plantillas_notificacion: "pn",
+  tipos_notificacion: "tn"
 };
 
 /** Hojas que originalmente no tenían columna id (ver migrarEsquema). */
@@ -150,12 +153,13 @@ function doPost(e) {
     }
 
     if (action === "registrar_dispositivo" || action === "eliminar_dispositivo" || action === "enviar_notificacion" ||
-        action === "preparar_notificaciones") {
+        action === "preparar_notificaciones" || action === "uso_notificaciones") {
       if (!usuarioSesion) {
         return respond({ status: "error", message: "Falta el usuario de la sesión." }, 401);
       }
       if (action === "registrar_dispositivo") return respond(_registrarDispositivo(ss, usuarioSesion, data));
       if (action === "eliminar_dispositivo") return respond(_eliminarDispositivo(ss, usuarioSesion, data));
+      if (action === "uso_notificaciones") return respond(_usoNotificaciones(ss, usuarioSesion));
       // Idempotente: crea las hojas con sus listas desplegables e instala el
       // disparador de envío desde la hoja (lo mismo que correr esas dos
       // funciones desde el editor).
@@ -234,6 +238,13 @@ function doPost(e) {
         "saldo_usd", "usuario_email", "hash_evidencia"
       ]);
     }
+    if (!sheet && sheetName === HOJA_CONFIG_NOTIFICACIONES) {
+      sheet = _hojaConEncabezado(ss, HOJA_CONFIG_NOTIFICACIONES, ENCABEZADO_CONFIG_NOTIFICACIONES);
+    }
+    if (!sheet && sheetName === HOJA_PLANTILLAS_NOTIFICACION) {
+      sheet = _hojaConEncabezado(ss, HOJA_PLANTILLAS_NOTIFICACION, ENCABEZADO_PLANTILLAS_NOTIFICACION);
+    }
+    if (!sheet && sheetName === HOJA_TIPOS_NOTIFICACION) sheet = _hojaTiposNotificacion(ss);
     if (!sheet) {
       return respond({ status: "error", message: "Hoja '" + sheetName + "' no encontrada" }, 404);
     }
@@ -290,6 +301,15 @@ function doPost(e) {
 
       default:
         return respond({ status: "error", message: "Acción no reconocida: " + action }, 400);
+    }
+
+    // Límites, plantillas o tipos de notificación cambiados: los teléfonos
+    // abiertos se actualizan con un push silencioso (después de escribir).
+    const hojasDelModulo = ["config_notificaciones", "plantillas_notificacion", "tipos_notificacion"];
+    if (hojasDelModulo.indexOf(sheetName) !== -1 && result && result.status === "success" &&
+        (action === "create" || action === "update" || action === "delete")) {
+      SpreadsheetApp.flush();
+      _avisarSilencioso(ss, function () { return true; }, { tipo: TIPO_CONFIG_NOTIFICACIONES });
     }
 
     return respond(result);
@@ -793,6 +813,34 @@ function _handleCreate(ss, sheet, sheetName, data, skipAudit) {
       data.id,
       data.nombre || ""
     ];
+  } else if (sheetName === "plantillas_notificacion") {
+    const errPlantilla = _validarPlantillaNotificacion(ss, data, true);
+    if (errPlantilla) throw new Error(errPlantilla);
+    rowValues = [
+      data.id,
+      String(data.organizacion_id).trim(),
+      String(data.tipo_id).trim(),
+      String(data.titulo).trim(),
+      String(data.cuerpo).trim(),
+      String(data.creado_por || "").trim().toLowerCase(),
+      new Date().toISOString()
+    ];
+  } else if (sheetName === "tipos_notificacion") {
+    const errTipo = _validarTipoNotificacion(sheet, data, -1);
+    if (errTipo) throw new Error(errTipo);
+    rowValues = [data.id, String(data.nombre).trim(), _textoEstado(data.status)];
+  } else if (sheetName === "config_notificaciones") {
+    const errConfig = _validarConfigNotificaciones(ss, sheet, data, null);
+    if (errConfig) throw new Error(errConfig);
+    rowValues = [
+      data.id,
+      String(data.organizacion_id).trim(),
+      String(data.periodo).trim().toLowerCase(),
+      Number(data.limite_por_usuario),
+      Number(data.limite_organizacion),
+      new Date().toISOString(),
+      String(data.actualizado_por || "").trim().toLowerCase()
+    ];
   } else if (sheetName === "moneda_organizacion") {
     rowValues = [
       data.id,
@@ -1004,6 +1052,26 @@ function _handleUpdate(ss, sheet, sheetName, id, data, skipAudit) {
     }
   } else if (sheetName === "organizaciones") {
     if (data.nombre !== undefined) sheet.getRange(rowIndex, 2).setValue(data.nombre);
+  } else if (sheetName === "plantillas_notificacion") {
+    const errPlantilla = _validarPlantillaNotificacion(ss, data, false);
+    if (errPlantilla) return { status: "error", message: errPlantilla };
+    if (data.tipo_id !== undefined) sheet.getRange(rowIndex, 3).setValue(String(data.tipo_id).trim());
+    if (data.titulo !== undefined) sheet.getRange(rowIndex, 4).setValue(String(data.titulo).trim());
+    if (data.cuerpo !== undefined) sheet.getRange(rowIndex, 5).setValue(String(data.cuerpo).trim());
+    sheet.getRange(rowIndex, 7).setValue(new Date().toISOString());
+  } else if (sheetName === "tipos_notificacion") {
+    const errTipo = _validarTipoNotificacion(sheet, data, rowIndex);
+    if (errTipo) return { status: "error", message: errTipo };
+    if (data.nombre !== undefined) sheet.getRange(rowIndex, 2).setValue(String(data.nombre).trim());
+    if (data.status !== undefined) sheet.getRange(rowIndex, 3).setValue(_textoEstado(data.status));
+  } else if (sheetName === "config_notificaciones") {
+    const errConfig = _validarConfigNotificaciones(ss, sheet, data, rowIndex);
+    if (errConfig) return { status: "error", message: errConfig };
+    if (data.periodo !== undefined) sheet.getRange(rowIndex, 3).setValue(String(data.periodo).trim().toLowerCase());
+    if (data.limite_por_usuario !== undefined) sheet.getRange(rowIndex, 4).setValue(Number(data.limite_por_usuario));
+    if (data.limite_organizacion !== undefined) sheet.getRange(rowIndex, 5).setValue(Number(data.limite_organizacion));
+    sheet.getRange(rowIndex, 6).setValue(new Date().toISOString());
+    if (data.actualizado_por !== undefined) sheet.getRange(rowIndex, 7).setValue(String(data.actualizado_por).trim().toLowerCase());
   } else if (sheetName === "moneda_organizacion") {
     if (data.moneda !== undefined) sheet.getRange(rowIndex, 3).setValue(data.moneda);
     if (data.actualizado_en !== undefined) sheet.getRange(rowIndex, 4).setValue(data.actualizado_en);
@@ -1326,6 +1394,18 @@ function prepararHojasNotificaciones() {
   const ss = getSpreadsheet();
   const disp = _hojaConEncabezado(ss, HOJA_DISPOSITIVOS, ENCABEZADO_DISPOSITIVOS);
   disp.getRange("A:F").setNumberFormat("@");
+  _hojaTiposNotificacion(ss).getRange("A:A").setNumberFormat("@");
+  _hojaConEncabezado(ss, HOJA_PLANTILLAS_NOTIFICACION, ENCABEZADO_PLANTILLAS_NOTIFICACION).getRange("A:C").setNumberFormat("@");
+  const config = _hojaConEncabezado(ss, HOJA_CONFIG_NOTIFICACIONES, ENCABEZADO_CONFIG_NOTIFICACIONES);
+  config.getRange("A:C").setNumberFormat("@");
+  config.getRange("F:G").setNumberFormat("@");
+  config.getRange("C2:C").setDataValidation(
+    SpreadsheetApp.newDataValidation().requireValueInList(PERIODOS_NOTIFICACION, true).build()
+  );
+  config.getRange("A1").setNote(
+    "Límites de envío de notificaciones por organización. periodo: hora | dia | semana | mes. " +
+    "limite_por_usuario y limite_organizacion: 0 = sin límite. Sin fila: 30 por hora por usuario."
+  );
   const notif = _hojaConEncabezado(ss, HOJA_NOTIFICACIONES, ENCABEZADO_NOTIFICACIONES);
   notif.getRange("A:J").setNumberFormat("@");
   notif.getRange("M:M").setNumberFormat("@");
@@ -1616,24 +1696,60 @@ function _expulsarUsuario(ss, email, motivo) {
       if (String(f[1]).trim().toLowerCase() === normalizado && token && tokens.indexOf(token) === -1) tokens.push(token);
     });
     if (!tokens.length) return { enviados: 0 };
-    const credencial = _credencialFcm();
-    let resultado = { enviados: 0 };
-    if (!credencial.error) {
-      const datos = { tipo: "sesion_revocada", motivo: String(motivo || "") };
-      resultado = _enviarMensajesFcm(credencial, tokens, function (token) {
-        return {
-          token: token,
-          data: datos,
-          android: { priority: "HIGH" },
-          // iOS: aviso en segundo plano, sin alerta ni sonido.
-          apns: { headers: { "apns-priority": "5", "apns-push-type": "background" }, payload: { aps: { "content-available": 1 } } }
-        };
-      });
-    }
+    const resultado = _enviarSilencioso(ss, tokens, { tipo: "sesion_revocada", motivo: String(motivo || "") });
     _borrarTokens(ss, tokens);
     return resultado;
   } catch (e) {
     console.error("No se pudo expulsar a " + normalizado + ": " + e);
+    return { enviados: 0, error: String(e) };
+  }
+}
+
+/** Tipos de push silencioso (la app no muestra nada; ver push_gateway.dart). */
+const TIPO_CONFIG_NOTIFICACIONES = "config_notificaciones";
+const TIPO_USO_NOTIFICACIONES = "uso_notificaciones";
+
+/**
+ * Envía un push SILENCIOSO (solo datos, sin título ni cuerpo) a [tokens].
+ * La app lo atiende sin mostrar nada. Devuelve { enviados, ... }.
+ */
+function _enviarSilencioso(ss, tokens, datos) {
+  if (!tokens.length) return { enviados: 0 };
+  const credencial = _credencialFcm();
+  if (credencial.error) return { enviados: 0, error: credencial.error };
+  const r = _enviarMensajesFcm(credencial, tokens, function (token) {
+    return {
+      token: token,
+      data: datos,
+      android: { priority: "HIGH" },
+      // iOS: aviso en segundo plano, sin alerta ni sonido.
+      apns: { headers: { "apns-priority": "5", "apns-push-type": "background" }, payload: { aps: { "content-available": 1 } } }
+    };
+  });
+  _borrarTokens(ss, r.invalidos);
+  return r;
+}
+
+/**
+ * Push silencioso a los teléfonos de los usuarios con acceso que cumplen
+ * [incluir](email, organizacionId). Nunca lanza: es solo para refrescar
+ * pantallas abiertas (al entrar a cada módulo la app relee igual).
+ */
+function _avisarSilencioso(ss, incluir, datos) {
+  try {
+    const sh = ss.getSheetByName(HOJA_DISPOSITIVOS);
+    if (!sh || sh.getLastRow() < 2) return { enviados: 0 };
+    const acceso = _mapaAcceso(ss);
+    const tokens = [];
+    sh.getDataRange().getValues().slice(1).forEach(function (f) {
+      const email = String(f[1]).trim().toLowerCase();
+      const token = String(f[3]).replace(/^'/, "").trim();
+      const org = acceso.orgDe[email];
+      if (token && org && incluir(email, org) && tokens.indexOf(token) === -1) tokens.push(token);
+    });
+    return _enviarSilencioso(ss, tokens, datos);
+  } catch (e) {
+    console.error("No se pudo enviar el aviso silencioso " + datos.tipo + ": " + e);
     return { enviados: 0, error: String(e) };
   }
 }
@@ -1676,9 +1792,17 @@ function _procesarNotificacion(ss, remitente, datos, fila) {
     escribir("ERROR", 0, 0, norm.error);
     return { status: "error", id: id, message: norm.error };
   }
+  const agotada = _motivoCuotaAgotada(_cuotaNotificaciones(ss, remitente, norm.acceso));
+  if (agotada) {
+    // Desde la app no se registra (sería una fila por cada intento); desde
+    // la hoja sí, para que la fila no quede PENDIENTE para siempre.
+    if (fila) escribir("ERROR", 0, 0, agotada);
+    return { status: "error", code: "limite_notificaciones", message: agotada };
+  }
   const tokens = _tokensDestino(ss, norm.solicitud, norm.acceso);
   if (!tokens.length) {
     escribir("SIN_DESTINATARIOS", 0, 0, "Ningún destinatario tiene un dispositivo registrado.");
+    _avisarUsoOrganizacion(ss, remitente, norm.acceso);
     return { status: "success", id: id, enviados: 0, fallidos: 0 };
   }
   const credencial = _credencialFcm();
@@ -1690,6 +1814,7 @@ function _procesarNotificacion(ss, remitente, datos, fila) {
   _borrarTokens(ss, r.invalidos);
   const detalle = (r.invalidos.length ? r.invalidos.length + " dispositivos dados de baja (token vencido). " : "") + r.errores.join(" | ");
   escribir(r.enviados > 0 || r.fallidos === 0 ? "ENVIADA" : "ERROR", r.enviados, r.fallidos, detalle);
+  _avisarUsoOrganizacion(ss, remitente, norm.acceso);
   _appendAuditLog(ss, {
     usuario: remitente,
     hoja: HOJA_NOTIFICACIONES,
@@ -1704,21 +1829,238 @@ function _procesarNotificacion(ss, remitente, datos, fila) {
   return { status: "success", id: id, enviados: r.enviados, fallidos: r.fallidos };
 }
 
-/** Envíos permitidos por remitente y por hora desde la app (anti-spam, ver DT-1). */
-const LIMITE_NOTIFICACIONES_POR_HORA = 30;
-
-/** Acción "enviar_notificacion" de la app. */
+/** Acción "enviar_notificacion" de la app (el límite lo aplica _procesarNotificacion). */
 function _enviarNotificacion(ss, remitente, datos) {
-  // El /exec es anónimo y el remitente lo declara la app (DT-1): se limita
-  // la cantidad de envíos por remitente para acotar el abuso.
-  const cache = CacheService.getScriptCache();
-  const clave = "notif_" + Utilities.base64EncodeWebSafe(remitente).slice(0, 200);
-  const usados = Number(cache.get(clave) || 0);
-  if (usados >= LIMITE_NOTIFICACIONES_POR_HORA) {
-    return { status: "error", message: "Límite de " + LIMITE_NOTIFICACIONES_POR_HORA + " notificaciones por hora alcanzado. Probá más tarde." };
-  }
-  cache.put(clave, String(usados + 1), 3600);
   return _procesarNotificacion(ss, remitente, datos, null);
+}
+
+// -----------------------------------------------------------------------------
+// Límites de envío por organización (hoja "config_notificaciones")
+// -----------------------------------------------------------------------------
+//   id | organizacion_id | periodo | limite_por_usuario | limite_organizacion |
+//   actualizado_en | actualizado_por
+//
+// periodo: hora | dia | semana | mes (de calendario, hora de Venezuela: el día
+// empieza a las 00:00, la semana el lunes, el mes el día 1). Límite 0 = sin
+// límite. Una organización sin fila usa CONFIG_NOTIFICACIONES_DEFECTO.
+// Cuentan los envíos ENVIADA y SIN_DESTINATARIOS de la hoja "notificaciones"
+// (de la app y de la hoja). El límite de la organización suma los envíos de
+// todos sus usuarios (según la organización a la que pertenecen hoy).
+// Además de repartir el cupo, acota el abuso mientras el script no
+// autentique al remitente (DT-1).
+const HOJA_CONFIG_NOTIFICACIONES = "config_notificaciones";
+const ENCABEZADO_CONFIG_NOTIFICACIONES = [
+  "id", "organizacion_id", "periodo", "limite_por_usuario", "limite_organizacion", "actualizado_en", "actualizado_por"
+];
+const PERIODOS_NOTIFICACION = ["hora", "dia", "semana", "mes"];
+const CONFIG_NOTIFICACIONES_DEFECTO = { periodo: "hora", limitePorUsuario: 30, limiteOrganizacion: 0 };
+const LIMITE_NOTIFICACIONES_MAXIMO = 100000;
+const DESFASE_VENEZUELA_MS = 4 * 3600 * 1000; // UTC-4, sin horario de verano
+
+// -----------------------------------------------------------------------------
+// Plantillas de notificación (reutilizables) y su catálogo de tipos
+// -----------------------------------------------------------------------------
+//   plantillas_notificacion: id | organizacion_id | tipo_id | titulo | cuerpo |
+//                            creado_por | actualizado_en
+//   tipos_notificacion:      id | nombre | status
+// Cada organización ve sus plantillas; los tipos son un catálogo común. Al
+// enviar, la app manda el título y el cuerpo de la plantilla (se registran
+// en "notificaciones" como cualquier envío).
+const HOJA_PLANTILLAS_NOTIFICACION = "plantillas_notificacion";
+const ENCABEZADO_PLANTILLAS_NOTIFICACION = [
+  "id", "organizacion_id", "tipo_id", "titulo", "cuerpo", "creado_por", "actualizado_en"
+];
+const HOJA_TIPOS_NOTIFICACION = "tipos_notificacion";
+const ENCABEZADO_TIPOS_NOTIFICACION = ["id", "nombre", "status"];
+const TIPOS_NOTIFICACION_INICIALES = [
+  "Pago quincenal", "Recordatorio de pago", "Cumpleaños", "Reunión", "Recordatorio", "Evento", "Otro"
+];
+
+/** Hoja de tipos; si no existe, la crea con los tipos iniciales. */
+function _hojaTiposNotificacion(ss) {
+  let sh = ss.getSheetByName(HOJA_TIPOS_NOTIFICACION);
+  if (sh) return sh;
+  sh = _hojaConEncabezado(ss, HOJA_TIPOS_NOTIFICACION, ENCABEZADO_TIPOS_NOTIFICACION);
+  TIPOS_NOTIFICACION_INICIALES.forEach(function (nombre) {
+    sh.appendRow([_siguienteIdServidor(sh, ID_PREFIXES.tipos_notificacion), nombre, "activo"]);
+  });
+  return sh;
+}
+
+function _existeId(ss, hoja, id) {
+  const sh = ss.getSheetByName(hoja);
+  return !!(id && sh && _findRowById(sh, id) !== -1);
+}
+
+/** Error de validación de una plantilla, o null. [alta]: exige todos los campos. */
+function _validarPlantillaNotificacion(ss, data, alta) {
+  const sinComilla = function (v) { return String(v === undefined || v === null ? "" : v).replace(/^'/, "").trim(); };
+  if (alta) {
+    if (!_existeId(ss, "organizaciones", String(data.organizacion_id || "").trim())) {
+      return "La organización " + data.organizacion_id + " no existe.";
+    }
+    if (data.tipo_id === undefined || data.titulo === undefined || data.cuerpo === undefined) {
+      return "Faltan el tipo, el título o el mensaje.";
+    }
+  }
+  if (data.tipo_id !== undefined && !_existeId(ss, HOJA_TIPOS_NOTIFICACION, String(data.tipo_id).trim())) {
+    return "El tipo de notificación " + data.tipo_id + " no existe.";
+  }
+  if (data.titulo !== undefined) {
+    const t = sinComilla(data.titulo);
+    if (!t || t.length > 100) return "El título es obligatorio (hasta 100 caracteres).";
+  }
+  if (data.cuerpo !== undefined) {
+    const c = sinComilla(data.cuerpo);
+    if (!c || c.length > 500) return "El mensaje es obligatorio (hasta 500 caracteres).";
+  }
+  return null;
+}
+
+/** Error de validación de un tipo (nombre obligatorio y único), o null. */
+function _validarTipoNotificacion(sheet, data, filaActual) {
+  if (filaActual === -1 && data.nombre === undefined) return "Falta el nombre del tipo.";
+  if (data.nombre === undefined) return null;
+  const nombre = String(data.nombre).replace(/^'/, "").trim();
+  if (!nombre || nombre.length > 40) return "El nombre del tipo es obligatorio (hasta 40 caracteres).";
+  const filas = sheet.getDataRange().getValues();
+  for (let i = 1; i < filas.length; i++) {
+    if (i + 1 !== filaActual && String(filas[i][1]).trim().toLowerCase() === nombre.toLowerCase()) {
+      return "Ya existe el tipo \"" + nombre + "\".";
+    }
+  }
+  return null;
+}
+
+/** Error de validación de una fila de config_notificaciones, o null. */
+function _validarConfigNotificaciones(ss, sheet, data, filaActual) {
+  if (filaActual === null) {
+    const org = String(data.organizacion_id || "").trim();
+    if (!org) return "Falta la organización.";
+    const orgs = ss.getSheetByName("organizaciones");
+    const existe = orgs && orgs.getLastRow() >= 2 &&
+      orgs.getRange(2, 1, orgs.getLastRow() - 1, 1).getValues().some(function (f) { return String(f[0]).trim() === org; });
+    if (!existe) return "La organización " + org + " no existe.";
+    if (_findRowByColumnValue(sheet, 2, org) !== -1) {
+      return "La organización ya tiene configuración de notificaciones: editala en vez de crear otra.";
+    }
+    if (data.periodo === undefined || data.limite_por_usuario === undefined || data.limite_organizacion === undefined) {
+      return "Faltan el período o los límites.";
+    }
+  }
+  if (data.periodo !== undefined && PERIODOS_NOTIFICACION.indexOf(String(data.periodo).trim().toLowerCase()) === -1) {
+    return "Período inválido: usá hora, dia, semana o mes.";
+  }
+  const limites = [["limite_por_usuario", "por usuario"], ["limite_organizacion", "de la organización"]];
+  for (let i = 0; i < limites.length; i++) {
+    const v = data[limites[i][0]];
+    if (v === undefined) continue;
+    const n = Number(v);
+    if (String(v).trim() === "" || !isFinite(n) || n !== Math.floor(n) || n < 0 || n > LIMITE_NOTIFICACIONES_MAXIMO) {
+      return "El límite " + limites[i][1] + " tiene que ser un número entero entre 0 (sin límite) y " + LIMITE_NOTIFICACIONES_MAXIMO + ".";
+    }
+  }
+  return null;
+}
+
+/** Configuración de [organizacionId], o la de por defecto si no tiene fila. */
+function _configNotificaciones(ss, organizacionId) {
+  const sh = ss.getSheetByName(HOJA_CONFIG_NOTIFICACIONES);
+  if (sh && sh.getLastRow() >= 2) {
+    const filas = sh.getDataRange().getValues();
+    for (let i = 1; i < filas.length; i++) {
+      if (String(filas[i][1]).trim() !== organizacionId) continue;
+      const periodo = String(filas[i][2]).trim().toLowerCase();
+      const lu = Number(filas[i][3]);
+      const lo = Number(filas[i][4]);
+      return {
+        periodo: PERIODOS_NOTIFICACION.indexOf(periodo) !== -1 ? periodo : CONFIG_NOTIFICACIONES_DEFECTO.periodo,
+        limitePorUsuario: isFinite(lu) && lu >= 0 ? Math.floor(lu) : CONFIG_NOTIFICACIONES_DEFECTO.limitePorUsuario,
+        limiteOrganizacion: isFinite(lo) && lo >= 0 ? Math.floor(lo) : CONFIG_NOTIFICACIONES_DEFECTO.limiteOrganizacion
+      };
+    }
+  }
+  return Object.assign({}, CONFIG_NOTIFICACIONES_DEFECTO);
+}
+
+/** Inicio del período actual y del siguiente (Date), en hora de Venezuela. */
+function _limitesPeriodo(periodo, ahora) {
+  const l = new Date(ahora.getTime() - DESFASE_VENEZUELA_MS);
+  const y = l.getUTCFullYear(), m = l.getUTCMonth(), d = l.getUTCDate(), h = l.getUTCHours();
+  let inicio, fin;
+  if (periodo === "hora") { inicio = Date.UTC(y, m, d, h); fin = Date.UTC(y, m, d, h + 1); }
+  else if (periodo === "dia") { inicio = Date.UTC(y, m, d); fin = Date.UTC(y, m, d + 1); }
+  else if (periodo === "semana") {
+    const desdeLunes = (l.getUTCDay() + 6) % 7;
+    inicio = Date.UTC(y, m, d - desdeLunes); fin = Date.UTC(y, m, d - desdeLunes + 7);
+  } else { inicio = Date.UTC(y, m, 1); fin = Date.UTC(y, m + 1, 1); }
+  return { inicio: new Date(inicio + DESFASE_VENEZUELA_MS), fin: new Date(fin + DESFASE_VENEZUELA_MS) };
+}
+
+/** Uso del período actual para [remitente] y su organización. */
+function _cuotaNotificaciones(ss, remitente, acceso, ahora) {
+  const org = acceso.orgDe[remitente] || "";
+  const config = _configNotificaciones(ss, org);
+  const periodo = _limitesPeriodo(config.periodo, ahora || new Date());
+  let usuario = 0, organizacion = 0;
+  const sh = ss.getSheetByName(HOJA_NOTIFICACIONES);
+  if (sh && sh.getLastRow() >= 2) {
+    sh.getDataRange().getValues().slice(1).forEach(function (f) {
+      const estado = String(f[COL_NOTIF.estado - 1]).trim().toUpperCase();
+      if (estado !== "ENVIADA" && estado !== "SIN_DESTINATARIOS") return;
+      const fecha = f[1] instanceof Date ? f[1] : new Date(String(f[1]));
+      if (isNaN(fecha.getTime()) || fecha < periodo.inicio || fecha >= periodo.fin) return;
+      const email = String(f[2]).trim().toLowerCase();
+      if (email === remitente) usuario++;
+      if (org && acceso.orgDe[email] === org) organizacion++;
+    });
+  }
+  return { organizacionId: org, config: config, inicio: periodo.inicio, fin: periodo.fin, usuario: usuario, organizacion: organizacion };
+}
+
+const NOMBRE_PERIODO = { hora: "esta hora", dia: "hoy", semana: "esta semana", mes: "este mes" };
+
+/** Mensaje si [cuota] no permite otro envío, o null. */
+function _motivoCuotaAgotada(cuota) {
+  const c = cuota.config;
+  const renueva = " Se renueva el " + Utilities.formatDate(cuota.fin, "GMT-4", "dd/MM/yyyy 'a las' HH:mm") + ".";
+  if (c.limitePorUsuario > 0 && cuota.usuario >= c.limitePorUsuario) {
+    return "Llegaste al límite de " + c.limitePorUsuario + " notificaciones " + NOMBRE_PERIODO[c.periodo] + " por usuario." + renueva;
+  }
+  if (c.limiteOrganizacion > 0 && cuota.organizacion >= c.limiteOrganizacion) {
+    return "Tu organización llegó a su límite de " + c.limiteOrganizacion + " notificaciones " + NOMBRE_PERIODO[c.periodo] + "." + renueva;
+  }
+  return null;
+}
+
+/**
+ * Si la organización del remitente tiene límite propio, el envío gastó parte
+ * del cupo de todos: sus usuarios reciben un push silencioso para que la
+ * pantalla de Notificaciones abierta muestre el cupo nuevo (y avise si se
+ * agotó).
+ */
+function _avisarUsoOrganizacion(ss, remitente, acceso) {
+  const org = acceso.orgDe[remitente];
+  if (!org || _configNotificaciones(ss, org).limiteOrganizacion <= 0) return;
+  SpreadsheetApp.flush();
+  _avisarSilencioso(ss, function (email, o) { return o === org; }, { tipo: TIPO_USO_NOTIFICACIONES });
+}
+
+/** Acción "uso_notificaciones": límites y uso del período para el usuario de la sesión. */
+function _usoNotificaciones(ss, usuario) {
+  const acceso = _mapaAcceso(ss);
+  if (!acceso.orgDe[usuario]) return { status: "error", message: "El usuario " + usuario + " no tiene acceso." };
+  const cuota = _cuotaNotificaciones(ss, usuario, acceso);
+  return {
+    status: "success",
+    organizacion_id: cuota.organizacionId,
+    periodo: cuota.config.periodo,
+    limite_por_usuario: cuota.config.limitePorUsuario,
+    limite_organizacion: cuota.config.limiteOrganizacion,
+    usados_usuario: cuota.usuario,
+    usados_organizacion: cuota.organizacion,
+    renueva: cuota.fin.toISOString()
+  };
 }
 
 /**

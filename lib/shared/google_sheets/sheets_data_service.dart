@@ -84,6 +84,9 @@ class SheetsDataService extends ChangeNotifier {
   ];
   List<TasaRegistro> _tasas = [];
   List<MonedaOrganizacion> _monedasOrganizacion = [];
+  List<ConfigNotificaciones> _configNotificaciones = [];
+  List<TipoNotificacion> _tiposNotificacion = [];
+  List<PlantillaNotificacion> _plantillasNotificacion = [];
   List<GaleriaItem> _galeria = [];
   List<ClientCredit> _creditosClientes = [];
   List<CodigoTelefono> _codigosTelefono = [
@@ -308,6 +311,23 @@ class SheetsDataService extends ChangeNotifier {
   /// "moneda_organizacion").
   List<MonedaOrganizacion> get monedasOrganizacion => List.unmodifiable(_monedasOrganizacion);
 
+  /// Catálogo de tipos de notificación (todos, también los inactivos, para
+  /// poder mostrar el tipo de una plantilla vieja).
+  List<TipoNotificacion> get tiposNotificacion => List.unmodifiable(_tiposNotificacion);
+
+  /// Notificaciones guardadas para reutilizar de la organización actual.
+  List<PlantillaNotificacion> get plantillasNotificacion =>
+      List.unmodifiable(_plantillasNotificacion.where((p) => _matchesCurrentOrg(p.organizacionId)));
+
+  PlantillaNotificacion? plantillaNotificacion(String id) =>
+      plantillasNotificacion.where((p) => p.id == id).firstOrNull;
+
+  /// Límites de envío de notificaciones de [organizacionId] (hoja
+  /// "config_notificaciones"), o los de por defecto si no tiene fila.
+  ConfigNotificaciones configNotificacionesDe(String organizacionId) =>
+      _configNotificaciones.where((c) => c.organizacionId == organizacionId).firstOrNull ??
+      ConfigNotificaciones.porDefecto(organizacionId);
+
   /// Catálogo de fotos subidas (hoja "galeria") — ver [fotoUrlPorId].
   List<GaleriaItem> get galeria => List.unmodifiable(_galeria);
 
@@ -506,6 +526,16 @@ class SheetsDataService extends ChangeNotifier {
         // Moneda base seleccionada por organización — separada en su
         // propia hoja (no una columna en "organizaciones") para no
         // duplicar la misma fuente de verdad en dos lugares.
+        // Notificaciones guardadas para reutilizar y su catálogo de tipos.
+        safeFetch('tipos_notificacion', _parseTiposNotificacion, expectedHeaders: const ['id', 'nombre', 'status']),
+        safeFetch('plantillas_notificacion', _parsePlantillasNotificacion,
+            expectedHeaders: const ['id', 'organizacion_id', 'tipo_id', 'titulo', 'cuerpo']),
+        // Límites de envío de notificaciones, una fila por organización.
+        safeFetch(
+          'config_notificaciones',
+          _parseConfigNotificaciones,
+          expectedHeaders: const ['id', 'organizacion_id', 'periodo', 'limite_por_usuario', 'limite_organizacion'],
+        ),
         safeFetch(
           'moneda_organizacion',
           _parseMonedasOrganizacion,
@@ -813,6 +843,33 @@ class SheetsDataService extends ChangeNotifier {
         .toList();
     final localPending = _tasas.where((local) => !cloud.any((t) => t.id == local.id)).toList();
     _tasas = [...cloud, ...localPending];
+  }
+
+  void _parseTiposNotificacion(List<List<String>> rows) {
+    if (rows.isEmpty) return;
+    _tiposNotificacion = rows
+        .where((r) => r.isNotEmpty && r.first.trim().isNotEmpty)
+        .map((r) => TipoNotificacion.fromRow(r))
+        .where((t) => t.id.isNotEmpty && t.nombre.isNotEmpty)
+        .toList();
+  }
+
+  void _parsePlantillasNotificacion(List<List<String>> rows) {
+    if (rows.isEmpty) return;
+    _plantillasNotificacion = rows
+        .where((r) => r.isNotEmpty && r.first.trim().isNotEmpty)
+        .map((r) => PlantillaNotificacion.fromRow(r))
+        .where((p) => p.id.isNotEmpty)
+        .toList();
+  }
+
+  void _parseConfigNotificaciones(List<List<String>> rows) {
+    if (rows.isEmpty) return;
+    _configNotificaciones = rows
+        .where((r) => r.isNotEmpty && r.first.trim().isNotEmpty)
+        .map((r) => ConfigNotificaciones.fromRow(r))
+        .where((c) => c.id.isNotEmpty && c.organizacionId.isNotEmpty)
+        .toList();
   }
 
   void _parseMonedasOrganizacion(List<List<String>> rows) {
@@ -1544,7 +1601,9 @@ class SheetsDataService extends ChangeNotifier {
       throw StateError('No se pudo confirmar la respuesta del servidor (${payload['action']}).');
     }
     if (data['status'] != 'success') {
-      throw StateError(data['message']?.toString() ?? 'El servidor rechazó la acción ${payload['action']}.');
+      final mensaje = data['message']?.toString() ?? 'El servidor rechazó la acción ${payload['action']}.';
+      if (data['code'] == 'limite_notificaciones') throw LimiteNotificacionesAgotado(mensaje);
+      throw StateError(mensaje);
     }
     return data;
   }
@@ -1611,6 +1670,226 @@ class SheetsDataService extends ChangeNotifier {
       enviados: (r['enviados'] as num?)?.toInt() ?? 0,
       fallidos: (r['fallidos'] as num?)?.toInt() ?? 0,
     );
+  }
+
+  /// Cambia cada vez que llega un aviso de que los límites o el uso de las
+  /// notificaciones cambiaron (push silencioso o al entrar al módulo): las
+  /// pantallas abiertas vuelven a consultar el cupo.
+  int _versionNotificaciones = 0;
+  int get versionNotificaciones => _versionNotificaciones;
+
+  /// Relee lo que cambió en el módulo de notificaciones: con [config], las
+  /// hojas del módulo (límites, plantillas y tipos). Siempre avisa a las
+  /// pantallas abiertas ([versionNotificaciones]) para que consulten el cupo.
+  Future<void> releerNotificaciones({bool config = false}) async {
+    if (config && !_isLoading) {
+      try {
+        await Future.wait([
+          _fetchSheet('config_notificaciones', _parseConfigNotificaciones,
+              expectedHeaders: const ['id', 'organizacion_id', 'periodo', 'limite_por_usuario', 'limite_organizacion']),
+          _fetchSheet('tipos_notificacion', _parseTiposNotificacion, expectedHeaders: const ['id', 'nombre', 'status']),
+          _fetchSheet('plantillas_notificacion', _parsePlantillasNotificacion,
+              expectedHeaders: const ['id', 'organizacion_id', 'tipo_id', 'titulo', 'cuerpo']),
+        ]);
+      } catch (e) {
+        Logger.warning('SheetsDataService: no se pudieron releer las hojas de notificaciones: $e');
+      }
+    }
+    _versionNotificaciones++;
+    notifyListeners();
+  }
+
+  /// Límites y uso del período actual para el usuario de la sesión (los
+  /// cuenta el servidor sobre la hoja "notificaciones"). Lanza [StateError]
+  /// si falla.
+  Future<UsoNotificaciones> usoNotificaciones() async {
+    if (_currentUsuarioEmail == null) throw StateError('No hay usuario en la sesión.');
+    final r = await _accionEnServidor({'action': 'uso_notificaciones', 'sheet': 'notificaciones'});
+    int entero(String clave) => (r[clave] as num?)?.toInt() ?? 0;
+    return UsoNotificaciones(
+      periodo: PeriodoNotificaciones.desde(r['periodo']?.toString() ?? '') ?? ConfigNotificaciones.periodoPorDefecto,
+      limitePorUsuario: entero('limite_por_usuario'),
+      limiteOrganizacion: entero('limite_organizacion'),
+      usadosUsuario: entero('usados_usuario'),
+      usadosOrganizacion: entero('usados_organizacion'),
+      renueva: DateTime.tryParse(r['renueva']?.toString() ?? '')?.toLocal(),
+    );
+  }
+
+  /// Agrega un tipo de notificación al catálogo y lo devuelve con el ID que
+  /// le asignó el servidor. Lanza [ArgumentError] si el nombre está vacío o
+  /// repetido, y [StateError] (y revierte) si Sheets no lo confirma.
+  Future<TipoNotificacion> addTipoNotificacion(String nombre) async {
+    final limpio = nombre.trim();
+    if (limpio.isEmpty || limpio.length > 40) throw ArgumentError('El nombre del tipo es obligatorio (hasta 40 caracteres).');
+    if (_tiposNotificacion.any((t) => t.nombre.toLowerCase() == limpio.toLowerCase())) {
+      throw ArgumentError('Ya existe el tipo "$limpio".');
+    }
+    final nuevo = TipoNotificacion(id: '', nombre: limpio);
+    _tiposNotificacion.add(nuevo);
+    notifyListeners();
+    final id = await _crearConRollback('tipos_notificacion', Map.of(nuevo.toMap())..remove('id'),
+        revertir: () => _tiposNotificacion.remove(nuevo));
+    final confirmado = TipoNotificacion(id: id, nombre: limpio);
+    final i = _tiposNotificacion.indexOf(nuevo);
+    if (i != -1) _tiposNotificacion[i] = confirmado;
+    notifyListeners();
+    return confirmado;
+  }
+
+  void _validarPlantilla({required String tipoId, required String titulo, required String cuerpo}) {
+    if (!_tiposNotificacion.any((t) => t.id == tipoId)) throw ArgumentError('Elegí un tipo de notificación.');
+    if (titulo.isEmpty || titulo.length > PlantillaNotificacion.maxTitulo) {
+      throw ArgumentError('El título es obligatorio (hasta ${PlantillaNotificacion.maxTitulo} caracteres).');
+    }
+    if (cuerpo.isEmpty || cuerpo.length > PlantillaNotificacion.maxCuerpo) {
+      throw ArgumentError('El mensaje es obligatorio (hasta ${PlantillaNotificacion.maxCuerpo} caracteres).');
+    }
+  }
+
+  /// Guarda una notificación para reutilizar en la organización actual. La
+  /// devuelve con el ID del servidor. Lanza [ArgumentError] si los datos no
+  /// son válidos y [StateError] (y revierte) si Sheets no lo confirma.
+  Future<PlantillaNotificacion> addPlantillaNotificacion({
+    required String tipoId,
+    required String titulo,
+    required String cuerpo,
+  }) async {
+    final org = _currentOrganizacionId;
+    if (org == null || org.isEmpty) throw StateError('No hay una organización seleccionada.');
+    final t = titulo.trim();
+    final c = cuerpo.trim();
+    _validarPlantilla(tipoId: tipoId, titulo: t, cuerpo: c);
+    final nueva = PlantillaNotificacion(
+      id: '',
+      organizacionId: org,
+      tipoId: tipoId,
+      titulo: t,
+      cuerpo: c,
+      creadoPor: _currentUsuarioEmail ?? '',
+      actualizadoEn: DateTime.now().toUtc().toIso8601String(),
+    );
+    _plantillasNotificacion.insert(0, nueva);
+    notifyListeners();
+    final id = await _crearConRollback('plantillas_notificacion', Map.of(nueva.toMap())..remove('id'),
+        revertir: () => _plantillasNotificacion.remove(nueva));
+    final confirmada = nueva.copyWith(id: id);
+    final i = _plantillasNotificacion.indexOf(nueva);
+    if (i != -1) _plantillasNotificacion[i] = confirmada;
+    notifyListeners();
+    return confirmada;
+  }
+
+  /// Edita tipo, título y mensaje de una notificación guardada (conserva ID,
+  /// organización y autor). Lanza [ArgumentError] / [StateError] como el alta.
+  Future<void> updatePlantillaNotificacion(
+    String id, {
+    required String tipoId,
+    required String titulo,
+    required String cuerpo,
+  }) async {
+    final index = _plantillasNotificacion.indexWhere((p) => p.id == id);
+    if (index == -1) throw ArgumentError('La notificación ya no existe.');
+    final t = titulo.trim();
+    final c = cuerpo.trim();
+    _validarPlantilla(tipoId: tipoId, titulo: t, cuerpo: c);
+    final anterior = _plantillasNotificacion[index];
+    if (anterior.tipoId == tipoId && anterior.titulo == t && anterior.cuerpo == c) return;
+    final actualizada = anterior.copyWith(
+        tipoId: tipoId, titulo: t, cuerpo: c, actualizadoEn: DateTime.now().toUtc().toIso8601String());
+    _plantillasNotificacion[index] = actualizada;
+    notifyListeners();
+    await _sincronizarConRollback(
+      {
+        'action': 'update',
+        'sheet': 'plantillas_notificacion',
+        'id': id,
+        'data': {'tipo_id': tipoId, 'titulo': t, 'cuerpo': c},
+      },
+      revertir: () {
+        final i = _plantillasNotificacion.indexOf(actualizada);
+        if (i != -1) _plantillasNotificacion[i] = anterior;
+      },
+    );
+  }
+
+  /// Elimina una notificación guardada (las ya enviadas siguen en la hoja
+  /// "notificaciones"). Lanza [StateError] (y la repone) si Sheets no lo confirma.
+  Future<void> deletePlantillaNotificacion(String id) async {
+    final index = _plantillasNotificacion.indexWhere((p) => p.id == id);
+    if (index == -1) throw ArgumentError('La notificación ya no existe.');
+    final anterior = _plantillasNotificacion.removeAt(index);
+    notifyListeners();
+    await _sincronizarConRollback(
+      {'action': 'delete', 'sheet': 'plantillas_notificacion', 'id': id},
+      revertir: () => _plantillasNotificacion.insert(index.clamp(0, _plantillasNotificacion.length), anterior),
+    );
+  }
+
+  /// Guarda los límites de envío de notificaciones de una organización: crea
+  /// su fila si todavía no tiene, o edita la existente (una por organización).
+  /// Lanza [ArgumentError] si los valores no son válidos y [StateError] (y
+  /// revierte) si Sheets no lo confirma.
+  Future<void> guardarConfigNotificaciones({
+    required String organizacionId,
+    required PeriodoNotificaciones periodo,
+    required int limitePorUsuario,
+    required int limiteOrganizacion,
+  }) async {
+    if (!_organizaciones.any((o) => o.id == organizacionId)) {
+      throw ArgumentError('La organización ya no existe.');
+    }
+    for (final l in [limitePorUsuario, limiteOrganizacion]) {
+      if (l < 0 || l > ConfigNotificaciones.limiteMaximo) {
+        throw ArgumentError('Los límites van de 0 (sin límite) a ${ConfigNotificaciones.limiteMaximo}.');
+      }
+    }
+    final autor = _currentUsuarioEmail ?? '';
+    final idx = _configNotificaciones.indexWhere((c) => c.organizacionId == organizacionId);
+    if (idx != -1) {
+      final anterior = _configNotificaciones[idx];
+      if (anterior.periodo == periodo &&
+          anterior.limitePorUsuario == limitePorUsuario &&
+          anterior.limiteOrganizacion == limiteOrganizacion) {
+        return; // sin cambios
+      }
+      final actualizada = anterior.copyWith(
+        periodo: periodo,
+        limitePorUsuario: limitePorUsuario,
+        limiteOrganizacion: limiteOrganizacion,
+        actualizadoPor: autor,
+        actualizadoEn: DateTime.now().toUtc().toIso8601String(),
+      );
+      _configNotificaciones[idx] = actualizada;
+      notifyListeners();
+      await _sincronizarConRollback(
+        {'action': 'update', 'sheet': 'config_notificaciones', 'id': actualizada.id, 'data': actualizada.toMap()},
+        revertir: () {
+          final i = _configNotificaciones.indexOf(actualizada);
+          if (i != -1) _configNotificaciones[i] = anterior;
+        },
+      );
+      return;
+    }
+    final nueva = ConfigNotificaciones(
+      id: '',
+      organizacionId: organizacionId,
+      periodo: periodo,
+      limitePorUsuario: limitePorUsuario,
+      limiteOrganizacion: limiteOrganizacion,
+      actualizadoPor: autor,
+      actualizadoEn: DateTime.now().toUtc().toIso8601String(),
+    );
+    _configNotificaciones.add(nueva);
+    notifyListeners();
+    final idReal = await _crearConRollback(
+      'config_notificaciones',
+      Map.of(nueva.toMap())..remove('id'),
+      revertir: () => _configNotificaciones.remove(nueva),
+    );
+    final i = _configNotificaciones.indexOf(nueva);
+    if (i != -1) _configNotificaciones[i] = nueva.copyWith(id: idReal);
+    notifyListeners();
   }
 
   // ===========================================================================
