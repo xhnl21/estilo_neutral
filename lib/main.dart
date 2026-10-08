@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_native_splash/flutter_native_splash.dart';
 import 'app/di/injection.dart';
 import 'app/app.dart';
+import 'core/config/version_app.dart';
 import 'features/notificaciones/infrastructure/push_firebase.dart';
 
 Future<void> main() async {
@@ -14,6 +15,7 @@ Future<void> main() async {
   SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
   // Notificaciones FCM: si Firebase no está configurado, la app arranca igual
   // sin ellas (ver docs/notificaciones-fcm.md).
+  await VersionApp.cargar();
   final push = await PushFirebase.inicializar();
   ServiceLocator().init(push: push);
   runApp(const EstiloNeutralApp());

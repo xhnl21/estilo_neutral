@@ -1,6 +1,6 @@
 # Pendientes
 
-**Última actualización:** 2026-10-07
+**Última actualización:** 2026-10-08
 
 Este documento lista solo lo que **todavía no está resuelto**. Lo terminado se documentó aparte:
 
@@ -24,8 +24,7 @@ Este documento lista solo lo que **todavía no está resuelto**. Lo terminado se
 
 | # | Pendiente | Qué hacer |
 |---|---|---|
-| 2.1 | **Probar en la app `prod`.** Todas las pruebas llegaron a la app QA: en `dispositivos` solo está registrado el teléfono desde QA. | Abrir **Estilo Neutral** (sin "QA"), iniciar sesión y aceptar el permiso de notificaciones. Tiene que aparecer una segunda fila en `dispositivos`. Después, enviarse una desde **Comunicación → Notificaciones**. |
-| 2.2 | **iOS sin notificaciones**, por costo: Apple Developer Program, USD 99 por año. | Solo si se decide pagarlo: pasos en [§4.9 de la guía](docs/notificaciones-fcm.md#49-ios-no-configurado). |
+| 2.1 | **iOS sin notificaciones**, por costo: Apple Developer Program, USD 99 por año. | Solo si se decide pagarlo: pasos en [§4.9 de la guía](docs/notificaciones-fcm.md#49-ios-no-configurado). |
 
 ---
 

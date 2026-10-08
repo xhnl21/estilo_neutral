@@ -23,6 +23,49 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 cd "$PROJECT_ROOT"
 
+# Los errores de cada paso se guardan en script/log_script.txt (se reescribe
+# en cada ejecución). En la terminal se sigue viendo la salida completa.
+LOG_ERRORES="$SCRIPT_DIR/log_script.txt"
+SALIDA_PASO="$(mktemp -t estilo_neutral_paso)"
+PASO_ACTUAL=""
+{
+    echo "Log de errores de script/script.sh"
+    echo "Fecha:   $(date '+%Y-%m-%d %H:%M:%S')"
+    echo "Args:    ${*:-(ninguno)}"
+    echo "Commit:  $(git rev-parse --short HEAD 2>/dev/null || echo '?')$( [ -n "$(git status --porcelain 2>/dev/null)" ] && echo ' (con cambios sin commitear)')"
+    echo "Flutter: $(flutter --version 2>/dev/null | head -1 || echo '?')"
+    echo ""
+} > "$LOG_ERRORES"
+
+# Al salir (bien, con error o con Ctrl+C) deja el resultado final en el log.
+finalizar() {
+    local codigo=$?
+    rm -f "$SALIDA_PASO"
+    if [ $codigo -eq 0 ]; then
+        echo "RESULTADO: compilación finalizada con éxito." >> "$LOG_ERRORES"
+    else
+        echo "RESULTADO: el script se detuvo con código $codigo${PASO_ACTUAL:+ en el paso \"$PASO_ACTUAL\"}." >> "$LOG_ERRORES"
+        echo -e "${RED}❌ Falló. Detalle de los errores: $LOG_ERRORES${NC}" >&2
+    fi
+}
+trap finalizar EXIT
+
+# Ejecuta un comando mostrando su salida y, al terminar, agrega sus errores
+# a $LOG_ERRORES (script/extraer_errores.py). Si el comando falla, corta el script.
+paso() {
+    PASO_ACTUAL="$1"; shift
+    set +e
+    "$@" 2>&1 | tee "$SALIDA_PASO"
+    local codigo=${PIPESTATUS[0]}
+    set -e
+    python3 "$SCRIPT_DIR/extraer_errores.py" "$PASO_ACTUAL" "$codigo" "$SALIDA_PASO" "$LOG_ERRORES" \
+        || echo "PASO: $PASO_ACTUAL — no se pudieron extraer los errores (código $codigo)." >> "$LOG_ERRORES"
+    if [ "$codigo" -ne 0 ]; then
+        exit "$codigo"
+    fi
+    PASO_ACTUAL=""
+}
+
 echo -e "${BLUE}${BOLD}================================================================${NC}"
 echo -e "${BLUE}${BOLD}   COMPILACIÓN DE PRODUCCIÓN (RELEASE) - ESTILO NEUTRAL         ${NC}"
 echo -e "${BLUE}${BOLD}================================================================${NC}"
@@ -85,13 +128,13 @@ done
 
 # 2. Resolución de dependencias
 echo -e "${CYAN}📦 Paso 1/4: Obteniendo dependencias actualizadas...${NC}"
-flutter pub get
+paso "flutter pub get" flutter pub get
 
 # 3. Pruebas de calidad y análisis estático
 if [ "$RUN_TESTS" = true ]; then
     echo -e "${CYAN}🔍 Paso 2/4: Ejecutando análisis estático y pruebas unitarias...${NC}"
-    flutter analyze
-    flutter test
+    paso "flutter analyze" flutter analyze
+    paso "flutter test" flutter test
 else
     echo -e "${YELLOW}⚠️  Paso 2/4: Omitiendo suite de pruebas (--skip-tests activado).${NC}"
 fi
@@ -101,7 +144,7 @@ echo -e "${CYAN}🚀 Paso 3/4: Compilando binarios de Release (Flavor: prod)...$
 
 if [ "$BUILD_TYPE" = "apk" ] || [ "$BUILD_TYPE" = "all" ]; then
     echo -e "   🔨 Generando APK de producción..."
-    flutter build apk \
+    paso "build apk" flutter build apk \
         --flavor prod \
         --release \
         --dart-define-from-file="$ENV_FILE"
@@ -115,7 +158,7 @@ fi
 
 if [ "$BUILD_TYPE" = "bundle" ] || [ "$BUILD_TYPE" = "all" ]; then
     echo -e "   🔨 Generando Android App Bundle (.aab) para Google Play Store..."
-    flutter build appbundle \
+    paso "build appbundle" flutter build appbundle \
         --flavor prod \
         --release \
         --dart-define-from-file="$ENV_FILE"
@@ -132,6 +175,7 @@ echo ""
 echo -e "${GREEN}${BOLD}================================================================${NC}"
 echo -e "${GREEN}${BOLD}   ¡COMPILACIÓN DE PRODUCCIÓN FINALIZADA CON ÉXITO!            ${NC}"
 echo -e "${GREEN}${BOLD}================================================================${NC}"
+echo -e "Errores y advertencias de cada paso: ${BOLD}$LOG_ERRORES${NC}"
 echo -e "Artefactos listos para distribución:"
 if [ "$BUILD_TYPE" = "apk" ] || [ "$BUILD_TYPE" = "all" ]; then
     echo -e " • ${BOLD}APK Directo (Sideload / QA / Tiendas alternativas):${NC}"

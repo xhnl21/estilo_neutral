@@ -34,6 +34,10 @@ class ServidorSimulado implements HttpClientAdapter {
   /// Cantidad de lecturas gviz recibidas, por hoja.
   final lecturas = <String, int>{};
 
+  /// Opt-in: CSV que devuelve la lectura gviz de cada hoja (las demás
+  /// responden 500, como siempre).
+  final csvPorHoja = <String, String>{};
+
   String _nuevoId(Map<String, dynamic> payload) {
     final hoja = payload['sheet']?.toString() ?? '';
     final data = payload['data'];
@@ -58,6 +62,11 @@ class ServidorSimulado implements HttpClientAdapter {
     if (gviz) {
       final hoja = o.uri.queryParameters['sheet'] ?? '';
       lecturas[hoja] = (lecturas[hoja] ?? 0) + 1;
+      final csv = csvPorHoja[hoja];
+      if (csv != null) {
+        return ResponseBody.fromBytes(utf8.encode(csv), 200,
+            headers: {Headers.contentTypeHeader: ['text/csv']});
+      }
       return ResponseBody.fromBytes(utf8.encode('error'), 500,
           headers: {Headers.contentTypeHeader: ['text/plain']});
     }

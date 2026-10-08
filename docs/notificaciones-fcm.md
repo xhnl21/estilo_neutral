@@ -80,12 +80,13 @@ Para inactivar desde la hoja (sin la app): escribir `inactivo` en la columna `st
 | API | Firebase Cloud Messaging API (v1), habilitada |
 | Cuenta de servicio | `fcm-sender@estilo-neutral.iam.gserviceaccount.com`, rol *Administrador de la API de Firebase Cloud Messaging* |
 | Credencial en el script | Propiedad `FCM_SERVICE_ACCOUNT` y, como respaldo, `credencial_fcm.js` que genera el deploy |
-| Apps Script | Producción @57 (`AKfycby6Jg1o…`), test @16 (`AKfycbx6GOO7…`) |
+| Apps Script | Producción @59 (`AKfycby6Jg1o…`), test @18 (`AKfycbx6GOO7…`) |
 | Hojas | `dispositivos` y `notificaciones`, creadas en la hoja de producción, con listas desplegables |
 | Disparador | `alEditarNotificaciones` (envía las filas marcadas `PENDIENTE`) |
 | Marca | Monograma "EN", color `#BC976F` y logo apaisado (`assets/notificaciones/logo_notificacion_2x1.jpg`), incluidos en el APK |
 | Formato del envío | Mensajes **solo de datos** en Android (`titulo`, `cuerpo`, `ruta`…); la app arma la notificación |
-| Versión de la app | `1.0.0+2015` (las anteriores a `1.0.0+2014` no muestran los mensajes solo de datos) |
+| Versión de la app | `1.0.0+2020` (las anteriores a `1.0.0+2014` no muestran los mensajes solo de datos; las anteriores a `1.0.0+2017` no conocen el cierre de sesión silencioso) |
+| Probado | En las apps **prod** y **QA** (Android, Redmi Note 8): con la app abierta, en segundo plano y cerrada, y el cierre de sesión silencioso al inactivar un usuario. |
 
 El proyecto de Google Cloud del login (`gmp-demo-project-093718520`, "Maps Platform Demo Project") **no tiene Firebase**. Se mantuvo separado para no activar facturación y para que borrar un proyecto no afecte al otro.
 

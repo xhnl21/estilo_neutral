@@ -155,6 +155,28 @@ void main() {
       await cubit.close();
     });
 
+    test('reactivada en el servidor con la app abierta: entra sin reiniciar la app', () async {
+      // Lo inactivaron (la copia local lo muestra inactivo) y después lo
+      // reactivaron desde otro teléfono: solo el servidor lo sabe.
+      final usuario = ds.usuarios.firstWhere((u) => u.email == 'xhnl21@gmail.com');
+      await ds.cambiarEstadoUsuario(usuario.id, activo: false);
+      _servidor.csvPorHoja.addAll({
+        'usuarios': 'id,email,nombre,tipo_documento,cedula,status\n'
+            '${usuario.id},xhnl21@gmail.com,Xavier,V,1,activo\n',
+        'organizaciones': 'id,nombre\n$_org,Estilo Neutral\n',
+        'usuario_organizacion': 'id,usuario_email,organizacion_id\nuo00000001,xhnl21@gmail.com,$_org\n',
+      });
+
+      google.interactiva = _Cuenta('xhnl21@gmail.com');
+      final cubit = loginCubit();
+      await cubit.restaurarSesion();
+      await cubit.accionPrincipal();
+      expect(cubit.state.errorMessage, isNull);
+      expect(auth.isAuthenticated, isTrue);
+      expect(_servidor.lecturas['usuarios'], greaterThanOrEqualTo(1));
+      await cubit.close();
+    });
+
     test('muestra el motivo de un cierre de sesión forzado', () async {
       auth.logout(motivo: 'Tu acceso fue revocado.');
       final cubit = loginCubit();

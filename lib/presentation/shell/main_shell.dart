@@ -1,6 +1,7 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import '../../core/config/environment_config.dart';
+import '../../core/config/version_app.dart';
 import '../../core/design_system/design_system.dart';
 import '../../core/router/route_paths.dart';
 import '../../core/utils/logger.dart';
@@ -391,7 +392,8 @@ class _MainShellState extends State<MainShell> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    if (widget.authCubit.userEmail != null)
+                    // Correo de la sesión y, en la misma fila, la versión.
+                    if (widget.authCubit.userEmail != null || VersionApp.texto.isNotEmpty)
                       Padding(
                         padding: const EdgeInsets.fromLTRB(
                           AppSpacing.lg,
@@ -399,12 +401,31 @@ class _MainShellState extends State<MainShell> {
                           AppSpacing.lg,
                           0,
                         ),
-                        child: Text(
-                          widget.authCubit.userEmail!,
-                          style: AppTypography.labelSmall.copyWith(
-                            color: AppPalette.textSecondary,
-                          ),
-                          overflow: TextOverflow.ellipsis,
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                widget.authCubit.userEmail ?? '',
+                                style: AppTypography.labelSmall.copyWith(
+                                  color: AppPalette.textSecondary,
+                                ),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                            if (VersionApp.texto.isNotEmpty) ...[
+                              const SizedBox(width: AppSpacing.sm),
+                              Semantics(
+                                label: 'Versión de la aplicación ${VersionApp.texto}',
+                                excludeSemantics: true,
+                                child: Text(
+                                  VersionApp.texto,
+                                  style: AppTypography.labelSmall.copyWith(
+                                    color: AppPalette.textDisabled,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ],
                         ),
                       ),
                     Semantics(

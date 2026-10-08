@@ -82,7 +82,15 @@ class LoginCubit extends Cubit<LoginState> {
       // esperar a que esos datos hayan cargado.
       await dataService.esperarCargaInicial();
       final email = account.email.trim().toLowerCase();
-      final acceso = dataService.resolverAcceso(email);
+      var acceso = dataService.resolverAcceso(email);
+      if (acceso.organizacionId == null) {
+        // La copia local puede estar vieja: p. ej. la cuenta fue inactivada
+        // (y expulsada) y después reactivada sin reiniciar la app. Antes de
+        // rechazar, se releen las hojas de acceso del servidor.
+        await dataService.releerAcceso();
+        if (isClosed) return;
+        acceso = dataService.resolverAcceso(email);
+      }
       final organizacionId = acceso.organizacionId;
       if (organizacionId == null) {
         Logger.warning('Login rechazado para ${account.email}: ${acceso.motivo}');

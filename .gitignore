@@ -90,3 +90,6 @@ tools/apps_script_test/credencial_fcm.js
 
 # Builds de release copiados por tools/deploy.sh
 /dist/
+
+# Log de errores de script/script.sh (se regenera en cada ejecución)
+script/log_script.txt
