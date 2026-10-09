@@ -218,14 +218,17 @@ function doPost(e) {
         return respond({ status: "error", message: "Falta base64Data para subir la imagen" }, 400);
       }
 
-      const folder = DriveApp.getFolderById(DRIVE_FOLDER_ID);
+      // Cada organización tiene su carpeta: <raíz>/<organización>/Productos.
+      // La organización es la del usuario verificado, no la que diga la app.
+      const orgSubida = _mapaAcceso(ss).orgDe[usuarioSesion] || "";
+      const folder = orgSubida ? _carpetaProductos(ss, orgSubida) : DriveApp.getFolderById(DRIVE_FOLDER_ID);
       const decodedBytes = Utilities.base64Decode(base64Data);
       const blob = Utilities.newBlob(decodedBytes, mimeType, fileName);
       const file = folder.createFile(blob);
       // No se llama a file.setSharing(): Google bloquea a apps no verificadas
       // hacer públicos archivos vía API (prevención de abuso/malware). No hace
-      // falta: el archivo hereda el permiso "cualquiera con el enlace" que ya
-      // tiene configurado DRIVE_FOLDER_ID a nivel de carpeta.
+      // falta: el archivo hereda el permiso "cualquiera con el enlace" que
+      // tiene DRIVE_FOLDER_ID (y sus subcarpetas) a nivel de carpeta.
 
       const directUrl = "https://lh3.googleusercontent.com/d/" + file.getId();
 
@@ -726,6 +729,7 @@ function _handleCreate(ss, sheet, sheetName, data, skipAudit) {
     // de imagen se resuelve con un VLOOKUP contra esa hoja, así la URL real
     // vive en un solo lugar.
     const fotoId = data.foto_id || "";
+    if (fotoId) _publicarFotoDeProducto(ss, fotoId, data.organizacion_id);
     const fotoFormula = fotoId
       ? '=IFERROR(IMAGE(VLOOKUP(H' + nextRow + ';galeria!A:B;2;FALSE));"")'
       : "";
@@ -1070,6 +1074,7 @@ function _handleUpdate(ss, sheet, sheetName, id, data, skipAudit) {
     if (data.talla !== undefined) sheet.getRange(rowIndex, 6).setValue(_comoTexto(data.talla));
     if (data.precio_usd !== undefined) sheet.getRange(rowIndex, 7).setValue(data.precio_usd);
     if (data.foto_id !== undefined) {
+      if (data.foto_id) _publicarFotoDeProducto(ss, data.foto_id, String(sheet.getRange(rowIndex, 10).getValue()));
       sheet.getRange(rowIndex, 8).setValue(data.foto_id);
       sheet.getRange(rowIndex, 9).setFormula(
         data.foto_id
@@ -1641,6 +1646,187 @@ function _leerHojasUnaPorUna(ss, nombres) {
     hojas[nombre] = sh.getDataRange().getDisplayValues();
   });
   return hojas;
+}
+
+// =============================================================================
+// MÓDULO DRIVE: carpetas por organización
+// =============================================================================
+// DRIVE_FOLDER_ID (pública: "cualquiera con el enlace → Lector")
+//   └── <Organización> (<id>)/Productos   ← fotos que usa algún producto
+// "Estilo Neutral · Privado" (Restringida; ID en la propiedad
+// DRIVE_CARPETA_PRIVADA_ID, se crea sola)
+//   └── <Organización> (<id>)/Fotos sin usar ← fotos que ningún producto usa
+// La privada NO puede estar dentro de la pública: en Drive el contenido
+// hereda el acceso de la carpeta. Cada carpeta de organización lleva su ID en
+// la descripción (renombrar la organización no la duplica). Nada se borra:
+// mover conserva el ID del archivo y su URL.
+const NOMBRE_CARPETA_PRIVADA = "Estilo Neutral · Privado";
+const CARPETA_PRODUCTOS = "Productos";
+const CARPETA_SIN_USAR = "Fotos sin usar";
+const SIN_ORGANIZACION = "sin-organizacion";
+
+function _carpetaHija(padre, nombre) {
+  const it = padre.getFoldersByName(nombre);
+  return it.hasNext() ? it.next() : padre.createFolder(nombre);
+}
+
+function _carpetaPrivada() {
+  const props = PropertiesService.getScriptProperties();
+  const id = props.getProperty("DRIVE_CARPETA_PRIVADA_ID");
+  if (id) {
+    try { return DriveApp.getFolderById(id); } catch (e) { /* borrada: se crea otra */ }
+  }
+  const carpeta = DriveApp.createFolder(NOMBRE_CARPETA_PRIVADA); // nueva = Restringida
+  carpeta.setDescription("Archivos de Estilo Neutral que NO deben ser públicos (los ordena organizarDrive).");
+  props.setProperty("DRIVE_CARPETA_PRIVADA_ID", carpeta.getId());
+  return carpeta;
+}
+
+/** Nombre visible de la organización (o "Sin organización"). */
+function _nombreOrganizacion(ss, orgId) {
+  if (!orgId || orgId === SIN_ORGANIZACION) return "Sin organización";
+  const sh = ss.getSheetByName("organizaciones");
+  const fila = sh ? _findRowById(sh, orgId) : -1;
+  const nombre = fila === -1 ? "" : String(sh.getRange(fila, 2).getValue()).trim();
+  return (nombre || "Organización") + " (" + String(orgId).slice(0, 8) + ")";
+}
+
+/** Carpeta de la organización dentro de [raiz], buscada por su ID (descripción). */
+function _carpetaDeOrganizacion(ss, raiz, orgId) {
+  const id = orgId || SIN_ORGANIZACION;
+  const nombre = _nombreOrganizacion(ss, id);
+  const it = raiz.getFolders();
+  while (it.hasNext()) {
+    const c = it.next();
+    if (c.getDescription() === id) {
+      if (c.getName() !== nombre) c.setName(nombre); // la organización se renombró
+      return c;
+    }
+  }
+  const nueva = raiz.createFolder(nombre);
+  nueva.setDescription(id);
+  return nueva;
+}
+
+function _carpetaProductos(ss, orgId) {
+  return _carpetaHija(_carpetaDeOrganizacion(ss, DriveApp.getFolderById(DRIVE_FOLDER_ID), orgId), CARPETA_PRODUCTOS);
+}
+
+function _carpetaSinUsar(ss, orgId) {
+  return _carpetaHija(_carpetaDeOrganizacion(ss, _carpetaPrivada(), orgId), CARPETA_SIN_USAR);
+}
+
+/** ID del archivo de Drive de una foto de la galería, o "". */
+function _archivoDeFoto(ss, fotoId) {
+  const sh = ss.getSheetByName("galeria");
+  const fila = sh ? _findRowById(sh, fotoId) : -1;
+  if (fila === -1) return "";
+  const archivo = String(sh.getRange(fila, 3).getValue()).trim();
+  if (archivo) return archivo;
+  const url = String(sh.getRange(fila, 2).getValue());
+  const m = url.match(/\/d\/([A-Za-z0-9_-]+)/);
+  return m ? m[1] : "";
+}
+
+/**
+ * Un producto empezó a usar la foto [fotoId]: si estaba en la carpeta
+ * privada (sin usar), vuelve a la pública de su organización. Nunca lanza.
+ */
+function _publicarFotoDeProducto(ss, fotoId, orgId) {
+  try {
+    const archivoId = _archivoDeFoto(ss, fotoId);
+    if (!archivoId || !orgId) return;
+    const archivo = DriveApp.getFileById(archivoId);
+    const destino = _carpetaProductos(ss, String(orgId).trim());
+    const padres = archivo.getParents();
+    if (padres.hasNext() && padres.next().getId() === destino.getId()) return;
+    archivo.moveTo(destino);
+  } catch (e) {
+    console.warn("No se pudo publicar la foto " + fotoId + ": " + e);
+  }
+}
+
+/** Todos los archivos de [carpeta] y sus subcarpetas. */
+function _archivosEn(carpeta, salida) {
+  const archivos = carpeta.getFiles();
+  while (archivos.hasNext()) salida.push(archivos.next());
+  const sub = carpeta.getFolders();
+  while (sub.hasNext()) _archivosEn(sub.next(), salida);
+  return salida;
+}
+
+/**
+ * Ordena las fotos: las que usa algún producto van a
+ * <pública>/<organización>/Productos; las demás (subidas por error,
+ * reemplazadas, de productos borrados) a <privada>/<organización>/Fotos sin
+ * usar. No borra nada. Se puede correr desde el editor; con
+ * crearTriggerOrganizarDrive() corre sola cada semana.
+ */
+function organizarDrive() {
+  const ss = getSpreadsheet();
+  const enUso = {}; // archivo de Drive → organización del producto que la usa
+  const inv = ss.getSheetByName("inventario");
+  const filasInv = inv && inv.getLastRow() >= 2 ? inv.getDataRange().getValues().slice(1) : [];
+  const usadas = {};
+  filasInv.forEach(function (f) {
+    const foto = String(f[7] || "").trim();
+    if (foto) usadas[foto] = String(f[9] || "").trim();
+  });
+  const gal = ss.getSheetByName("galeria");
+  const filasGal = gal && gal.getLastRow() >= 2 ? gal.getDataRange().getValues().slice(1) : [];
+  filasGal.forEach(function (f) {
+    const foto = String(f[0]).trim();
+    let archivo = String(f[2] || "").trim();
+    if (!archivo) {
+      const m = String(f[1] || "").match(/\/d\/([A-Za-z0-9_-]+)/);
+      archivo = m ? m[1] : "";
+    }
+    if (!archivo) return;
+    if (usadas[foto] !== undefined) enUso[archivo] = usadas[foto];
+  });
+
+  const resultado = { publicas: 0, privadas: 0, sinCambios: 0, errores: [] };
+  const raiz = DriveApp.getFolderById(DRIVE_FOLDER_ID);
+  _archivosEn(raiz, []).forEach(function (archivo) {
+    try {
+      const id = archivo.getId();
+      const usada = enUso[id] !== undefined;
+      const padres = archivo.getParents();
+      const padre = padres.hasNext() ? padres.next() : null;
+      // Una foto sin uso que ya estaba en <organización>/Productos va a la
+      // carpeta privada de esa misma organización.
+      let orgActual = SIN_ORGANIZACION;
+      if (padre && padre.getName() === CARPETA_PRODUCTOS) {
+        const abuelos = padre.getParents();
+        if (abuelos.hasNext()) orgActual = abuelos.next().getDescription() || SIN_ORGANIZACION;
+      }
+      const destino = usada ? _carpetaProductos(ss, enUso[id]) : _carpetaSinUsar(ss, orgActual);
+      if (padre && padre.getId() === destino.getId()) {
+        resultado.sinCambios++;
+        return;
+      }
+      archivo.moveTo(destino);
+      if (usada) resultado.publicas++; else resultado.privadas++;
+    } catch (e) {
+      if (resultado.errores.length < 5) resultado.errores.push(String(e).slice(0, 120));
+    }
+  });
+  _appendAuditLog(ss, {
+    hoja: "galeria", celda: "Drive", valorAnterior: "", valorNuevo: JSON.stringify(resultado).slice(0, 200),
+    accion: "organizar_drive", norma: "ISO/IEC 27001 §5.10",
+    observaciones: resultado.publicas + " a carpetas públicas de su organización, " + resultado.privadas + " a la carpeta privada"
+  });
+  console.log(JSON.stringify(resultado));
+  return resultado;
+}
+
+/** Instala (una vez) la revisión semanal de organizarDrive (lunes 3 a. m.). */
+function crearTriggerOrganizarDrive() {
+  ScriptApp.getProjectTriggers()
+    .filter(function (t) { return t.getHandlerFunction() === "organizarDrive"; })
+    .forEach(function (t) { ScriptApp.deleteTrigger(t); });
+  ScriptApp.newTrigger("organizarDrive").timeBased().onWeekDay(ScriptApp.WeekDay.MONDAY).atHour(3).create();
+  return "Revisión semanal de Drive instalada (lunes 3 a. m.).";
 }
 
 // =============================================================================

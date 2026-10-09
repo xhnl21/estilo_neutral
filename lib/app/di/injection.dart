@@ -75,6 +75,7 @@ class ServiceLocator {
     )
       // Cada pedido al Apps Script lleva el token de Google de la sesión.
       ..proveedorToken = sheetsAuth.tokenDeAcceso
+      ..renovadorToken = sheetsAuth.renovarTokenDeAcceso
       // Sin sesión no se lee (la hoja es privada): la primera carga la hace
       // el login, con la sesión de Google ya restaurada.
       ..initialize(cargarSinSesion: false);

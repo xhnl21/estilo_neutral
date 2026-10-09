@@ -170,11 +170,21 @@ class SheetsDataService extends ChangeNotifier {
   String? _ultimoErrorLectura;
   String? get ultimoErrorLectura => _ultimoErrorLectura;
 
+  /// `true` si la última lectura falló porque el servidor rechazó el token de
+  /// Google aun después de pedir uno nuevo: hay que volver a iniciar sesión.
+  bool _sesionRechazadaEnLectura = false;
+  bool get sesionRechazadaEnLectura => _sesionRechazadaEnLectura;
+
   /// Token de acceso de la sesión de Google ([SheetsAuth.tokenDeAcceso]). Va
   /// en cada pedido al Apps Script, que lo verifica con Google: así el
   /// servidor sabe quién es el usuario sin creerle el email a la app. Sin
   /// proveedor (tests, sin sesión) los pedidos van sin token.
   Future<String?> Function()? proveedorToken;
+
+  /// Pide a Google un token nuevo descartando el guardado
+  /// ([SheetsAuth.renovarTokenDeAcceso]). Se llama una vez cuando el servidor
+  /// rechaza el token (`code: "no_autenticado"`).
+  Future<String?> Function()? renovadorToken;
 
   /// Motivo con el que Apps Script rechazó una escritura porque el usuario de
   /// la sesión perdió el acceso (`code: "acceso_revocado"`), o `null`.
@@ -685,6 +695,7 @@ class SheetsDataService extends ChangeNotifier {
   Future<void> _enviarLoteLectura(_LoteLectura lote) async {
     if (identical(_loteLectura, lote)) _loteLectura = null;
     Map<String, List<List<String>>>? hojas;
+    _sesionRechazadaEnLectura = false;
     try {
       if (await _tokenDeAcceso() != null) {
         final r = await _postAppsScriptJson({'action': 'leer_hojas', 'hojas': lote.hojas.toList()});
@@ -692,6 +703,7 @@ class SheetsDataService extends ChangeNotifier {
         _ultimoErrorLectura = data == null
             ? 'El servidor no respondió.'
             : (data['status'] == 'success' ? null : data['message']?.toString());
+        _sesionRechazadaEnLectura = data?['code'] == 'no_autenticado';
         if (data != null && data['status'] == 'success' && data['hojas'] is Map) {
           Logger.info('SheetsDataService: leer_hojas (${lote.hojas.length} hojas) '
               'vía ${data['via'] ?? '?'} en ${data['ms'] ?? '?'} ms del servidor');
@@ -1117,6 +1129,7 @@ class SheetsDataService extends ChangeNotifier {
       Duration(milliseconds: 1000),
       Duration(milliseconds: 2000),
     ],
+    bool tokenRenovado = false,
   }) async {
     final url = appsScriptUrl;
     if (url == null || url.trim().isEmpty) return (huboRedirect: false, data: null);
@@ -1174,6 +1187,27 @@ class SheetsDataService extends ChangeNotifier {
         data = jsonDecode(raw) as Map<String, dynamic>;
       } catch (_) {
         data = null;
+      }
+    }
+    // Token revocado o vencido que el teléfono sigue entregando: se pide uno
+    // nuevo y se reintenta una sola vez (el servidor rechazó el pedido antes
+    // de ejecutarlo, así que repetirlo no duplica nada).
+    if (data != null && data['code'] == 'no_autenticado' && !tokenRenovado && renovadorToken != null) {
+      Logger.warning('SheetsDataService: el servidor rechazó el token de Google; se pide uno nuevo y se reintenta.');
+      String? nuevo;
+      try {
+        nuevo = await renovadorToken!();
+      } catch (_) {
+        nuevo = null;
+      }
+      if (nuevo != null) {
+        return _postAppsScriptJson(
+          payload,
+          sendTimeout: sendTimeout,
+          receiveTimeout: receiveTimeout,
+          reintentosEco: reintentosEco,
+          tokenRenovado: true,
+        );
       }
     }
     if (data != null && data['code'] == 'acceso_revocado' && usuario != null) {

@@ -43,6 +43,10 @@ class ServidorSimulado implements HttpClientAdapter {
   /// vuelve a leer por gviz.
   Map<String, List<List<String>>>? hojasServidor;
 
+  /// Opt-in: tokens que el servidor rechaza como vencidos o revocados
+  /// (`code: "no_autenticado"`), como hace el script con un token inválido.
+  final tokensRechazados = <String>{};
+
   String _nuevoId(Map<String, dynamic> payload) {
     final hoja = payload['sheet']?.toString() ?? '';
     final data = payload['data'];
@@ -80,6 +84,16 @@ class ServidorSimulado implements HttpClientAdapter {
         ? <String, dynamic>{}
         : Map<String, dynamic>.from(o.data is String ? jsonDecode(o.data as String) as Map : o.data as Map);
     enviados.add(payload);
+    if (tokensRechazados.contains(payload['access_token'])) {
+      return ResponseBody.fromBytes(
+          utf8.encode(jsonEncode({
+            'status': 'error',
+            'code': 'no_autenticado',
+            'message': 'La sesión de Google venció o no es válida. Volvé a iniciar sesión.',
+          })),
+          200,
+          headers: {Headers.contentTypeHeader: ['application/json']});
+    }
     final servidor = hojasServidor;
     if (payload['action'] == 'leer_hojas' && servidor != null && respuesta == null) {
       final pedidas = (payload['hojas'] as List).cast<String>();

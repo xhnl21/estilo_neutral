@@ -51,6 +51,24 @@ class SheetsAuth {
     }
   }
 
+  /// Descarta el token que el teléfono tiene guardado y pide uno nuevo a
+  /// Google. Se usa cuando el servidor lo rechaza: Google Play Services
+  /// sigue entregando un token revocado (p. ej. después de quitar la app en
+  /// myaccount.google.com/connections) hasta que vence. `null` si no hay
+  /// sesión o Google no dio un token nuevo.
+  Future<String?> renovarTokenDeAcceso() async {
+    final cuenta = _googleSignIn.currentUser;
+    if (cuenta == null) return null;
+    try {
+      await cuenta.clearAuthCache();
+      final token = (await cuenta.authentication).accessToken;
+      if (token != null) await tokenStorage.saveToken(token);
+      return token;
+    } catch (_) {
+      return null;
+    }
+  }
+
   Future<void> signOut() async {
     await _googleSignIn.signOut();
     await tokenStorage.clearToken();

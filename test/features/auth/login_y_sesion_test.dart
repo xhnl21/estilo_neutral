@@ -121,15 +121,29 @@ void main() {
 
     test('si no se pudo verificar el acceso (servidor), avisa el motivo y NO cierra la sesión de Google', () async {
       final (sinDatos, servidor) = await servicioConServidor(usuario: null, datosDeRespaldo: false);
-      servidor.respuesta = '{"status":"error","code":"no_autenticado","message":"Sesión de Google emitida para otra aplicación."}';
+      servidor.respuesta = '{"status":"error","message":"Servicio no disponible por el momento."}';
       sinDatos.proveedorToken = () async => 'tok';
       google.silenciosa = _Cuenta('xhnl21@gmail.com');
       final cubit = LoginCubit(authCubit: auth, sheetsAuth: google, dataService: sinDatos, biometricAuthService: biometria);
       await cubit.restaurarSesion();
       expect(auth.isAuthenticated, isFalse);
       expect(cubit.state.errorMessage, contains('No se pudo verificar tu acceso'));
-      expect(cubit.state.errorMessage, contains('otra aplicación'));
+      expect(cubit.state.errorMessage, contains('no disponible'));
       expect(google.signOuts, 0);
+      await cubit.close();
+    });
+
+    test('si el servidor rechaza la sesión de Google aun con token nuevo, cierra la sesión para elegir la cuenta de nuevo', () async {
+      final (sinDatos, servidor) = await servicioConServidor(usuario: null, datosDeRespaldo: false);
+      servidor.respuesta = '{"status":"error","code":"no_autenticado","message":"Sesión de Google emitida para otra aplicación."}';
+      sinDatos.proveedorToken = () async => 'tok';
+      sinDatos.renovadorToken = () async => 'tok-nuevo';
+      google.silenciosa = _Cuenta('xhnl21@gmail.com');
+      final cubit = LoginCubit(authCubit: auth, sheetsAuth: google, dataService: sinDatos, biometricAuthService: biometria);
+      await cubit.restaurarSesion();
+      expect(auth.isAuthenticated, isFalse);
+      expect(cubit.state.errorMessage, contains('otra aplicación'));
+      expect(google.signOuts, 1);
       await cubit.close();
     });
 

@@ -930,6 +930,14 @@ class _FotoPickerView extends StatelessWidget {
               ),
           ],
         ),
+        const SizedBox(height: AppSpacing.xs),
+        // Las fotos de productos se publican por enlace (ver organizarDrive
+        // en google_apps_script.js): nada privado debe subirse por acá.
+        Text(
+          'La foto se publica junto al producto. No subas documentos, facturas ni fotos personales.',
+          textAlign: TextAlign.center,
+          style: AppTypography.labelSmall.copyWith(color: AppPalette.textSecondary),
+        ),
       ],
     );
   }

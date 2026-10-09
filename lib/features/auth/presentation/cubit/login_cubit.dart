@@ -100,6 +100,11 @@ class LoginCubit extends Cubit<LoginState> {
         // sesión de Google, para poder reintentar.
         final motivo = dataService.ultimoErrorLectura ?? 'Revisá tu conexión a internet.';
         Logger.warning('Login: no se pudo verificar el acceso de ${account.email}: $motivo');
+        // Google no dio un token que el servidor acepte (p. ej. se quitó la
+        // app en las apps vinculadas de la cuenta): se cierra la sesión de
+        // Google para que el próximo intento abra el selector y pida permiso
+        // de nuevo, en vez de reusar la misma sesión inválida.
+        if (dataService.sesionRechazadaEnLectura) await sheetsAuth.signOut();
         if (isClosed) return;
         _cuentaPendiente = null;
         emit(state.copyWith(

@@ -165,6 +165,7 @@ if [[ "$TESTS" == true ]]; then
   ejecutar node tools/apps_script/tests/datos_bancarios.test.js
   ejecutar node tools/apps_script/tests/correo.test.js
   ejecutar node tools/apps_script/tests/seguridad.test.js
+  ejecutar node tools/apps_script/tests/drive.test.js
   ok "Tests en verde."
 else
   aviso "Tests omitidos (--sin-tests)."

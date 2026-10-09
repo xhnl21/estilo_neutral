@@ -62,6 +62,43 @@ void main() {
     expect(servidor.lecturas['clientes'], 1, reason: 'cayó a gviz');
   });
 
+  test('si el servidor rechaza el token (revocado), pide uno nuevo a Google y reintenta una vez', () async {
+    final (ds, servidor) = await servicioConServidor(inicializar: false);
+    servidor.hojasServidor = _hojas;
+    servidor.tokensRechazados.add('tok-revocado');
+    var token = 'tok-revocado';
+    var renovaciones = 0;
+    ds.proveedorToken = () async => token;
+    ds.renovadorToken = () async {
+      renovaciones++;
+      return token = 'tok-nuevo';
+    };
+    await ds.initialize();
+    final lecturas = servidor.enviados.where((e) => e['action'] == 'leer_hojas').toList();
+    expect(lecturas.map((e) => e['access_token']), ['tok-revocado', 'tok-nuevo']);
+    expect(renovaciones, 1);
+    expect(servidor.lecturas, isEmpty, reason: 'leyó por el servidor, sin gviz');
+    ds.setCurrentOrganizacion(_org);
+    expect(ds.clientes.map((c) => c.id), contains('c00000077'));
+  });
+
+  test('si el token nuevo también es rechazado, no reintenta en bucle', () async {
+    final (ds, servidor) = await servicioConServidor();
+    servidor.tokensRechazados.addAll(['tok-1', 'tok-2']);
+    var token = 'tok-1';
+    var renovaciones = 0;
+    ds.proveedorToken = () async => token;
+    ds.renovadorToken = () async {
+      renovaciones++;
+      return token = 'tok-2';
+    };
+    final antes = servidor.enviados.length;
+    await ds.releerAcceso();
+    expect(renovaciones, 1);
+    expect(servidor.enviados.length - antes, 2);
+    expect(ds.ultimoErrorLectura, contains('venció o no es válida'));
+  });
+
   test('sin sesión de Google no se pide leer_hojas', () async {
     final (ds, servidor) = await servicioConServidor(inicializar: false);
     ds.proveedorToken = () async => null;
