@@ -79,6 +79,8 @@ function _siguienteIdServidor(sheet, prefijo) {
 
 function getSpreadsheet() {
   try {
+    const propId = _propiedad("SPREADSHEET_ID");
+    if (propId) return SpreadsheetApp.openById(propId);
     const active = SpreadsheetApp.getActiveSpreadsheet();
     if (active) return active;
   } catch (e) {}

@@ -18,6 +18,7 @@ Estado de la seguridad del sistema (app + Apps Script + Google Sheets), qué se 
 | **URL pública (`/exec`)** | El `doGet` solo dice "activo": ya no muestra el ID de la hoja ni sus nombres. |
 | **Notificaciones y correo** | Cupos por organización y cupo diario de Google; clave de FCM rotada (2026-10-08) y fuera de git. |
 | **Secretos** | `.env*`, firma (`key.properties`), `google-services.json`, `fcm-clave*.json` y `credencial_fcm.js` fuera de git. Los secretos del servidor nunca van en los `.env` (terminan en el APK). |
+| **Aislamiento de entornos** | QA y Dev apuntan exclusivamente a la hoja de cálculo y Apps Script de test. Protegido con validación en `tools/deploy.sh` y `test/standards/env_seguridad_test.dart`. |
 | **Registros** | Cada cambio queda en `audit_log`. El Logger oculta emails y tokens. |
 
 ### Token obligatorio (desde el 2026-10-09, `@68`)

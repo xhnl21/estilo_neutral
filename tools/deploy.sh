@@ -106,6 +106,15 @@ if [[ -n "$VARIANTE" ]]; then
   command -v flutter >/dev/null || falla "Falta flutter en el PATH."
   [[ -f "$ENV_FILE" ]] || falla "Falta $ENV_FILE (copiar .env.example; ver docs/configuracion-local.md §2.1)."
   ok "Variables: $ENV_FILE"
+  if [[ "$VARIANTE" == "qa" || "$VARIANTE" == "dev" ]]; then
+    if grep -q "1V8xBnRVtZUyz4liGW59BU6mkgCjjreEOEWzySjcZLvI" "$ENV_FILE"; then
+      falla "SEGURIDAD: $ENV_FILE apunta a la hoja de cálculo de PRODUCCIÓN. Cambiá SPREADSHEET_ID a la hoja de test."
+    fi
+    if grep -q "AKfycby6Jg1oaFa2yJAlEuDThxZhmDvI-LPu80KDedz-qMFn9h1rbvJoTANwG3ufbOYBjDq7ZA" "$ENV_FILE"; then
+      falla "SEGURIDAD: $ENV_FILE apunta al Apps Script de PRODUCCIÓN. Cambiá APPS_SCRIPT_URL a la URL de test."
+    fi
+    ok "Aislamiento: $ENV_FILE verificado contra producción."
+  fi
   if [[ -f android/key.properties ]]; then
     ok "Firma de release: android/key.properties"
   else
