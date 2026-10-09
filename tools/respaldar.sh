@@ -27,7 +27,7 @@ fi
 
 echo "==> Solicitando respaldo manual a Google Apps Script..."
 # Ejecuta action=respaldar_hoja
-RESPUESTA="$(curl -L --post302 -s -X POST \
+RESPUESTA="$(curl -s -L \
   -H "Content-Type: application/json" \
   -d '{"action":"respaldar_hoja"}' \
   "$APPS_SCRIPT_URL" || true)"
