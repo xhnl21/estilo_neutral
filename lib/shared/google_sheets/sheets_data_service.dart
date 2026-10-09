@@ -1857,6 +1857,16 @@ class SheetsDataService extends ChangeNotifier {
     );
   }
 
+  /// Ejecuta una copia de seguridad manual en el servidor (Apps Script).
+  /// Guarda la hoja en <carpeta privada>/Respaldos y deja registro en audit_log.
+  Future<Map<String, dynamic>> respaldarHojaManual() async {
+    final r = await _accionEnServidor({
+      'action': 'respaldar_hoja',
+      'sheet': 'sistema',
+    });
+    return r;
+  }
+
   /// Cambia cada vez que llega un aviso de que los límites o el uso de las
   /// notificaciones cambiaron (push silencioso o al entrar al módulo): las
   /// pantallas abiertas vuelven a consultar el cupo.

@@ -132,6 +132,107 @@ class _SeguridadView extends StatelessWidget {
                     style: AppTypography.labelSmall.copyWith(color: AppPalette.textSecondary),
                   ),
                 ),
+              const SizedBox(height: AppSpacing.xl),
+              Text(
+                'Copias de seguridad (ISO/IEC 27001 §8.13)',
+                style: AppTypography.titleLarge.copyWith(fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: AppSpacing.xs),
+              Text(
+                'Las copias automáticas se realizan semanalmente. Podés generar un respaldo completo e inmediato en cualquier momento.',
+                style: AppTypography.bodyMedium.copyWith(color: AppPalette.textSecondary),
+              ),
+              const SizedBox(height: AppSpacing.md),
+              AppCard(
+                padding: const EdgeInsets.all(AppSpacing.lg),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(AppSpacing.sm),
+                          decoration: const BoxDecoration(
+                            color: AppPalette.blue100,
+                            borderRadius: AppSpacing.roundedMd,
+                          ),
+                          child: const Icon(CupertinoIcons.archivebox_fill, color: AppPalette.primary, size: 24),
+                        ),
+                        const SizedBox(width: AppSpacing.md),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Respaldo manual en Drive',
+                                style: AppTypography.bodyMedium.copyWith(fontWeight: FontWeight.bold),
+                              ),
+                              Text(
+                                'Estilo Neutral · Privado/Respaldos',
+                                style: AppTypography.labelSmall.copyWith(color: AppPalette.textSecondary),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                    if (state.mensajeRespaldo != null) ...[
+                      const SizedBox(height: AppSpacing.md),
+                      Container(
+                        padding: const EdgeInsets.all(AppSpacing.sm),
+                        decoration: BoxDecoration(
+                          color: AppPalette.success.withValues(alpha: 0.1),
+                          borderRadius: AppSpacing.roundedSm,
+                          border: Border.all(color: AppPalette.success.withValues(alpha: 0.3)),
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(CupertinoIcons.checkmark_circle_fill, color: AppPalette.success, size: 18),
+                            const SizedBox(width: AppSpacing.sm),
+                            Expanded(
+                              child: Text(
+                                state.mensajeRespaldo!,
+                                style: AppTypography.labelSmall.copyWith(color: AppPalette.success),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                    if (state.errorRespaldo != null) ...[
+                      const SizedBox(height: AppSpacing.md),
+                      Container(
+                        padding: const EdgeInsets.all(AppSpacing.sm),
+                        decoration: BoxDecoration(
+                          color: AppPalette.error.withValues(alpha: 0.1),
+                          borderRadius: AppSpacing.roundedSm,
+                          border: Border.all(color: AppPalette.error.withValues(alpha: 0.3)),
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(CupertinoIcons.exclamationmark_triangle_fill, color: AppPalette.error, size: 18),
+                            const SizedBox(width: AppSpacing.sm),
+                            Expanded(
+                              child: Text(
+                                state.errorRespaldo!,
+                                style: AppTypography.labelSmall.copyWith(color: AppPalette.error),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                    const SizedBox(height: AppSpacing.lg),
+                    AppButton(
+                      label: state.haciendoRespaldo ? 'Creando copia de seguridad...' : 'Crear respaldo ahora',
+                      icon: state.haciendoRespaldo ? null : CupertinoIcons.cloud_upload_fill,
+                      isLoading: state.haciendoRespaldo,
+                      isFullWidth: true,
+                      onPressed: state.haciendoRespaldo ? null : () => cubit.realizarRespaldoManual(),
+                    ),
+                  ],
+                ),
+              ),
             ],
           ),
         );

@@ -73,6 +73,36 @@ class SeguridadCubit extends Cubit<SeguridadState> {
     }
   }
 
+  /// Ejecuta un respaldo manual de la hoja en el servidor.
+  Future<void> realizarRespaldoManual() async {
+    Logger.info('SeguridadCubit: Iniciando respaldo manual de la hoja...');
+    emit(state.copyWith(
+      haciendoRespaldo: true,
+      clearErrorRespaldo: true,
+      clearMensajeRespaldo: true,
+    ));
+    try {
+      final res = await dataService.respaldarHojaManual();
+      final nombre = res['nombre']?.toString() ?? 'Copia de seguridad';
+      Logger.info('SeguridadCubit: Respaldo completado con éxito: $nombre');
+      if (!isClosed) {
+        emit(state.copyWith(
+          haciendoRespaldo: false,
+          mensajeRespaldo: 'Copia creada exitosamente: $nombre',
+        ));
+      }
+    } catch (e) {
+      Logger.error('SeguridadCubit: Error al crear respaldo manual: $e');
+      if (!isClosed) {
+        final errText = e.toString().replaceFirst('Exception: ', '').replaceFirst('StateError: ', '');
+        emit(state.copyWith(
+          haciendoRespaldo: false,
+          errorRespaldo: errText,
+        ));
+      }
+    }
+  }
+
   @override
   Future<void> close() {
     dataService.removeListener(_onDataServiceChanged);

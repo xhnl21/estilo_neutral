@@ -10,6 +10,9 @@ class SeguridadState extends Equatable {
   final bool biometricoDisponible;
   final bool faceIdDisponible;
   final String? errorMessage;
+  final bool haciendoRespaldo;
+  final String? mensajeRespaldo;
+  final String? errorRespaldo;
 
   const SeguridadState({
     this.status = SeguridadStatus.initial,
@@ -18,6 +21,9 @@ class SeguridadState extends Equatable {
     this.biometricoDisponible = false,
     this.faceIdDisponible = false,
     this.errorMessage,
+    this.haciendoRespaldo = false,
+    this.mensajeRespaldo,
+    this.errorRespaldo,
   });
 
   SeguridadState copyWith({
@@ -28,6 +34,11 @@ class SeguridadState extends Equatable {
     bool? biometricoDisponible,
     bool? faceIdDisponible,
     String? errorMessage,
+    bool? haciendoRespaldo,
+    String? mensajeRespaldo,
+    String? errorRespaldo,
+    bool clearMensajeRespaldo = false,
+    bool clearErrorRespaldo = false,
   }) {
     return SeguridadState(
       status: status ?? this.status,
@@ -36,6 +47,9 @@ class SeguridadState extends Equatable {
       biometricoDisponible: biometricoDisponible ?? this.biometricoDisponible,
       faceIdDisponible: faceIdDisponible ?? this.faceIdDisponible,
       errorMessage: errorMessage,
+      haciendoRespaldo: haciendoRespaldo ?? this.haciendoRespaldo,
+      mensajeRespaldo: clearMensajeRespaldo ? null : (mensajeRespaldo ?? this.mensajeRespaldo),
+      errorRespaldo: clearErrorRespaldo ? null : (errorRespaldo ?? this.errorRespaldo),
     );
   }
 
@@ -47,5 +61,8 @@ class SeguridadState extends Equatable {
         biometricoDisponible,
         faceIdDisponible,
         errorMessage,
+        haciendoRespaldo,
+        mensajeRespaldo,
+        errorRespaldo,
       ];
 }
