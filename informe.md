@@ -67,29 +67,39 @@ docs/prompts/pendientes-seguridad-y-producto.md
 ), el estado actual es el siguiente:
 
 Estado actual
-✅ Tarea 1 (Completada): QA y Dev ya no tocan producción. Tienen su propia hoja, su script de test y guardas automatizadas.
-✅ Tarea 2 (Completada): Copias de seguridad automáticas y manuales sin costo implementadas (Apps Script + UI + Cubit + CLI `tools/respaldar.sh`).
-✅ Tarea 3 (Completada): Separación estricta de organizaciones en el servidor implementada en Apps Script y probada contra ataques y accesos cruzados.
-
+✅ Tarea 1 (Completada y verificada en el teléfono físico): QA y Dev ya no tocan producción. Tienen su propia hoja, su script de test y guardas automatizadas.
+Pendiente inmediato: Tu autorización si querés que hagamos el commit local de estos cambios (git commit).
 Las tareas que quedan por hacer (en orden estricto)
-Tarea 4: Roles y permisos (DT-1) (La siguiente)
+Tarea 2: Copias de seguridad automáticas y sin costo (La siguiente)
+
+Crear la función respaldarHoja() en Apps Script que saca una copia de la hoja a <carpeta privada>/Respaldos con fecha y hora.
+Instalar el activador semanal automático (crearTriggerRespaldo()).
+Registrar cada respaldo en audit_log.
+Escribir tests en tools/apps_script/tests/ simulando Drive.
+Documentar el procedimiento paso a paso para que puedas restaurar una copia si alguna vez hace falta.
+Probar la ejecución en el script de test.
+Tarea 3: Separar organizaciones en el servidor
+
+Actualmente leer_hojas devuelve los datos de todas las organizaciones y la app los filtra en memoria.
+Implementar filtrado en el servidor por la organización del usuario para todas las hojas con organizacion_id.
+Forzar en las escrituras (create, update, delete, lotes) que nadie pueda alterar registros de otra organización.
+Añadir interruptor de emergencia: SEPARACION_ORGANIZACIONES = no.
+Probar con dos organizaciones ficticias en QA.
+Tarea 4: Roles y permisos (DT-1)
 
 Agregar columna rol (administrador, operador) en usuario_organizacion.
 Bloquear en el servidor que un operador cree o elimine usuarios, organizaciones o cambie límites.
 En la app (vía Cubits), ocultar y proteger las rutas y acciones administrativas según el rol.
 Evitar que una organización quede sin administradores o que alguien se elimine a sí mismo.
-
 Tarea 5: Verificación en dos pasos (DT-3)
 
 Resolver la opción "2FA" de Seguridad (que hoy no valida un segundo factor).
 Acordar contigo el método (TOTP con app autenticadora vs. simplificar/quitar la opción si no se requiere).
 Implementar la validación correspondiente en LoginCubit y la UI.
-
 Tarea 6: Logs detallados en QA
 
 Habilitar trazas y diagnósticos completos en el flavor QA para facilitar la depuración desde adb logcat.
 Garantizar que en producción no se filtren datos personales ni tokens (con tests automatizados).
-
 Tarea 7: App de catálogo público
 
 Endpoint de solo lectura en Apps Script para consultar productos activos y con stock de una organización.
