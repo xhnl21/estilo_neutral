@@ -1862,7 +1862,6 @@ class SheetsDataService extends ChangeNotifier {
   Future<Map<String, dynamic>> respaldarHojaManual() async {
     final r = await _accionEnServidor({
       'action': 'respaldar_hoja',
-      'sheet': 'sistema',
     });
     return r;
   }
