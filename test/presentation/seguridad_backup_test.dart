@@ -57,7 +57,7 @@ void main() {
 
   group('SeguridadPage - Widget Test', () {
     testWidgets('renderiza tarjeta de respaldo manual y botón de acción', (tester) async {
-      final (ds, _) = await servicioConServidor();
+      final (ds, _) = await servicioConServidor(inicializar: false);
 
       await tester.pumpWidget(
         MaterialApp(
@@ -68,7 +68,8 @@ void main() {
         ),
       );
 
-      await tester.pumpAndSettle();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
 
       expect(find.text('Copias de seguridad (ISO/IEC 27001 §8.13)'), findsOneWidget);
       expect(find.text('Respaldo manual en Drive'), findsOneWidget);
