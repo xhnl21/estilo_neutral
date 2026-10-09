@@ -72,8 +72,9 @@ const correo = (extra) => ({ action: 'enviar_correo', data: Object.assign({ asun
 
 { // email de la organización
   const { hojas, post } = contexto();
-  check(post({ action: 'update', sheet: 'organizaciones', id: 'org2', data: { email: ' Este@Tienda.com ' } }).status === 'success' && hojas.organizaciones.filas[2][2] === 'este@tienda.com', 'organización: guarda el email normalizado');
-  check(post({ action: 'update', sheet: 'organizaciones', id: 'org2', data: { email: 'mal' } }).status === 'error', 'organización: email inválido se rechaza');
+  check(post({ action: 'update', sheet: 'organizaciones', id: 'org1', data: { email: ' Este@Tienda.com ' } }).status === 'success' && hojas.organizaciones.filas[1][2] === 'este@tienda.com', 'organización: guarda el email normalizado');
+  check(post({ action: 'update', sheet: 'organizaciones', id: 'org2', data: { email: 'x@t.com' } }).code === 'no_autorizado', 'separación: no se edita una organización ajena');
+  check(post({ action: 'update', sheet: 'organizaciones', id: 'org1', data: { email: 'mal' } }).status === 'error', 'organización: email inválido se rechaza');
   const nueva = post({ action: 'create', sheet: 'organizaciones', data: { id: 'org3', nombre: 'Norte', email: 'norte@tienda.com' } });
   check(nueva.status === 'success' && hojas.organizaciones.filas[3][2] === 'norte@tienda.com', 'organización: alta con email');
   const hojaVieja = contexto();

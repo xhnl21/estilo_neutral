@@ -60,3 +60,38 @@ Copias de seguridad automáticas de la hoja, por ejemplo una copia semanal en la
 Producto
 App de catálogo. Quedó en pausa para hacer primero la seguridad. Con las fotos ya separadas por organización y públicas solo para ver, la base está lista.
 Logs detallados en QA. Quedó anotado como mejora para depurar más fácil.
+
+Del plan de 7 tareas de seguridad y producto (
+
+docs/prompts/pendientes-seguridad-y-producto.md
+), el estado actual es el siguiente:
+
+Estado actual
+✅ Tarea 1 (Completada): QA y Dev ya no tocan producción. Tienen su propia hoja, su script de test y guardas automatizadas.
+✅ Tarea 2 (Completada): Copias de seguridad automáticas y manuales sin costo implementadas (Apps Script + UI + Cubit + CLI `tools/respaldar.sh`).
+✅ Tarea 3 (Completada): Separación estricta de organizaciones en el servidor implementada en Apps Script y probada contra ataques y accesos cruzados.
+
+Las tareas que quedan por hacer (en orden estricto)
+Tarea 4: Roles y permisos (DT-1) (La siguiente)
+
+Agregar columna rol (administrador, operador) en usuario_organizacion.
+Bloquear en el servidor que un operador cree o elimine usuarios, organizaciones o cambie límites.
+En la app (vía Cubits), ocultar y proteger las rutas y acciones administrativas según el rol.
+Evitar que una organización quede sin administradores o que alguien se elimine a sí mismo.
+
+Tarea 5: Verificación en dos pasos (DT-3)
+
+Resolver la opción "2FA" de Seguridad (que hoy no valida un segundo factor).
+Acordar contigo el método (TOTP con app autenticadora vs. simplificar/quitar la opción si no se requiere).
+Implementar la validación correspondiente en LoginCubit y la UI.
+
+Tarea 6: Logs detallados en QA
+
+Habilitar trazas y diagnósticos completos en el flavor QA para facilitar la depuración desde adb logcat.
+Garantizar que en producción no se filtren datos personales ni tokens (con tests automatizados).
+
+Tarea 7: App de catálogo público
+
+Endpoint de solo lectura en Apps Script para consultar productos activos y con stock de una organización.
+No expone clientes, costos, ventas ni hojas privadas.
+Definir contigo el formato (módulo web, app separada o vista dentro de Flutter).

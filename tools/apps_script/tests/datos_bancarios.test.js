@@ -96,7 +96,10 @@ const pagoMovil = (extra) => Object.assign({
   mal(pagoMovil({ banco_id: 'bn99' }), /banco bn99 no existe/);
   mal(pagoMovil({ organizacion_id: 'org-x' }), /organización/);
   mal(pagoMovil({ tipo: 'zelle' }), /Tipo inválido/);
-  check(post({ action: 'create', sheet: 'cuentas_bancarias', data: transferencia({ organizacion_id: 'org2' }) }).status === 'success', 'la misma cuenta en otra organización se acepta');
+  const ajena = post({ action: 'create', sheet: 'cuentas_bancarias', data: transferencia({ organizacion_id: 'org2' }) });
+  check(ajena.status === 'error' && ajena.code === 'no_autorizado', 'separación: no se crean cuentas en una organización ajena');
+  hojas.usuario_organizacion.filas.push(['uo2', 'ana@x.com', 'org2']);
+  check(post({ action: 'create', sheet: 'cuentas_bancarias', data: transferencia({ organizacion_id: 'org2' }) }).status === 'success', 'la misma cuenta en otra organización (de la que es miembro) se acepta');
 }
 { // cuentas: editar y eliminar
   const { hojas, post } = contexto();

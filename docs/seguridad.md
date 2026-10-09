@@ -19,6 +19,7 @@ Estado de la seguridad del sistema (app + Apps Script + Google Sheets), qué se 
 | **Notificaciones y correo** | Cupos por organización y cupo diario de Google; clave de FCM rotada (2026-10-08) y fuera de git. |
 | **Secretos** | `.env*`, firma (`key.properties`), `google-services.json`, `fcm-clave*.json` y `credencial_fcm.js` fuera de git. Los secretos del servidor nunca van en los `.env` (terminan en el APK). |
 | **Aislamiento de entornos** | QA y Dev apuntan exclusivamente a la hoja de cálculo y Apps Script de test. Protegido con validación en `tools/deploy.sh` y `test/standards/env_seguridad_test.dart`. |
+| **Separación de organizaciones en el servidor** | `leer_hojas` filtra en el Apps Script todas las entidades por la membresía del usuario (`usuario_organizacion`), devolviendo solo lo que corresponde a sus organizaciones. En escrituras (`create`, `update`, `delete`, `batch`), el servidor comprueba pertenencia de la fila objetivo y fija `organizacion_id` automáticamente si falta. Catálogos globales se devuelven completos. Interruptor de emergencia: `SEPARACION_ORGANIZACIONES` = `no`. |
 | **Copias de seguridad** | Respaldo semanal automático a `<carpeta privada>/Respaldos` (ISO/IEC 27001 §8.13). Cada copia deja registro en `audit_log`. Procedimiento de restauración en [respaldos.md](respaldos.md). |
 | **Registros** | Cada cambio queda en `audit_log`. El Logger oculta emails y tokens. |
 
@@ -79,13 +80,12 @@ Si después de esto la app no muestra datos: volver a "Cualquier persona con el 
 | Pendiente | Riesgo | Propuesta |
 |---|---|---|
 | **Roles** (DT-1) | Cualquier usuario con acceso administra usuarios, organizaciones, límites y datos bancarios. | Columna `rol` en `usuarios` (admin / vendedor) y validación en el servidor. |
-| **Separación entre organizaciones en el servidor** | `leer_hojas` devuelve las hojas completas (todas las organizaciones) a cualquier usuario con acceso; el filtro por organización lo hace la app. | Filtrar en el servidor por la organización del usuario las hojas que tienen `organizacion_id`, e imponerla en las escrituras. |
 | **Catálogo público** | — | Acción de solo lectura con datos públicos (sin tocar la hoja privada). |
 
 ## 4. Archivos
 
 | Parte | Archivos |
 |---|---|
-| Servidor | `_identidadDelPedido`, `_verificarTokenGoogle`, `_limiteDeEscrituras`, `_leerHojas`, `doGet` en `google_apps_script.js` |
+| Servidor | `_identidadDelPedido`, `_verificarTokenGoogle`, `_limiteDeEscrituras`, `_organizacionesDelUsuario`, `_filtrarHojasPorOrganizacion`, `_verificarAutorizacionEscritura`, `_leerHojas`, `doGet` en `google_apps_script.js` |
 | App | `SheetsConfig.scopes`, `SheetsAuth.tokenDeAcceso`, `SheetsDataService.proveedorToken`, `_filasDelServidor` (lectura en lote), recarga tras el login en `LoginCubit` |
-| Tests | `tools/apps_script/tests/seguridad.test.js`, `test/shared/seguridad_test.dart` |
+| Tests | `tools/apps_script/tests/seguridad.test.js`, `tools/apps_script/tests/organizaciones_servidor.test.js`, `test/shared/seguridad_test.dart` |

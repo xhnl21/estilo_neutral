@@ -160,6 +160,13 @@ function doPost(e) {
       }
     }
 
+    if (["create", "update", "delete"].indexOf(action) !== -1) {
+      const authErr = _verificarAutorizacionEscritura(ss, sheetName, action, id, data, usuarioSesion);
+      if (authErr) {
+        return respond(authErr, 403);
+      }
+    }
+
     // =========================================================================
     // NOTIFICACIONES FCM (ver módulo NOTIFICACIONES más abajo)
     // =========================================================================
@@ -270,7 +277,7 @@ function doPost(e) {
     }
 
     if (action === "batch") {
-      const batchResult = _handleBatch(ss, payload);
+      const batchResult = _handleBatch(ss, payload, usuarioSesion);
       return respond(batchResult, batchResult.status === "error" ? 400 : 200);
     }
 
@@ -383,7 +390,7 @@ const COLUMNAS_INCREMENTABLES = {
   clientes: { saldo_deuda_usd: 5 }
 };
 
-function _handleBatch(ss, payload) {
+function _handleBatch(ss, payload, usuarioSesion) {
   const operations = payload.operations;
   const transactionId = payload.transactionId || ("tx_" + new Date().getTime());
 
@@ -427,6 +434,21 @@ function _handleBatch(ss, payload) {
       const op = operations[i];
       const targetSheet = ss.getSheetByName(op.sheet);
       const opAction = op.action;
+
+      if (usuarioSesion) {
+        if (opAction === "batch_create") {
+          const list = op.dataList || [];
+          for (let k = 0; k < list.length; k++) {
+            const errAuth = _verificarAutorizacionEscritura(ss, op.sheet, "create", null, list[k] || {}, usuarioSesion);
+            if (errAuth) throw new Error("Operación #" + (i + 1) + " no autorizada: " + errAuth.message);
+          }
+        } else {
+          const accionNormalizada = (opAction === "update_cell" || opAction === "increment") ? "update" : opAction;
+          const targetId = op.id || (op.data ? op.data.id : null);
+          const errAuth = _verificarAutorizacionEscritura(ss, op.sheet, accionNormalizada, targetId, op.data || {}, usuarioSesion);
+          if (errAuth) throw new Error("Operación #" + (i + 1) + " no autorizada: " + errAuth.message);
+        }
+      }
 
       if (opAction === "create") {
         const rowData = _sanitizarContraFormulas(op.data || {});
@@ -1417,6 +1439,469 @@ function _motivoSinAcceso(ss, email, tablas) {
   return null;
 }
 
+// =============================================================================
+// SEPARACIÓN DE ORGANIZACIONES EN EL SERVIDOR (Multi-tenant isolation)
+// =============================================================================
+
+/**
+ * Interruptor de emergencia: SEPARACION_ORGANIZACIONES = "no" vuelve al modo
+ * no aislado anterior.
+ */
+function _separacionOrganizacionesActiva() {
+  return _propiedad("SEPARACION_ORGANIZACIONES").toLowerCase() !== "no";
+}
+
+/**
+ * Retorna las organizaciones válidas a las que pertenece [email].
+ */
+function _organizacionesDelUsuario(ss, email, tablas) {
+  if (!email) return [];
+  const normalizado = String(email).trim().toLowerCase();
+  const filas = function (nombre) {
+    if (tablas && tablas[nombre]) return tablas[nombre].length ? tablas[nombre] : null;
+    const sh = ss.getSheetByName(nombre);
+    if (!sh || sh.getLastRow() < 1) return null;
+    return sh.getDataRange().getValues();
+  };
+  const membresias = filas("usuario_organizacion");
+  const organizaciones = filas("organizaciones");
+  if (!membresias) return [];
+
+  const columna = function (tabla, encabezado) {
+    return tabla[0].map(function (h) { return String(h).trim().toLowerCase(); }).indexOf(encabezado);
+  };
+  const cMiembro = columna(membresias, "usuario_email");
+  const cOrg = columna(membresias, "organizacion_id");
+  if (cMiembro < 0 || cOrg < 0) return [];
+
+  let orgsValidas = null;
+  if (organizaciones && organizaciones.length > 1) {
+    const cIdOrg = columna(organizaciones, "id");
+    if (cIdOrg >= 0) {
+      orgsValidas = organizaciones.slice(1).map(function (f) { return String(f[cIdOrg]).trim(); });
+    }
+  }
+
+  const resultado = [];
+  for (let i = 1; i < membresias.length; i++) {
+    const f = membresias[i];
+    if (String(f[cMiembro]).trim().toLowerCase() === normalizado) {
+      const orgId = String(f[cOrg]).trim();
+      if (orgId && resultado.indexOf(orgId) === -1) {
+        if (!orgsValidas || orgsValidas.indexOf(orgId) !== -1) {
+          resultado.push(orgId);
+        }
+      }
+    }
+  }
+  return resultado;
+}
+
+/**
+ * Determina el índice (0-based) de la columna 'organizacion_id' en una fila de encabezados.
+ */
+function _columnaOrganizacionId(encabezados) {
+  if (!encabezados || !encabezados.length) return -1;
+  for (let i = 0; i < encabezados.length; i++) {
+    if (String(encabezados[i]).trim().toLowerCase() === "organizacion_id") return i;
+  }
+  return -1;
+}
+
+/**
+ * Filtra las hojas leídas para que el usuario solo reciba registros de sus
+ * organizaciones.
+ */
+function _filtrarHojasPorOrganizacion(ss, hojas, email) {
+  if (!_separacionOrganizacionesActiva() || !email) return hojas;
+  const orgs = _organizacionesDelUsuario(ss, email, hojas);
+  const resultado = {};
+
+  // 1. Obtener IDs de ventas de las organizaciones del usuario (para filtrar venta_items y abonos)
+  let idsVentas = null;
+  if (hojas.ventas && hojas.ventas.length > 1) {
+    const hVentas = hojas.ventas[0].map(function (h) { return String(h).trim().toLowerCase(); });
+    const colOrgVenta = hVentas.indexOf("organizacion_id");
+    idsVentas = [];
+    for (let i = 1; i < hojas.ventas.length; i++) {
+      const fila = hojas.ventas[i];
+      if (colOrgVenta >= 0 && orgs.indexOf(String(fila[colOrgVenta]).trim()) !== -1) {
+        idsVentas.push(String(fila[0]).trim());
+      }
+    }
+  } else if (hojas.venta_items || hojas.abonos) {
+    const shVentas = ss.getSheetByName("ventas");
+    if (shVentas && shVentas.getLastRow() > 1) {
+      const vValores = shVentas.getDataRange().getValues();
+      const hVentas = vValores[0].map(function (h) { return String(h).trim().toLowerCase(); });
+      const colOrgVenta = hVentas.indexOf("organizacion_id");
+      idsVentas = [];
+      for (let i = 1; i < vValores.length; i++) {
+        if (colOrgVenta >= 0 && orgs.indexOf(String(vValores[i][colOrgVenta]).trim()) !== -1) {
+          idsVentas.push(String(vValores[i][0]).trim());
+        }
+      }
+    }
+  }
+
+  // 2. Obtener miembros de las organizaciones del usuario (para filtrar 'usuarios')
+  let emailsMiembros = null;
+  const membresias = (hojas.usuario_organizacion && hojas.usuario_organizacion.length > 1)
+    ? hojas.usuario_organizacion
+    : (ss.getSheetByName("usuario_organizacion") ? ss.getSheetByName("usuario_organizacion").getDataRange().getValues() : null);
+
+  if (membresias && membresias.length > 1) {
+    const hUO = membresias[0].map(function (h) { return String(h).trim().toLowerCase(); });
+    const cEmailUO = hUO.indexOf("usuario_email");
+    const cOrgUO = hUO.indexOf("organizacion_id");
+    emailsMiembros = [String(email).trim().toLowerCase()];
+    if (cEmailUO >= 0 && cOrgUO >= 0) {
+      for (let i = 1; i < membresias.length; i++) {
+        const fila = membresias[i];
+        if (orgs.indexOf(String(fila[cOrgUO]).trim()) !== -1) {
+          const em = String(fila[cEmailUO]).trim().toLowerCase();
+          if (em && emailsMiembros.indexOf(em) === -1) emailsMiembros.push(em);
+        }
+      }
+    }
+  }
+
+  // 3. Obtener fotos de inventario de las organizaciones (para filtrar 'galeria')
+  let fotosVisibles = null;
+  const invFilas = (hojas.inventario && hojas.inventario.length > 1)
+    ? hojas.inventario
+    : (ss.getSheetByName("inventario") ? ss.getSheetByName("inventario").getDataRange().getValues() : null);
+
+  if (invFilas && invFilas.length > 1) {
+    const hInv = invFilas[0].map(function (h) { return String(h).trim().toLowerCase(); });
+    const colOrgInv = hInv.indexOf("organizacion_id");
+    const colFotoInv = hInv.indexOf("foto_id");
+    fotosVisibles = [];
+    if (colOrgInv >= 0 && colFotoInv >= 0) {
+      for (let i = 1; i < invFilas.length; i++) {
+        const fila = invFilas[i];
+        if (orgs.indexOf(String(fila[colOrgInv]).trim()) !== -1) {
+          const fId = String(fila[colFotoInv]).trim();
+          if (fId && fotosVisibles.indexOf(fId) === -1) fotosVisibles.push(fId);
+        }
+      }
+    }
+  }
+
+  const CATALOGOS_GLOBALES = [
+    "bancos", "metodo pago", "tipo de documento", "codigo de telefonos", "tipos_notificacion"
+  ];
+
+  Object.keys(hojas).forEach(function (nombre) {
+    const filas = hojas[nombre];
+    if (!filas || filas.length <= 1) {
+      resultado[nombre] = filas;
+      return;
+    }
+
+    const encabezado = filas[0];
+    const datos = filas.slice(1);
+
+    // Catálogos globales: pasan sin filtrar
+    if (CATALOGOS_GLOBALES.indexOf(nombre) !== -1) {
+      resultado[nombre] = filas;
+      return;
+    }
+
+    // Reglas especiales
+    if (nombre === "organizaciones") {
+      resultado[nombre] = [encabezado].concat(datos.filter(function (f) {
+        return orgs.indexOf(String(f[0]).trim()) !== -1;
+      }));
+      return;
+    }
+
+    if (nombre === "usuario_organizacion") {
+      const hUO = encabezado.map(function (h) { return String(h).trim().toLowerCase(); });
+      const cOrg = hUO.indexOf("organizacion_id");
+      resultado[nombre] = [encabezado].concat(datos.filter(function (f) {
+        return cOrg >= 0 && orgs.indexOf(String(f[cOrg]).trim()) !== -1;
+      }));
+      return;
+    }
+
+    if (nombre === "usuarios") {
+      const hU = encabezado.map(function (h) { return String(h).trim().toLowerCase(); });
+      const cEmail = hU.indexOf("email");
+      if (cEmail >= 0 && emailsMiembros) {
+        resultado[nombre] = [encabezado].concat(datos.filter(function (f) {
+          return emailsMiembros.indexOf(String(f[cEmail]).trim().toLowerCase()) !== -1;
+        }));
+      } else {
+        resultado[nombre] = filas;
+      }
+      return;
+    }
+
+    if (nombre === "seguridad") {
+      const hS = encabezado.map(function (h) { return String(h).trim().toLowerCase(); });
+      const cEmail = hS.indexOf("usuario_email");
+      if (cEmail >= 0) {
+        resultado[nombre] = [encabezado].concat(datos.filter(function (f) {
+          return String(f[cEmail]).trim().toLowerCase() === String(email).trim().toLowerCase();
+        }));
+      } else {
+        resultado[nombre] = filas;
+      }
+      return;
+    }
+
+    if (nombre === "venta_items" || nombre === "abonos") {
+      const hDep = encabezado.map(function (h) { return String(h).trim().toLowerCase(); });
+      const cVenta = hDep.indexOf("venta_id");
+      if (cVenta >= 0 && idsVentas !== null) {
+        resultado[nombre] = [encabezado].concat(datos.filter(function (f) {
+          return idsVentas.indexOf(String(f[cVenta]).trim()) !== -1;
+        }));
+      } else {
+        resultado[nombre] = filas;
+      }
+      return;
+    }
+
+    if (nombre === "galeria") {
+      if (fotosVisibles !== null) {
+        resultado[nombre] = [encabezado].concat(datos.filter(function (f) {
+          return fotosVisibles.indexOf(String(f[0]).trim()) !== -1;
+        }));
+      } else {
+        resultado[nombre] = filas;
+      }
+      return;
+    }
+
+    if (nombre === "audit_log") {
+      const hA = encabezado.map(function (h) { return String(h).trim().toLowerCase(); });
+      const cOrg = hA.indexOf("organizacion_id");
+      const cUser = hA.indexOf("usuario");
+      resultado[nombre] = [encabezado].concat(datos.filter(function (f) {
+        const orgVal = cOrg >= 0 ? String(f[cOrg]).trim() : "";
+        const userVal = cUser >= 0 ? String(f[cUser]).trim().toLowerCase() : "";
+        // Sin organización (eventos del sistema, filas viejas): visibles.
+        // Solo se ocultan las marcadas con una organización ajena.
+        return !orgVal || orgs.indexOf(orgVal) !== -1 || userVal === String(email).trim().toLowerCase();
+      }));
+      return;
+    }
+
+    // Hojas con columna organizacion_id
+    const colOrg = _columnaOrganizacionId(encabezado);
+    if (colOrg >= 0) {
+      resultado[nombre] = [encabezado].concat(datos.filter(function (f) {
+        const val = String(f[colOrg]).trim();
+        return orgs.indexOf(val) !== -1;
+      }));
+      return;
+    }
+
+    // Por defecto pasa
+    resultado[nombre] = filas;
+  });
+
+  return resultado;
+}
+
+/**
+ * Valida que el usuario tenga permiso para crear, modificar o eliminar registros
+ * de su organización. Devuelve null si la operación es válida, o un objeto de error.
+ */
+function _verificarAutorizacionEscritura(ss, sheetName, action, id, data, usuarioSesion) {
+  if (!_separacionOrganizacionesActiva() || !usuarioSesion) return null;
+  data = data || {};
+
+  const CATALOGOS_GLOBALES = [
+    "bancos", "metodo pago", "tipo de documento", "codigo de telefonos", "tipos_notificacion"
+  ];
+  if (CATALOGOS_GLOBALES.indexOf(sheetName) !== -1) {
+    return null;
+  }
+
+  const orgs = _organizacionesDelUsuario(ss, usuarioSesion);
+  if (!orgs || orgs.length === 0) {
+    return { status: "error", code: "no_autorizado", message: "Tu usuario no pertenece a ninguna organización activa." };
+  }
+
+  const sheet = ss.getSheetByName(sheetName);
+  const encabezado = sheet && sheet.getLastRow() >= 1
+    ? sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0]
+    : null;
+  const colOrg = encabezado ? _columnaOrganizacionId(encabezado) : -1;
+
+  if (action === "create") {
+    // 1. Hoja con organizacion_id directa:
+    if (colOrg >= 0) {
+      const orgEnviada = (data.organizacion_id || "").toString().trim();
+      if (orgEnviada) {
+        if (orgs.indexOf(orgEnviada) === -1) {
+          return {
+            status: "error",
+            code: "no_autorizado",
+            message: "No tenés permiso para operar en la organización " + orgEnviada + "."
+          };
+        }
+      } else {
+        if (orgs.length === 1) {
+          data.organizacion_id = orgs[0];
+        } else {
+          return {
+            status: "error",
+            code: "organizacion_requerida",
+            message: "Debés especificar la organización correspondiente a este registro."
+          };
+        }
+      }
+      return null;
+    }
+
+    // 2. venta_items y abonos:
+    if (sheetName === "venta_items" || sheetName === "abonos") {
+      const vId = (data.venta_id || "").toString().trim();
+      if (!vId) {
+        return { status: "error", code: "venta_requerida", message: "Falta venta_id en " + sheetName };
+      }
+      const shVentas = ss.getSheetByName("ventas");
+      if (shVentas) {
+        const vRow = _findRowById(shVentas, vId);
+        if (vRow === -1) {
+          return { status: "error", code: "venta_no_encontrada", message: "La venta '" + vId + "' no existe." };
+        }
+        const hV = shVentas.getRange(1, 1, 1, shVentas.getLastColumn()).getValues()[0];
+        const cOrgV = _columnaOrganizacionId(hV);
+        if (cOrgV >= 0) {
+          const orgV = String(shVentas.getRange(vRow, cOrgV + 1).getValue()).trim();
+          if (orgs.indexOf(orgV) === -1) {
+            return {
+              status: "error",
+              code: "no_autorizado",
+              message: "La venta '" + vId + "' pertenece a otra organización."
+            };
+          }
+        }
+      }
+      return null;
+    }
+
+    // 3. usuario_organizacion:
+    if (sheetName === "usuario_organizacion") {
+      const orgUO = (data.organizacion_id || "").toString().trim();
+      if (orgUO && orgs.indexOf(orgUO) === -1) {
+        return {
+          status: "error",
+          code: "no_autorizado",
+          message: "No podés gestionar membresías de una organización ajena."
+        };
+      }
+      return null;
+    }
+
+    // 4. seguridad:
+    if (sheetName === "seguridad") {
+      const emailSeg = (data.usuario_email || "").toString().trim().toLowerCase();
+      if (emailSeg && emailSeg !== String(usuarioSesion).trim().toLowerCase()) {
+        return { status: "error", code: "no_autorizado", message: "Solo podés configurar la seguridad de tu propia cuenta." };
+      }
+      return null;
+    }
+
+    return null;
+  }
+
+  if (action === "update" || action === "delete") {
+    if (!sheet) return null;
+    const targetId = id || data.id;
+    if (!targetId) return null;
+
+    const rowIndex = _findRowById(sheet, targetId);
+    if (rowIndex === -1) return null; // El handler responderá 404
+
+    // 1. Hoja con organizacion_id directa:
+    if (colOrg >= 0) {
+      const orgActual = String(sheet.getRange(rowIndex, colOrg + 1).getValue()).trim();
+      if (orgActual && orgs.indexOf(orgActual) === -1) {
+        return {
+          status: "error",
+          code: "no_autorizado",
+          message: "El registro pertenece a otra organización."
+        };
+      }
+      // Un update nunca cambia la organización de la fila: se fija la actual
+      // (la app no puede mover registros a otra organización).
+      if (action === "update" && data.organizacion_id !== undefined && orgActual) {
+        data.organizacion_id = orgActual;
+      }
+      return null;
+    }
+
+    // 2. venta_items y abonos:
+    if (sheetName === "venta_items" || sheetName === "abonos") {
+      const cVenta = encabezado ? encabezado.map(function (h) { return String(h).trim().toLowerCase(); }).indexOf("venta_id") : -1;
+      if (cVenta >= 0) {
+        const vId = String(sheet.getRange(rowIndex, cVenta + 1).getValue()).trim();
+        const shVentas = ss.getSheetByName("ventas");
+        if (shVentas && vId) {
+          const vRow = _findRowById(shVentas, vId);
+          if (vRow !== -1) {
+            const hV = shVentas.getRange(1, 1, 1, shVentas.getLastColumn()).getValues()[0];
+            const cOrgV = _columnaOrganizacionId(hV);
+            if (cOrgV >= 0) {
+              const orgV = String(shVentas.getRange(vRow, cOrgV + 1).getValue()).trim();
+              if (orgs.indexOf(orgV) === -1) {
+                return {
+                  status: "error",
+                  code: "no_autorizado",
+                  message: "El registro pertenece a una venta de otra organización."
+                };
+              }
+            }
+          }
+        }
+      }
+      return null;
+    }
+
+    // 3. organizaciones:
+    if (sheetName === "organizaciones") {
+      if (orgs.indexOf(String(targetId).trim()) === -1) {
+        return { status: "error", code: "no_autorizado", message: "No podés modificar una organización ajena." };
+      }
+      return null;
+    }
+
+    // 4. usuario_organizacion:
+    if (sheetName === "usuario_organizacion") {
+      const cOrgUO = encabezado ? _columnaOrganizacionId(encabezado) : -1;
+      if (cOrgUO >= 0) {
+        const orgUO = String(sheet.getRange(rowIndex, cOrgUO + 1).getValue()).trim();
+        if (orgs.indexOf(orgUO) === -1) {
+          return { status: "error", code: "no_autorizado", message: "Membresía perteneciente a otra organización." };
+        }
+      }
+      return null;
+    }
+
+    // 5. seguridad:
+    if (sheetName === "seguridad") {
+      const cEmail = encabezado ? encabezado.map(function (h) { return String(h).trim().toLowerCase(); }).indexOf("usuario_email") : -1;
+      if (cEmail >= 0) {
+        const emailSeg = String(sheet.getRange(rowIndex, cEmail + 1).getValue()).trim().toLowerCase();
+        if (emailSeg !== String(usuarioSesion).trim().toLowerCase()) {
+          return { status: "error", code: "no_autorizado", message: "No podés modificar la seguridad de otro usuario." };
+        }
+      }
+      return null;
+    }
+
+    return null;
+  }
+
+  return null;
+}
+
 // -----------------------------------------------------------------------------
 // Estado (activo / inactivo) de usuarios y clientes. Nunca se borra el
 // registro: inactivo no inicia sesión (usuarios) o no recibe ventas nuevas
@@ -1594,6 +2079,9 @@ function _leerHojas(ss, payload) {
   // pedido); los datos solo se devuelven si el usuario tiene acceso.
   const motivo = _motivoSinAcceso(ss, identidad.email, hojas);
   if (motivo) return { status: "error", code: "acceso_revocado", message: motivo };
+  if (_separacionOrganizacionesActiva() && identidad.email) {
+    hojas = _filtrarHojasPorOrganizacion(ss, hojas, identidad.email);
+  }
   return { status: "success", hojas: hojas, ms: Date.now() - inicio, via: via };
 }
 

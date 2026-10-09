@@ -262,9 +262,9 @@ const tokensDe = (e) => e.map((m) => m.token).sort().join(',');
   check(uso.status === 'success' && uso.periodo === 'dia' && uso.limite_por_usuario === 2 && uso.usados_usuario === 2 && uso.usados_organizacion === 3, 'uso_notificaciones -> ' + JSON.stringify(uso));
   // editar: sube el límite de la organización
   const id = hojas.config_notificaciones.filas[1][0];
-  const u = JSON.parse(vm.runInContext(`doPost({postData:{contents: JSON.stringify({action:"update", sheet:"config_notificaciones", id:"${id}", usuario_sesion:"ana@x.com", data:{limite_por_usuario:0, limite_organizacion:0}})}})`, ctx));
+  const u = JSON.parse(vm.runInContext(`doPost({postData:{contents: JSON.stringify({action:"update", sheet:"config_notificaciones", id:"${id}", usuario_sesion:"bea@x.com", data:{limite_por_usuario:0, limite_organizacion:0}})}})`, ctx));
   check(u.status === 'success' && enviar('bea@x.com').status === 'success', 'editar: con 0 (sin límite) vuelve a enviar');
-  const mal = JSON.parse(vm.runInContext(`doPost({postData:{contents: JSON.stringify({action:"update", sheet:"config_notificaciones", id:"${id}", usuario_sesion:"ana@x.com", data:{periodo:"anio"}})}})`, ctx));
+  const mal = JSON.parse(vm.runInContext(`doPost({postData:{contents: JSON.stringify({action:"update", sheet:"config_notificaciones", id:"${id}", usuario_sesion:"bea@x.com", data:{periodo:"anio"}})}})`, ctx));
   check(mal.status === 'error' && hojas.config_notificaciones.filas[1][2] === 'dia', 'editar: período inválido no se guarda');
 }
 { // desde la hoja: la fila que supera el límite queda en ERROR (no PENDIENTE)
