@@ -19,6 +19,7 @@ Estado de la seguridad del sistema (app + Apps Script + Google Sheets), qué se 
 | **Notificaciones y correo** | Cupos por organización y cupo diario de Google; clave de FCM rotada (2026-10-08) y fuera de git. |
 | **Secretos** | `.env*`, firma (`key.properties`), `google-services.json`, `fcm-clave*.json` y `credencial_fcm.js` fuera de git. Los secretos del servidor nunca van en los `.env` (terminan en el APK). |
 | **Aislamiento de entornos** | QA y Dev apuntan exclusivamente a la hoja de cálculo y Apps Script de test. Protegido con validación en `tools/deploy.sh` y `test/standards/env_seguridad_test.dart`. |
+| **Copias de seguridad** | Respaldo semanal automático a `<carpeta privada>/Respaldos` (ISO/IEC 27001 §8.13). Cada copia deja registro en `audit_log`. Procedimiento de restauración en [respaldos.md](respaldos.md). |
 | **Registros** | Cada cambio queda en `audit_log`. El Logger oculta emails y tokens. |
 
 ### Token obligatorio (desde el 2026-10-09, `@68`)

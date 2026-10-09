@@ -252,6 +252,16 @@ function doPost(e) {
       });
     }
 
+    if (action === "respaldar_hoja") {
+      return respond(respaldarHoja());
+    }
+    if (action === "crear_trigger_respaldo") {
+      return respond({ status: "success", message: crearTriggerRespaldo() });
+    }
+    if (action === "listar_triggers_respaldo") {
+      return respond({ status: "success", triggers: listarTriggersRespaldo() });
+    }
+
     // =========================================================================
     // ACCIÓN ESPECIAL: EJECUCIÓN ATÓMICA POR LOTES (ALL-OR-NOTHING BATCH)
     // =========================================================================
@@ -1829,6 +1839,100 @@ function crearTriggerOrganizarDrive() {
     .forEach(function (t) { ScriptApp.deleteTrigger(t); });
   ScriptApp.newTrigger("organizarDrive").timeBased().onWeekDay(ScriptApp.WeekDay.MONDAY).atHour(3).create();
   return "Revisión semanal de Drive instalada (lunes 3 a. m.).";
+}
+
+// =============================================================================
+// MÓDULO RESPALDOS DE LA HOJA (ISO/IEC 27001 §8.13)
+// =============================================================================
+const CARPETA_RESPALDOS = "Respaldos";
+
+/**
+ * Carpeta de respaldos dentro de la carpeta privada (fuera de la pública).
+ * Restringida por herencia de _carpetaPrivada().
+ */
+function _carpetaRespaldos() {
+  return _carpetaHija(_carpetaPrivada(), CARPETA_RESPALDOS);
+}
+
+/**
+ * Realiza una copia de seguridad de la hoja en <carpeta privada>/Respaldos.
+ * Con nombre fechado y registro en audit_log.
+ * Interruptor de emergencia: RESPALDO_AUTOMATICO = "no".
+ */
+function respaldarHoja() {
+  const ss = getSpreadsheet();
+  if (_propiedad("RESPALDO_AUTOMATICO") === "no") {
+    console.log("respaldarHoja omitido: propiedad RESPALDO_AUTOMATICO = no");
+    return { status: "skipped", message: "Respaldo desactivado por propiedad RESPALDO_AUTOMATICO = no" };
+  }
+
+  let nombreCopia = "";
+  try {
+    const destino = _carpetaRespaldos();
+    const fechaHora = Utilities.formatDate(new Date(), "GMT-4", "yyyy-MM-dd_HH-mm-ss");
+    nombreCopia = (ss.getName() || "Estilo Neutral") + " · Respaldo " + fechaHora;
+    const archivoOriginal = DriveApp.getFileById(ss.getId());
+    const copia = archivoOriginal.makeCopy(nombreCopia, destino);
+
+    _appendAuditLog(ss, {
+      usuario: "Sistema (Apps Script)",
+      hoja: "sistema",
+      celda: "Drive/Respaldos",
+      valorAnterior: "",
+      valorNuevo: copia.getId(),
+      accion: "respaldo_hoja",
+      norma: "ISO/IEC 27001 §8.13",
+      observaciones: "Copia creada: " + nombreCopia
+    });
+
+    console.log("Respaldo creado: " + nombreCopia + " -> " + copia.getId());
+    return {
+      status: "success",
+      id: copia.getId(),
+      nombre: nombreCopia,
+      carpetaId: destino.getId()
+    };
+  } catch (err) {
+    const errorMsg = String(err && err.message ? err.message : err);
+    console.error("Error al respaldar la hoja: " + errorMsg);
+    try {
+      _appendAuditLog(ss, {
+        usuario: "Sistema (Apps Script)",
+        hoja: "sistema",
+        celda: "Drive/Respaldos",
+        valorAnterior: "",
+        valorNuevo: "ERROR",
+        accion: "respaldo_hoja_error",
+        norma: "ISO/IEC 27001 §8.13",
+        observaciones: errorMsg.slice(0, 200)
+      });
+    } catch (_) {}
+    return {
+      status: "error",
+      message: errorMsg
+    };
+  }
+}
+
+/** Instala (una vez) el activador semanal de respaldarHoja (domingos 2 a. m.). */
+function crearTriggerRespaldo() {
+  ScriptApp.getProjectTriggers()
+    .filter(function (t) { return t.getHandlerFunction() === "respaldarHoja"; })
+    .forEach(function (t) { ScriptApp.deleteTrigger(t); });
+  ScriptApp.newTrigger("respaldarHoja").timeBased().onWeekDay(ScriptApp.WeekDay.SUNDAY).atHour(2).create();
+  return "Respaldo semanal de la hoja instalado (domingos 2 a. m.).";
+}
+
+/** Lista los activadores instalados para respaldarHoja. */
+function listarTriggersRespaldo() {
+  return ScriptApp.getProjectTriggers()
+    .filter(function (t) { return t.getHandlerFunction() === "respaldarHoja"; })
+    .map(function (t) {
+      return {
+        handler: t.getHandlerFunction(),
+        id: (typeof t.getUniqueId === "function") ? t.getUniqueId() : ""
+      };
+    });
 }
 
 // =============================================================================

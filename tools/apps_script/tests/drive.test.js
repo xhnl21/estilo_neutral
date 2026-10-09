@@ -47,6 +47,7 @@ function drive() {
       getId: () => a.id, getName: () => a.nombre, getDownloadUrl: () => 'https://drive/' + a.id,
       getParents: () => iter([items[a.padre]]),
       moveTo: (destino) => { a.padre = destino.id; },
+      makeCopy: (nombreNuevo, destino) => archivo(nombreNuevo, destino.id),
     };
     items[a.id] = a;
     return a;
@@ -69,27 +70,51 @@ function contexto() {
       ['g1', 'https://lh3.googleusercontent.com/d/ARCH1', 'ARCH1', 'pantalon.jpg', ''],
       ['g2', 'https://lh3.googleusercontent.com/d/ARCH2', '', 'gorra.jpg', ''],
       ['g3', 'https://lh3.googleusercontent.com/d/ARCH3', 'ARCH3', 'factura.jpg', '']]),
-    audit_log: hoja('audit_log', [['id']]),
+    audit_log: hoja('audit_log', [['id', 'fecha', 'usuario', 'hoja', 'celda', 'valorAnterior', 'valorNuevo', 'accion', 'norma', 'observaciones', 'organizacionId']]),
   };
   d.archivo('pantalon.jpg', publica.id, 'ARCH1');
   d.archivo('gorra.jpg', publica.id, 'ARCH2');
   d.archivo('factura.jpg', publica.id, 'ARCH3');
   const props = {};
-  const ss = { getSheetByName: (n) => hojas[n] || null, getId: () => 'SS' };
+  const ss = { getSheetByName: (n) => hojas[n] || null, getId: () => 'SS', getName: () => 'Estilo Neutral' };
+  d.archivo('Estilo Neutral', d.raizDrive.id, 'SS');
+  let triggers = [];
+  const scriptAppMock = {
+    WeekDay: { MONDAY: 1, SUNDAY: 0 },
+    getProjectTriggers: () => triggers.slice(),
+    deleteTrigger: (t) => { triggers = triggers.filter((x) => x !== t && x.id !== t.id); },
+    newTrigger: (fn) => ({
+      timeBased: () => ({
+        onWeekDay: (wd) => ({
+          atHour: (hr) => ({
+            create: () => {
+              const tr = {
+                id: 'tr_' + fn + '_' + wd + '_' + hr,
+                getHandlerFunction: () => fn,
+                getUniqueId: () => 'tr_' + fn + '_' + wd + '_' + hr,
+              };
+              triggers.push(tr);
+              return tr;
+            },
+          }),
+        }),
+      }),
+    }),
+  };
   const ctx = {
     console: { log() {}, warn() {}, error: console.error },
     SpreadsheetApp: { getActiveSpreadsheet: () => ss, openById: () => ss },
     PropertiesService: { getScriptProperties: () => ({ getProperty: (k) => props[k] ?? null, setProperty: (k, v) => { props[k] = v; } }) },
     DriveApp: {
-      getFolderById: (id) => { if (id === '1hgdY89REZHD0xWfojjIgnbfhmJ0JluYD') return publica; const c = d.items[id]; if (!c) throw new Error('no existe'); return c; },
-      getFileById: (id) => { const a = d.items[id]; if (!a) throw new Error('no existe'); return a; },
+      getFolderById: (id) => { if (id === '1hgdY89REZHD0xWfojjIgnbfhmJ0JluYD') return publica; const c = d.items[id]; if (!c) throw new Error('no existe: ' + id); return c; },
+      getFileById: (id) => { const a = d.items[id]; if (!a) throw new Error('no existe: ' + id); return a; },
       createFolder: (nm) => d.carpeta(nm, d.raizDrive.id),
     },
     Utilities: { formatDate: (x) => x.toISOString().slice(0, 10), base64EncodeWebSafe: (x) => Buffer.from(x).toString('base64') },
     LockService: { getScriptLock: () => ({ waitLock() {}, releaseLock() {} }) },
     CacheService: { getScriptCache: () => ({ get: () => null, put() {} }) },
     ContentService: { createTextOutput: (t) => ({ setMimeType: () => t }), MimeType: { JSON: 'json' } },
-    ScriptApp: {}, UrlFetchApp: {}, MailApp: {}, Logger: { log() {} },
+    ScriptApp: scriptAppMock, UrlFetchApp: {}, MailApp: {}, Logger: { log() {} },
   };
   vm.createContext(ctx);
   vm.runInContext(src, ctx);
@@ -138,5 +163,48 @@ const check = (cond, msg) => { console.log((cond ? 'OK   ' : 'FAIL ') + msg); if
   ctx.Utilities.newBlob = (bytes, tipo, nombre) => ({ nombre });
   const r = JSON.parse(vm.runInContext(`doPost({postData:{contents: JSON.stringify({action:"upload_image", usuario_sesion:"ana@x.com", fileName:"nueva.jpg", base64Data:"AQI="})}})`, ctx));
   check(r.status === 'success' && ruta(r.fileId) === 'Estilo_neutral/Centro (org1)/Productos', 'subida: va a <organización del usuario>/Productos -> ' + (r.fileId && ruta(r.fileId)));
+}
+{ // respaldarHoja: copia fechada en <privada>/Respaldos y registro en audit_log
+  const { ctx, ruta, props, d, hojas } = contexto();
+  const res = vm.runInContext('respaldarHoja()', ctx);
+  check(res && res.status === 'success', 'respaldarHoja exitoso -> ' + JSON.stringify(res));
+  check(ruta(res.id) === 'Estilo Neutral · Privado/Respaldos', 'copia guardada en Respaldos -> ' + ruta(res.id));
+  check(d.items[res.id].nombre.startsWith('Estilo Neutral · Respaldo '), 'nombre fechado de la copia -> ' + d.items[res.id].nombre);
+  check(d.items[props.DRIVE_CARPETA_PRIVADA_ID].padre === d.raizDrive.id, 'carpeta privada fuera de la pública');
+  const logFilas = hojas.audit_log.filas;
+  const ultimaFila = logFilas[logFilas.length - 1];
+  check(ultimaFila[7] === 'respaldo_hoja' && ultimaFila[8] === 'ISO/IEC 27001 §8.13', 'audit_log registrado correctamente -> ' + ultimaFila[7] + ' / ' + ultimaFila[8]);
+  check(ultimaFila[6] === res.id, 'audit_log contiene ID de la copia -> ' + ultimaFila[6]);
+}
+{ // respaldarHoja con interruptor de emergencia: RESPALDO_AUTOMATICO = no
+  const { ctx } = contexto();
+  ctx.PropertiesService.getScriptProperties().setProperty('RESPALDO_AUTOMATICO', 'no');
+  const res = vm.runInContext('respaldarHoja()', ctx);
+  check(res && res.status === 'skipped', 'interruptor RESPALDO_AUTOMATICO = no omite respaldo -> ' + JSON.stringify(res));
+}
+{ // respaldarHoja error controlado: no rompe nada y anota error en audit_log
+  const { ctx, hojas } = contexto();
+  ctx.DriveApp.getFileById = () => { throw new Error('Simulación de error en Drive'); };
+  const res = vm.runInContext('respaldarHoja()', ctx);
+  check(res && res.status === 'error', 'error capturado limpiamente -> ' + JSON.stringify(res));
+  const logFilas = hojas.audit_log.filas;
+  const ultimaFila = logFilas[logFilas.length - 1];
+  check(ultimaFila[7] === 'respaldo_hoja_error' && ultimaFila[6] === 'ERROR', 'error registrado en audit_log -> ' + ultimaFila[7]);
+}
+{ // crearTriggerRespaldo: crea activador semanal y no duplica
+  const { ctx } = contexto();
+  const msg1 = vm.runInContext('crearTriggerRespaldo()', ctx);
+  check(typeof msg1 === 'string' && msg1.includes('Respaldo semanal'), 'primer trigger creado -> ' + msg1);
+  const triggers1 = vm.runInContext('listarTriggersRespaldo()', ctx);
+  check(triggers1.length === 1 && triggers1[0].handler === 'respaldarHoja', 'trigger listado correctamente -> ' + JSON.stringify(triggers1));
+  const msg2 = vm.runInContext('crearTriggerRespaldo()', ctx);
+  const triggers2 = vm.runInContext('listarTriggersRespaldo()', ctx);
+  check(triggers2.length === 1, 'segunda llamada no duplica el trigger -> ' + triggers2.length);
+}
+{ // doPost con action respaldar_hoja
+  const { ctx, ruta } = contexto();
+  ctx.PropertiesService.getScriptProperties().setProperty('AUTENTICACION_OBLIGATORIA', 'no');
+  const r = JSON.parse(vm.runInContext(`doPost({postData:{contents: JSON.stringify({action:"respaldar_hoja", usuario_sesion:"ana@x.com"})}})`, ctx));
+  check(r.status === 'success' && ruta(r.id) === 'Estilo Neutral · Privado/Respaldos', 'doPost respaldar_hoja -> ' + (r.id && ruta(r.id)));
 }
 process.exit(fallas ? 1 : 0);
