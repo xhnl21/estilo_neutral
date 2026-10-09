@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import '../../../../core/utils/logger.dart';
@@ -92,6 +94,21 @@ class LoginCubit extends Cubit<LoginState> {
         acceso = dataService.resolverAcceso(email);
       }
       final organizacionId = acceso.organizacionId;
+      if (organizacionId == null && !dataService.accesoCargado) {
+        // No es un rechazo: no se pudieron leer las hojas de acceso (sin
+        // conexión, o el servidor rechazó la lectura). No se cierra la
+        // sesión de Google, para poder reintentar.
+        final motivo = dataService.ultimoErrorLectura ?? 'Revisá tu conexión a internet.';
+        Logger.warning('Login: no se pudo verificar el acceso de ${account.email}: $motivo');
+        if (isClosed) return;
+        _cuentaPendiente = null;
+        emit(state.copyWith(
+          status: LoginStatus.listo,
+          clearMetodoPendiente: true,
+          errorMessage: 'No se pudo verificar tu acceso con el servidor. $motivo Intentá de nuevo.',
+        ));
+        return;
+      }
       if (organizacionId == null) {
         Logger.warning('Login rechazado para ${account.email}: ${acceso.motivo}');
         await sheetsAuth.signOut();
@@ -189,6 +206,10 @@ class LoginCubit extends Cubit<LoginState> {
   void _completarLogin(GoogleSignInAccount account, String organizacionId) {
     _cuentaPendiente = null;
     authCubit.login(email: account.email, organizacionId: organizacionId);
+    // La carga al abrir la app es anterior al login (sin sesión de Google):
+    // con la hoja privada no trae nada. Con la sesión ya verificada, se
+    // recarga por el Apps Script.
+    if (dataService.lastSync == null) unawaited(dataService.fetchAllSheets());
     if (isClosed) return;
     emit(state.copyWith(status: LoginStatus.autenticado, clearMetodoPendiente: true));
   }

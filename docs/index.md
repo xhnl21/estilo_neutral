@@ -14,6 +14,7 @@ Conector Flutter para Google Sheets con arquitectura ORM bajo demanda y cero pol
 - **¿Notificaciones push: configurar, enviar o diagnosticar?** → [Notificaciones push (FCM)](notificaciones-fcm.md)
 - **¿Cuentas bancarias y pago móvil de una organización?** → [Datos bancarios](datos-bancarios.md)
 - **¿Enviar correos a los clientes?** → [Correo a clientes](correo-clientes.md)
+- **¿Seguridad: qué está protegido y cómo restringir más?** → [Seguridad](seguridad.md)
 
 ## Integraciones con Google
 

@@ -86,18 +86,27 @@ function getSpreadsheet() {
 }
 
 function doGet(e) {
-  const ss = getSpreadsheet();
+  // Solo confirma que está activo. NO expone el ID de la hoja ni sus
+  // nombres: con el ID, una hoja compartida por enlace se puede leer entera.
   return ContentService.createTextOutput(JSON.stringify({
     status: "ok",
     message: "Estilo Neutral Apps Script Web App está activo",
-    spreadsheetId: ss.getId(),
-    spreadsheetName: ss.getName(),
-    sheets: ss.getSheets().map(function(s) { return s.getName(); }),
     timestamp: new Date().toISOString()
   })).setMimeType(ContentService.MimeType.JSON);
 }
 
 function doPost(e) {
+  // Lecturas: no escriben nada, así que no esperan el candado global.
+  let previo = null;
+  try { previo = JSON.parse(e.postData.contents); } catch (err) { previo = null; }
+  if (previo && previo.action === "leer_hojas") {
+    try {
+      return respond(_leerHojas(getSpreadsheet(), previo));
+    } catch (err) {
+      return respond({ status: "error", message: err.toString() }, 500);
+    }
+  }
+
   const lock = LockService.getScriptLock();
   try {
     // Esperar hasta 10 segundos para concurrencia segura
@@ -132,7 +141,16 @@ function doPost(e) {
     // rechaza sin escribir nada y la app cierra la sesión. Sin el campo
     // (builds viejas) se acepta como antes. No autentica: el email lo manda
     // el cliente (ver DT-1, punto 5).
-    const usuarioSesion = String(payload.usuario_sesion || "").trim().toLowerCase();
+    // Identidad: el token de Google de la app (verificado con Google). El
+    // usuario es el del token, no el email que declara la app. Sin token se
+    // rechaza (salvo AUTENTICACION_OBLIGATORIA = "no").
+    const identidad = _identidadDelPedido(payload);
+    if (identidad.error) {
+      return respond({ status: "error", code: "no_autenticado", message: identidad.error }, 401);
+    }
+    const usuarioSesion = identidad.email;
+    const limite = _limiteDeEscrituras(action, usuarioSesion);
+    if (limite) return respond({ status: "error", code: "demasiadas_escrituras", message: limite }, 429);
     if (usuarioSesion) {
       const motivo = _motivoSinAcceso(ss, usuarioSesion);
       if (motivo) {
@@ -1346,8 +1364,10 @@ function _findRowById(sheet, id) {
  * tener membresía en "usuario_organizacion" y que esa organización exista.
  * Si falta alguna de las hojas (esquema sin migrar) no bloquea.
  */
-function _motivoSinAcceso(ss, email) {
+function _motivoSinAcceso(ss, email, tablas) {
   const filas = function (nombre) {
+    // [tablas]: las hojas ya leídas (leer_hojas), para no volver a leerlas.
+    if (tablas && tablas[nombre]) return tablas[nombre].length ? tablas[nombre] : null;
     const sh = ss.getSheetByName(nombre);
     if (!sh || sh.getLastRow() < 1) return null;
     return sh.getDataRange().getValues();
@@ -1401,6 +1421,226 @@ function _textoEstado(valor) {
 function _asegurarColumnaEstado(sheet, columna) {
   const celda = sheet.getRange(1, columna);
   if (String(celda.getValue()).trim() === "") celda.setValue("status");
+}
+
+// =============================================================================
+// SEGURIDAD: identidad verificada, modo estricto, límite de escrituras y
+// lectura autenticada de hojas
+// =============================================================================
+// La app manda en cada pedido el token de acceso de Google de la sesión
+// (`access_token`). Se valida con Google (tokeninfo) y se usa SU email.
+//
+// Propiedades del script (Configuración del proyecto → Propiedades):
+//   AUTENTICACION_OBLIGATORIA = "no"  → vuelta atrás de emergencia: acepta
+//                                       pedidos sin token (apps < 1.0.0+2025)
+//                                       con el email que declara la app. Sin
+//                                       la propiedad, el token es OBLIGATORIO.
+//   LECTURA_POR_SERVIDOR = "no"      → la app vuelve a leer por gviz (si
+//                                       algo se viera mal tras el cambio).
+//   OAUTH_CLIENTES_PERMITIDOS = "id1,id2" → solo se aceptan tokens emitidos
+//                                       para esos clientes OAuth (la app).
+//                                       Los vistos quedan en
+//                                       OAUTH_CLIENTES_VISTOS para copiarlos.
+const LIMITE_ESCRITURAS_POR_MINUTO = 90;
+const ACCIONES_DE_ESCRITURA = [
+  "create", "update", "delete", "batch", "upload_image", "toggle_checklist", "set_metodo_seguridad"
+];
+// La bitácora solo se muestra: se mandan las últimas filas (crece sin parar
+// y era lo más pesado de la carga).
+const FILAS_AUDIT_LOG_LEIDAS = 500;
+// Hojas que la app puede leer por "leer_hojas" (las mismas que lee por gviz).
+const HOJAS_LEGIBLES = [
+  "clientes", "inventario", "galeria", "ventas", "venta_items", "abonos", "compras_divisas",
+  "resumen_diario", "cuarentena", "audit_log", "reporte_migracion", "checklist_iso", "seguridad",
+  "usuarios", "organizaciones", "usuario_organizacion", "metodo pago", "tasas", "moneda_organizacion",
+  "codigo de telefonos", "tipo de documento", "creditos_clientes", "config_notificaciones",
+  "tipos_notificacion", "plantillas_notificacion", "bancos", "cuentas_bancarias"
+];
+
+function _propiedad(nombre) {
+  return String(PropertiesService.getScriptProperties().getProperty(nombre) || "").trim();
+}
+
+/** Obligatoria salvo AUTENTICACION_OBLIGATORIA = "no" (vuelta atrás de emergencia). */
+function _autenticacionObligatoria() {
+  return _propiedad("AUTENTICACION_OBLIGATORIA").toLowerCase() !== "no";
+}
+
+/** {email, verificado} o {error}. */
+function _identidadDelPedido(payload) {
+  const token = String(payload.access_token || "").trim();
+  if (token) {
+    const v = _verificarTokenGoogle(token);
+    if (v.error) return { error: v.error };
+    return { email: v.email, verificado: true };
+  }
+  if (_autenticacionObligatoria()) {
+    return { error: "Pedido sin sesión de Google verificada. Actualizá la app y volvé a iniciar sesión." };
+  }
+  return { email: String(payload.usuario_sesion || "").trim().toLowerCase(), verificado: false };
+}
+
+/** Valida un token de acceso de Google. {email, cliente} o {error}. */
+function _verificarTokenGoogle(token) {
+  const cache = CacheService.getScriptCache();
+  const huella = "tok_" + Utilities.base64EncodeWebSafe(
+    Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, token)).slice(0, 43);
+  const guardado = cache.get(huella);
+  if (guardado) return JSON.parse(guardado);
+
+  const res = UrlFetchApp.fetch(
+    "https://oauth2.googleapis.com/tokeninfo?access_token=" + encodeURIComponent(token),
+    { muteHttpExceptions: true }
+  );
+  if (res.getResponseCode() !== 200) {
+    return { error: "La sesión de Google venció o no es válida. Volvé a iniciar sesión." };
+  }
+  const info = JSON.parse(res.getContentText());
+  const email = String(info.email || "").trim().toLowerCase();
+  const segundos = Number(info.expires_in || 0);
+  if (!email || String(info.email_verified) !== "true" || !(segundos > 0)) {
+    return { error: "La sesión de Google no incluye un email verificado. Volvé a iniciar sesión." };
+  }
+  const cliente = String(info.azp || info.aud || "");
+  // Se anotan todos (también los rechazados): así se ve el ID de una app
+  // propia nueva (p. ej. la variante QA) para agregarla a la lista.
+  _registrarClienteVisto(cliente);
+  const permitidos = _propiedad("OAUTH_CLIENTES_PERMITIDOS");
+  if (permitidos && permitidos.split(",").map(function (x) { return x.trim(); }).indexOf(cliente) === -1) {
+    return { error: "Sesión de Google emitida para otra aplicación (cliente " + cliente + "). Si es una app propia, agregá ese cliente a OAUTH_CLIENTES_PERMITIDOS." };
+  }
+  const resultado = { email: email, cliente: cliente };
+  cache.put(huella, JSON.stringify(resultado), Math.max(1, Math.min(300, Math.floor(segundos))));
+  return resultado;
+}
+
+/** Anota los clientes OAuth vistos (para configurar OAUTH_CLIENTES_PERMITIDOS). */
+function _registrarClienteVisto(cliente) {
+  if (!cliente) return;
+  const props = PropertiesService.getScriptProperties();
+  const vistos = String(props.getProperty("OAUTH_CLIENTES_VISTOS") || "").split(",").filter(String);
+  if (vistos.indexOf(cliente) !== -1 || vistos.length >= 10) return;
+  vistos.push(cliente);
+  props.setProperty("OAUTH_CLIENTES_VISTOS", vistos.join(","));
+}
+
+/** Mensaje si [email] superó las escrituras por minuto, o null. */
+function _limiteDeEscrituras(action, email) {
+  if (ACCIONES_DE_ESCRITURA.indexOf(action) === -1) return null;
+  const minuto = Math.floor(Date.now() / 60000);
+  const clave = "rl_" + Utilities.base64EncodeWebSafe(email || "anonimo").slice(0, 120) + "_" + minuto;
+  const cache = CacheService.getScriptCache();
+  const usados = Number(cache.get(clave) || 0);
+  if (usados >= LIMITE_ESCRITURAS_POR_MINUTO) {
+    return "Demasiados cambios seguidos (" + LIMITE_ESCRITURAS_POR_MINUTO + " por minuto). Esperá un momento.";
+  }
+  cache.put(clave, String(usados + 1), 120);
+  return null;
+}
+
+/**
+ * Acción "leer_hojas": devuelve las hojas pedidas (como las muestra Sheets)
+ * a un usuario con sesión de Google VERIFICADA y con acceso. Así la app no
+ * necesita que la hoja sea pública (gviz) y se puede dejar "Restringida".
+ */
+function _leerHojas(ss, payload) {
+  // Válvula: con LECTURA_POR_SERVIDOR = "no" la app vuelve a leer por gviz
+  // (solo sirve mientras la hoja siga compartida por enlace).
+  if (_propiedad("LECTURA_POR_SERVIDOR").toLowerCase() === "no") {
+    return { status: "error", code: "lectura_desactivada", message: "Lectura por el servidor desactivada." };
+  }
+  const identidad = _identidadDelPedido(payload);
+  if (identidad.error) return { status: "error", code: "no_autenticado", message: identidad.error };
+  if (!identidad.verificado) {
+    return { status: "error", code: "no_autenticado", message: "Leer hojas requiere la sesión de Google verificada." };
+  }
+  const pedidas = (payload.hojas || []).map(function (h) { return String(h); });
+  if (!pedidas.length || pedidas.length > 40) return { status: "error", message: "Pedí entre 1 y 40 hojas." };
+  const inicio = Date.now();
+  // Los nombres de todas las hojas en una sola llamada (cada consulta a
+  // Sheets cuesta tiempo).
+  const nombresEnLaHoja = ss.getSheets().map(function (sh) { return sh.getName(); });
+  const existentes = pedidas.filter(function (n) {
+    return HOJAS_LEGIBLES.indexOf(n) !== -1 && nombresEnLaHoja.indexOf(n) !== -1;
+  });
+  let hojas = null;
+  let via = "batchGet";
+  try {
+    hojas = _leerHojasEnLote(ss, existentes);
+  } catch (e) {
+    // Sin el servicio avanzado de Sheets (o si falla): hoja por hoja.
+    console.warn("leer_hojas: batchGet falló, se lee hoja por hoja: " + e);
+    via = "rango";
+    hojas = _leerHojasUnaPorUna(ss, existentes);
+  }
+  // El acceso se verifica con las hojas recién leídas (si vinieron en el
+  // pedido); los datos solo se devuelven si el usuario tiene acceso.
+  const motivo = _motivoSinAcceso(ss, identidad.email, hojas);
+  if (motivo) return { status: "error", code: "acceso_revocado", message: motivo };
+  return { status: "success", hojas: hojas, ms: Date.now() - inicio, via: via };
+}
+
+/** Rango A1 de una hoja (el nombre entre comillas: algunos tienen espacios). */
+function _rangoHoja(nombre, desde, hasta) {
+  return "'" + nombre.replace(/'/g, "''") + "'!" + desde + (hasta ? ":" + hasta : "");
+}
+
+/**
+ * Todas las hojas en UNA llamada a la API de Sheets (servicio avanzado),
+ * con los valores como se ven. Las filas se completan hasta el ancho del
+ * encabezado (la API omite las celdas vacías del final).
+ */
+function _leerHojasEnLote(ss, nombres) {
+  if (typeof Sheets === "undefined") throw new Error("Servicio avanzado de Sheets no habilitado.");
+  const rangos = [];
+  const dueño = [];
+  nombres.forEach(function (n) {
+    // Solo audit_log necesita saber cuántas filas tiene (para leer las últimas).
+    const ultima = n === "audit_log" ? ss.getSheetByName(n).getLastRow() : 0;
+    if (n === "audit_log" && ultima > FILAS_AUDIT_LOG_LEIDAS + 1) {
+      rangos.push(_rangoHoja(n, "1:1"));
+      rangos.push(_rangoHoja(n, (ultima - FILAS_AUDIT_LOG_LEIDAS + 1) + ":" + ultima));
+      dueño.push(n, n);
+    } else {
+      rangos.push(_rangoHoja(n, "A:ZZ"));
+      dueño.push(n);
+    }
+  });
+  const hojas = {};
+  if (!rangos.length) return hojas;
+  const r = Sheets.Spreadsheets.Values.batchGet(ss.getId(), { ranges: rangos, valueRenderOption: "FORMATTED_VALUE" });
+  (r.valueRanges || []).forEach(function (vr, i) {
+    const n = dueño[i];
+    hojas[n] = (hojas[n] || []).concat(vr.values || []);
+  });
+  Object.keys(hojas).forEach(function (n) {
+    const filas = hojas[n];
+    const ancho = filas.length ? filas[0].length : 0;
+    hojas[n] = filas.map(function (f) {
+      const fila = f.map(function (c) { return c === null || c === undefined ? "" : String(c); });
+      while (fila.length < ancho) fila.push("");
+      return fila;
+    });
+  });
+  return hojas;
+}
+
+/** Respaldo: hoja por hoja con SpreadsheetApp. */
+function _leerHojasUnaPorUna(ss, nombres) {
+  const hojas = {};
+  nombres.forEach(function (nombre) {
+    const sh = ss.getSheetByName(nombre);
+    if (!sh || sh.getLastRow() < 1) return;
+    if (nombre === "audit_log" && sh.getLastRow() > FILAS_AUDIT_LOG_LEIDAS + 1) {
+      const columnas = sh.getLastColumn();
+      const desde = sh.getLastRow() - FILAS_AUDIT_LOG_LEIDAS + 1;
+      hojas[nombre] = sh.getRange(1, 1, 1, columnas).getDisplayValues()
+        .concat(sh.getRange(desde, 1, FILAS_AUDIT_LOG_LEIDAS, columnas).getDisplayValues());
+      return;
+    }
+    hojas[nombre] = sh.getDataRange().getDisplayValues();
+  });
+  return hojas;
 }
 
 // =============================================================================

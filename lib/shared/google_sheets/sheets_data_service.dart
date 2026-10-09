@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
 import 'package:dio/dio.dart';
@@ -30,7 +31,9 @@ class SheetsDataService extends ChangeNotifier {
     String? spreadsheetId,
     String? appsScriptUrl,
     Dio? dio,
-  })  : spreadsheetId = SheetsConfig.extractSpreadsheetId(spreadsheetId ?? SheetsConfig.defaultSpreadsheetId),
+    this.datosDeRespaldo = true,
+  })  : _accesoLeido = datosDeRespaldo,
+        spreadsheetId = SheetsConfig.extractSpreadsheetId(spreadsheetId ?? SheetsConfig.defaultSpreadsheetId),
         _appsScriptUrl = appsScriptUrl ?? SheetsConfig.defaultAppsScriptUrl,
         _dioClient = DioClient(customDio: dio) {
     // No se pasa `baseOptions` a DioClient: hacerlo reemplazaría por completo
@@ -150,6 +153,28 @@ class SheetsDataService extends ChangeNotifier {
   }
 
   String? _accesoRevocadoEnServidor;
+
+  /// Con `true` (tests), al iniciar se cargan datos de ejemplo
+  /// ([_seedFallbackData]) que quedan si la lectura falla. En la app es
+  /// `false`: si no se puede leer la hoja, no se muestran datos inventados
+  /// como si fueran reales (ni se autoriza el login con usuarios de ejemplo).
+  final bool datosDeRespaldo;
+
+  /// Se leyeron alguna vez las hojas de acceso (o hay datos de respaldo):
+  /// distingue "la cuenta no está autorizada" de "no se pudo verificar".
+  bool _accesoLeido;
+  bool get accesoCargado => _accesoLeido;
+
+  /// Motivo del último rechazo del servidor al leer (p. ej. "Sesión de
+  /// Google emitida para otra aplicación"), o `null`.
+  String? _ultimoErrorLectura;
+  String? get ultimoErrorLectura => _ultimoErrorLectura;
+
+  /// Token de acceso de la sesión de Google ([SheetsAuth.tokenDeAcceso]). Va
+  /// en cada pedido al Apps Script, que lo verifica con Google: así el
+  /// servidor sabe quién es el usuario sin creerle el email a la app. Sin
+  /// proveedor (tests, sin sesión) los pedidos van sin token.
+  Future<String?> Function()? proveedorToken;
 
   /// Motivo con el que Apps Script rechazó una escritura porque el usuario de
   /// la sesión perdió el acceso (`code: "acceso_revocado"`), o `null`.
@@ -389,14 +414,19 @@ class SheetsDataService extends ChangeNotifier {
       );
 
   /// Carga inicial de datos
-  Future<void> initialize() async {
+  /// Con [cargarSinSesion] en `false` (la app), si todavía no hay sesión de
+  /// Google no se lee nada: la hoja es privada y solo se lee por el Apps
+  /// Script con la sesión. La primera carga la dispara el login
+  /// ([esperarCargaInicial]).
+  Future<void> initialize({bool cargarSinSesion = true}) async {
     try {
       final savedUrl = await SecureTokenStorage().getAppsScriptUrl();
       if (savedUrl != null && savedUrl.isNotEmpty) {
         _appsScriptUrl = savedUrl;
       }
     } catch (_) {}
-    _seedFallbackData();
+    if (datosDeRespaldo) _seedFallbackData();
+    if (!cargarSinSesion && await _tokenDeAcceso() == null) return;
     await fetchAllSheets();
   }
 
@@ -595,13 +625,17 @@ class SheetsDataService extends ChangeNotifier {
         _errorMessage = null;
       } else {
         final isPrivateDoc = errors.any((e) => e.contains('401') || e.contains('Privado'));
-        if (isPrivateDoc) {
-          _errorMessage = 'Documento privado: En Google Sheets haz clic en "Compartir" y selecciona "Cualquier persona con el enlace".';
-          Logger.error(
-            'SheetsDataService: Acceso no autorizado (HTTP 401). El documento de Google Sheets está en modo "Restringido". '
-            'Para permitir lectura pública por GViz, en tu hoja de Google Sheets ve a Compartir > Acceso general > '
-            'cambia de "Restringido" a "Cualquier persona que tenga el vínculo" (Lector).',
-          );
+        final motivoServidor = _ultimoErrorLectura;
+        if (motivoServidor != null) {
+          // La hoja es privada a propósito: se lee por el Apps Script, que
+          // rechazó la lectura (sesión, app no permitida, acceso).
+          _errorMessage = 'No se pudieron cargar los datos: $motivoServidor';
+          Logger.warning('SheetsDataService: el servidor rechazó la lectura: $motivoServidor');
+        } else if (isPrivateDoc) {
+          // Normal sin sesión de Google: la hoja es privada y solo se lee por
+          // el Apps Script con la sesión iniciada.
+          _errorMessage = 'No se pudieron cargar los datos. Iniciá sesión de nuevo.';
+          Logger.info('SheetsDataService: la hoja es privada; se lee por el Apps Script con la sesión.');
         } else {
           _errorMessage = 'Sin conexión con Google Sheets: operando con caché local.';
         }
@@ -615,11 +649,78 @@ class SheetsDataService extends ChangeNotifier {
     }
   }
 
+  Future<String?> _tokenDeAcceso() async {
+    final proveedor = proveedorToken;
+    if (proveedor == null) return null;
+    try {
+      return await proveedor();
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Lectura en curso por el Apps Script: las hojas que se piden en el mismo
+  /// momento (p. ej. las ~30 de la carga inicial) viajan en un solo pedido.
+  _LoteLectura? _loteLectura;
+
+  /// Filas de [hoja] leídas por el Apps Script (`leer_hojas`, con la sesión de
+  /// Google verificada), o `null` si no se pudo (sin sesión, sin conexión,
+  /// script viejo): entonces se lee por gviz, que solo funciona mientras la
+  /// hoja esté compartida por enlace.
+  Future<List<List<String>>?> _filasDelServidor(String hoja) async {
+    final url = appsScriptUrl;
+    if (url == null || url.trim().isEmpty || proveedorToken == null) return null;
+    final lote = _loteLectura ??= _LoteLectura();
+    lote.hojas.add(hoja);
+    if (!lote.programado) {
+      lote.programado = true;
+      // Después de que se encolen todas las lecturas pedidas a la vez.
+      Future(() => _enviarLoteLectura(lote));
+    }
+    final hojas = await lote.resultado.future;
+    if (hojas == null) return null;
+    return hojas[hoja] ?? const []; // la hoja no existe: sin datos
+  }
+
+  Future<void> _enviarLoteLectura(_LoteLectura lote) async {
+    if (identical(_loteLectura, lote)) _loteLectura = null;
+    Map<String, List<List<String>>>? hojas;
+    try {
+      if (await _tokenDeAcceso() != null) {
+        final r = await _postAppsScriptJson({'action': 'leer_hojas', 'hojas': lote.hojas.toList()});
+        final data = r.data;
+        _ultimoErrorLectura = data == null
+            ? 'El servidor no respondió.'
+            : (data['status'] == 'success' ? null : data['message']?.toString());
+        if (data != null && data['status'] == 'success' && data['hojas'] is Map) {
+          Logger.info('SheetsDataService: leer_hojas (${lote.hojas.length} hojas) '
+              'vía ${data['via'] ?? '?'} en ${data['ms'] ?? '?'} ms del servidor');
+          hojas = {
+            for (final e in (data['hojas'] as Map).entries)
+              '${e.key}': [
+                for (final fila in (e.value as List)) [for (final celda in (fila as List)) '${celda ?? ''}'],
+              ],
+          };
+        }
+      }
+    } catch (e) {
+      Logger.warning('SheetsDataService: no se pudieron leer las hojas por el Apps Script: $e');
+    }
+    lote.resultado.complete(hojas);
+  }
+
   Future<void> _fetchSheet(
     String sheetName,
     void Function(List<List<String>>) parser, {
     List<String>? expectedHeaders,
   }) async {
+    final rows = await _filasDelServidor(sheetName) ?? await _filasPorGviz(sheetName);
+    if (rows == null || rows.isEmpty) return;
+    _procesarFilas(sheetName, rows, parser, expectedHeaders: expectedHeaders);
+  }
+
+  /// Lectura pública por gviz (CSV). `null` si vino vacía; lanza si falló.
+  Future<List<List<String>>?> _filasPorGviz(String sheetName) async {
     final cleanId = SheetsConfig.extractSpreadsheetId(spreadsheetId);
     final url = Uri.parse(
       // headers=1: la fila 1 es el encabezado. Sin esto gviz lo adivina y, en
@@ -641,36 +742,44 @@ class SheetsDataService extends ChangeNotifier {
       if (body.contains('<html') || body.contains('ServiceLogin')) {
         throw Exception('HTTP 401: Documento Privado');
       }
-      final rows = parseCsv(body);
-      if (rows.isEmpty) return;
-
-      // Si se pasan encabezados esperados, se valida la fila 1 antes de parsear.
-      // El endpoint GViz puede devolver silenciosamente los datos de OTRA hoja
-      // (por ejemplo, si `sheetName` todavía no existe en el Sheet real) — sin
-      // esto, esas filas ajenas se interpretarían como datos válidos de
-      // `sheetName`, mezclando columnas de una hoja con las de otra.
-      if (expectedHeaders != null) {
-        final header = rows.first.map((h) => h.trim().toLowerCase()).toList();
-        bool empiezaCon(List<String> esperado) =>
-            header.length >= esperado.length &&
-            List.generate(esperado.length, (i) => header[i] == esperado[i].toLowerCase()).every((ok) => ok);
-        // También se acepta el formato anterior a la columna `id` (hoja que
-        // todavía no se migró): los modelos leen ambos (ver FilaHoja).
-        final matches = empiezaCon(expectedHeaders) ||
-            (expectedHeaders.first == 'id' && empiezaCon(expectedHeaders.sublist(1)));
-        if (!matches) {
-          throw Exception(
-            'La hoja "$sheetName" no tiene el encabezado esperado ${expectedHeaders.join("/")} '
-            '(encontrado: ${header.join("/")}) — ¿falta migrar el esquema del Sheet?',
-          );
-        }
-      }
-
-      if (rows.length > 1) {
-        parser(rows.sublist(1));
-      }
+      return parseCsv(body);
     } else if (response.statusCode != 200) {
       throw Exception('HTTP ${response.statusCode}: ${response.statusMessage}');
+    }
+    return null;
+  }
+
+  /// Valida el encabezado de [rows] (fila 1) y pasa los datos a [parser].
+  void _procesarFilas(
+    String sheetName,
+    List<List<String>> rows,
+    void Function(List<List<String>>) parser, {
+    List<String>? expectedHeaders,
+  }) {
+    // Si se pasan encabezados esperados, se valida la fila 1 antes de parsear.
+    // El endpoint GViz puede devolver silenciosamente los datos de OTRA hoja
+    // (por ejemplo, si `sheetName` todavía no existe en el Sheet real) — sin
+    // esto, esas filas ajenas se interpretarían como datos válidos de
+    // `sheetName`, mezclando columnas de una hoja con las de otra.
+    if (expectedHeaders != null) {
+      final header = rows.first.map((h) => h.trim().toLowerCase()).toList();
+      bool empiezaCon(List<String> esperado) =>
+          header.length >= esperado.length &&
+          List.generate(esperado.length, (i) => header[i] == esperado[i].toLowerCase()).every((ok) => ok);
+      // También se acepta el formato anterior a la columna `id` (hoja que
+      // todavía no se migró): los modelos leen ambos (ver FilaHoja).
+      final matches = empiezaCon(expectedHeaders) ||
+          (expectedHeaders.first == 'id' && empiezaCon(expectedHeaders.sublist(1)));
+      if (!matches) {
+        throw Exception(
+          'La hoja "$sheetName" no tiene el encabezado esperado ${expectedHeaders.join("/")} '
+          '(encontrado: ${header.join("/")}) — ¿falta migrar el esquema del Sheet?',
+        );
+      }
+    }
+
+    if (rows.length > 1) {
+      parser(rows.sublist(1));
     }
   }
 
@@ -837,6 +946,7 @@ class SheetsDataService extends ChangeNotifier {
   }
 
   void _parseUsuarios(List<List<String>> rows) {
+    _accesoLeido = true;
     if (rows.isEmpty) return;
     _usuarios = rows
         .where((r) => r.isNotEmpty && r.first.trim().isNotEmpty)
@@ -1014,7 +1124,13 @@ class SheetsDataService extends ChangeNotifier {
     // El script rechaza la escritura si esta cuenta perdió el acceso
     // (`code: "acceso_revocado"`, ver ControlAccesoSesion).
     final usuario = _currentUsuarioEmail;
-    final cuerpo = usuario == null ? payload : {...payload, 'usuario_sesion': usuario};
+    final token = await _tokenDeAcceso();
+    final cuerpo = {
+      ...payload,
+      if (usuario != null) 'usuario_sesion': usuario,
+      // "access_token": el Logger lo oculta en los registros.
+      if (token != null) 'access_token': token,
+    };
 
     Response response;
     try {
@@ -4741,4 +4857,11 @@ enum ResultadoAbono {
   /// No hubo respuesta: no se sabe si se aplicó. Se releyeron los datos;
   /// hay que revisar el historial de la factura antes de reintentar.
   sinConfirmar,
+}
+
+/// Hojas pedidas a la vez al Apps Script (ver `_filasDelServidor`).
+class _LoteLectura {
+  final hojas = <String>{};
+  bool programado = false;
+  final resultado = Completer<Map<String, List<List<String>>>?>();
 }

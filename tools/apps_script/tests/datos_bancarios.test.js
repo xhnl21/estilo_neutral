@@ -39,9 +39,10 @@ function contexto() {
     console,
     SpreadsheetApp: { flush() {}, getActiveSpreadsheet: () => ss, openById: () => ss, newDataValidation: () => ({ requireValueInList() { return this; }, build() { return {}; } }) },
     LockService: { getScriptLock: () => ({ waitLock() {}, releaseLock() {} }) },
-    PropertiesService: { getScriptProperties: () => ({ getProperty: () => null }) },
+    // Estos tests simulan pedidos sin token: vuelta atrás AUTENTICACION_OBLIGATORIA = no.
+    PropertiesService: { getScriptProperties: () => ({ getProperty: (k) => (k === 'AUTENTICACION_OBLIGATORIA' ? 'no' : null) }) },
     CacheService: { getScriptCache: () => ({ get: () => null, put() {} }) },
-    Utilities: { formatDate: (d) => d.toISOString().slice(0, 10) },
+    Utilities: { formatDate: (d) => d.toISOString().slice(0, 10), base64EncodeWebSafe: (x) => Buffer.from(x).toString('base64') },
     ContentService: { createTextOutput: (t) => ({ setMimeType: () => t }), MimeType: { JSON: 'json' } },
     UrlFetchApp: {}, ScriptApp: {}, DriveApp: {}, Logger: { log() {} },
   };

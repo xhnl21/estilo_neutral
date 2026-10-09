@@ -38,6 +38,19 @@ class SheetsAuth {
     }
   }
 
+  /// Token de acceso vigente de la sesión de Google abierta (Google lo
+  /// renueva si venció), o `null` si no hay sesión. No abre ninguna sesión:
+  /// después de cerrar sesión devuelve `null`.
+  Future<String?> tokenDeAcceso() async {
+    final cuenta = _googleSignIn.currentUser;
+    if (cuenta == null) return null;
+    try {
+      return (await cuenta.authentication).accessToken;
+    } catch (_) {
+      return null;
+    }
+  }
+
   Future<void> signOut() async {
     await _googleSignIn.signOut();
     await tokenStorage.clearToken();

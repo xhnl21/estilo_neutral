@@ -29,9 +29,11 @@ class SheetsConfig {
 
   static String get defaultAppsScriptUrl => _envAppsScriptUrl;
 
-  static const List<String> scopes = [
-    'https://www.googleapis.com/auth/spreadsheets',
-    'https://www.googleapis.com/auth/drive.readonly',
-  ];
+  /// Permisos de Google que pide el login: solo el email (lo verifica el
+  /// Apps Script con el token de acceso). La app no usa la API de Sheets ni
+  /// de Drive con la cuenta del usuario: pedir esos permisos daba acceso a
+  /// TODAS sus hojas y a leer todo su Drive con un token guardado en el
+  /// teléfono.
+  static const List<String> scopes = ['email'];
 }
 

@@ -107,6 +107,32 @@ void main() {
       await cubit.close();
     });
 
+    test('si la carga inicial no trajo datos (hoja privada), al entrar se recarga con la sesión', () async {
+      expect(ds.lastSync, isNull, reason: 'la carga sin sesión no pudo leer');
+      _servidor.lecturas.clear();
+      google.silenciosa = _Cuenta('xhnl21@gmail.com');
+      final cubit = loginCubit();
+      await cubit.restaurarSesion();
+      expect(auth.isAuthenticated, isTrue);
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      expect(_servidor.lecturas['clientes'], greaterThanOrEqualTo(1), reason: 'recargó las hojas');
+      await cubit.close();
+    });
+
+    test('si no se pudo verificar el acceso (servidor), avisa el motivo y NO cierra la sesión de Google', () async {
+      final (sinDatos, servidor) = await servicioConServidor(usuario: null, datosDeRespaldo: false);
+      servidor.respuesta = '{"status":"error","code":"no_autenticado","message":"Sesión de Google emitida para otra aplicación."}';
+      sinDatos.proveedorToken = () async => 'tok';
+      google.silenciosa = _Cuenta('xhnl21@gmail.com');
+      final cubit = LoginCubit(authCubit: auth, sheetsAuth: google, dataService: sinDatos, biometricAuthService: biometria);
+      await cubit.restaurarSesion();
+      expect(auth.isAuthenticated, isFalse);
+      expect(cubit.state.errorMessage, contains('No se pudo verificar tu acceso'));
+      expect(cubit.state.errorMessage, contains('otra aplicación'));
+      expect(google.signOuts, 0);
+      await cubit.close();
+    });
+
     test('cuenta sin acceso: se rechaza y se cierra la sesión de Google', () async {
       google.interactiva = _Cuenta('intruso@gmail.com');
       final cubit = loginCubit();

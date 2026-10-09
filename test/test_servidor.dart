@@ -35,8 +35,13 @@ class ServidorSimulado implements HttpClientAdapter {
   final lecturas = <String, int>{};
 
   /// Opt-in: CSV que devuelve la lectura gviz de cada hoja (las demás
-  /// responden 500, como siempre).
+  /// responden sin datos, ver [lecturaSinDatos]).
   final csvPorHoja = <String, String>{};
+
+  /// Opt-in: hojas que devuelve la acción `leer_hojas` del Apps Script. Si es
+  /// `null`, la acción responde como un script viejo (sin `hojas`) y la app
+  /// vuelve a leer por gviz.
+  Map<String, List<List<String>>>? hojasServidor;
 
   String _nuevoId(Map<String, dynamic> payload) {
     final hoja = payload['sheet']?.toString() ?? '';
@@ -75,6 +80,17 @@ class ServidorSimulado implements HttpClientAdapter {
         ? <String, dynamic>{}
         : Map<String, dynamic>.from(o.data is String ? jsonDecode(o.data as String) as Map : o.data as Map);
     enviados.add(payload);
+    final servidor = hojasServidor;
+    if (payload['action'] == 'leer_hojas' && servidor != null && respuesta == null) {
+      final pedidas = (payload['hojas'] as List).cast<String>();
+      return ResponseBody.fromBytes(
+          utf8.encode(jsonEncode({
+            'status': 'success',
+            'hojas': {for (final h in pedidas) if (servidor.containsKey(h)) h: servidor[h]},
+          })),
+          200,
+          headers: {Headers.contentTypeHeader: ['application/json']});
+    }
     final generados = <String, dynamic>{};
     final resultados = <Map<String, dynamic>>[];
     for (final op in (payload['operations'] as List? ?? const []).cast<Map>()) {
@@ -125,12 +141,14 @@ ResponseBody lecturaSinDatos() => ResponseBody.fromBytes(
 Future<(SheetsDataService, ServidorSimulado)> servicioConServidor({
   String? usuario = 'xhnl21@gmail.com',
   bool inicializar = true,
+  bool datosDeRespaldo = true,
 }) async {
   final servidor = ServidorSimulado();
   final ds = SheetsDataService(
     spreadsheetId: testSpreadsheetId,
     appsScriptUrl: testAppsScriptUrl,
     dio: Dio()..httpClientAdapter = servidor,
+    datosDeRespaldo: datosDeRespaldo,
   );
   if (inicializar) await ds.initialize();
   ds.setCurrentOrganizacion(organizacionDePrueba);

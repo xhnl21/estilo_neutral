@@ -8,6 +8,8 @@ Problemas conocidos que se decidió no resolver todavía. Cada entrada dice qué
 
 **Registrada:** 2026-10-06 · **Severidad:** Alta · **Origen:** hallazgo A1 de la revisión de formularios del 2026-10-06 (ver [informe.md](../informe.md))
 
+> **Avance 2026-10-09:** el servidor ya **autentica** al usuario (token de Google verificado en cada pedido) y la hoja puede quedar privada. Siguen faltando los **roles**. Ver [seguridad.md](seguridad.md).
+
 ### Qué pasa
 
 Desde el 2026-10-06, el acceso a la app lo decide la hoja `usuarios`. Una cuenta entra si está en `usuarios` y tiene membresía en `usuario_organizacion` apuntando a una organización existente (`SheetsDataService.resolverAcceso`). Antes de esa fecha lo decidía una lista blanca fija en compilación (`ALLOWED_EMAILS`), que se eliminó.

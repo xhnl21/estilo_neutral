@@ -70,7 +70,14 @@ class ServiceLocator {
     sheetsDataService = SheetsDataService(
       spreadsheetId: SheetsConfig.defaultSpreadsheetId,
       dio: dio,
-    )..initialize();
+      // Nunca datos de ejemplo en la app: si no se puede leer, se avisa.
+      datosDeRespaldo: false,
+    )
+      // Cada pedido al Apps Script lleva el token de Google de la sesión.
+      ..proveedorToken = sheetsAuth.tokenDeAcceso
+      // Sin sesión no se lee (la hoja es privada): la primera carga la hace
+      // el login, con la sesión de Google ya restaurada.
+      ..initialize(cargarSinSesion: false);
 
     _creditsDataSource = SheetsCreditsDataSource(dataService: sheetsDataService);
     _creditRepository = ClientCreditRepositoryImpl(dataSource: _creditsDataSource!);

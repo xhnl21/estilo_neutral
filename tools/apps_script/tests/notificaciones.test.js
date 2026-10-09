@@ -49,7 +49,8 @@ function crearContexto(props, embebida) {
     console,
     SpreadsheetApp: { flush() {}, getActiveSpreadsheet: () => ss, openById: () => ss, newDataValidation: () => ({ requireValueInList() { return this; }, build() { return {}; } }) },
     LockService: { getScriptLock: () => ({ waitLock() {}, releaseLock() {} }) },
-    PropertiesService: { getScriptProperties: () => ({ getProperty: (k) => props[k] || null }) },
+    // Estos tests simulan pedidos sin token: vuelta atrás AUTENTICACION_OBLIGATORIA = no.
+    PropertiesService: { getScriptProperties: () => ({ getProperty: (k) => (k === 'AUTENTICACION_OBLIGATORIA' ? 'no' : props[k] || null) }) },
     CacheService: { getScriptCache: () => ({ get: (k) => (cache[k] ?? null), put: (k, v) => { cache[k] = v; } }) },
     Utilities: { base64EncodeWebSafe: (x) => Buffer.from(x).toString('base64'), computeRsaSha256Signature: () => [1, 2, 3], formatDate: (d) => d.toISOString().slice(0, 10) },
     UrlFetchApp: {
